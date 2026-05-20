@@ -1,0 +1,144 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* Light theme tokens (also the system default) */
+  :root {
+    --c-ink: 10 10 10;
+    --c-ink-soft: 26 26 26;
+    --c-ink-muted: 74 74 74;
+    --c-ink-subtle: 115 115 115;
+    --c-paper: 255 255 255;
+    --c-paper-tint: 250 250 250;
+    --c-paper-edge: 229 229 229;
+    --c-accent: 29 78 216;
+    --c-accent-hover: 30 64 175;
+    --c-warn: 202 138 4;
+    --c-danger: 185 28 28;
+    --c-ok: 21 128 61;
+  }
+
+  /* Dark theme — app chrome only. The resume preview itself always renders
+     on white because that's what prints. */
+  .dark {
+    --c-ink: 244 244 245;
+    --c-ink-soft: 228 228 231;
+    --c-ink-muted: 161 161 170;
+    --c-ink-subtle: 113 113 122;
+    --c-paper: 24 24 27;
+    --c-paper-tint: 39 39 42;
+    --c-paper-edge: 63 63 70;
+    --c-accent: 96 165 250;
+    --c-accent-hover: 147 197 253;
+    --c-warn: 250 204 21;
+    --c-danger: 248 113 113;
+    --c-ok: 74 222 128;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1 disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-primary {
+    @apply btn bg-ink text-paper hover:bg-ink-soft;
+  }
+  .btn-secondary {
+    @apply btn bg-paper border border-paper-edge text-ink hover:bg-paper-tint;
+  }
+  .btn-ghost {
+    @apply btn text-ink-muted hover:text-ink hover:bg-paper-tint;
+  }
+  .icon-btn {
+    @apply inline-flex h-8 w-8 items-center justify-center rounded-md text-ink-muted hover:bg-paper-tint hover:text-ink transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent;
+  }
+  .input {
+    @apply w-full rounded-md border border-paper-edge bg-paper px-2 py-1.5 text-sm text-ink shadow-none transition-colors placeholder:text-ink-subtle focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent disabled:cursor-not-allowed disabled:opacity-70;
+  }
+
+  /* The rendered resume page itself always uses light tokens so the preview
+     matches print. Force-reset within the `.resume-print-page` scope. */
+  .resume-print-page {
+    --c-ink: 10 10 10;
+    --c-ink-soft: 26 26 26;
+    --c-ink-muted: 74 74 74;
+    --c-ink-subtle: 115 115 115;
+    --c-paper: 255 255 255;
+    --c-paper-tint: 250 250 250;
+    --c-paper-edge: 229 229 229;
+    color: #000000;
+    background-color: #ffffff;
+  }
+}
+
+/* High-contrast preference: bump every text/edge variable to pure tokens for
+   maximum legibility. Triggered automatically when the user enables
+   high-contrast at the OS level. */
+@media (prefers-contrast: more) {
+  :root {
+    --c-ink: 0 0 0;
+    --c-ink-soft: 0 0 0;
+    --c-ink-muted: 30 30 30;
+    --c-ink-subtle: 60 60 60;
+    --c-paper-edge: 120 120 120;
+    --c-accent: 0 0 180;
+  }
+  .dark {
+    --c-ink: 255 255 255;
+    --c-ink-soft: 255 255 255;
+    --c-ink-muted: 220 220 220;
+    --c-ink-subtle: 200 200 200;
+    --c-paper-edge: 160 160 160;
+    --c-accent: 130 180 255;
+  }
+  .icon-btn,
+  .btn-secondary,
+  .input {
+    border-width: 1.5px;
+  }
+}
+
+/* Status/tone backgrounds used in toasts, warnings, and result cards need to
+   tint correctly in both themes. Tailwind's bg-yellow-50 etc. are tuned for
+   light backgrounds; dim them slightly in dark mode for readability. */
+.dark .bg-yellow-50 { background-color: rgba(202, 138, 4, 0.15); }
+.dark .bg-green-50 { background-color: rgba(21, 128, 61, 0.15); }
+.dark .bg-red-50 { background-color: rgba(185, 28, 28, 0.15); }
+.dark .bg-red-50\/40 { background-color: rgba(185, 28, 28, 0.08); }
+.dark .border-yellow-200 { border-color: rgba(202, 138, 4, 0.4); }
+.dark .border-green-200 { border-color: rgba(21, 128, 61, 0.4); }
+.dark .border-red-200 { border-color: rgba(185, 28, 28, 0.4); }
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  .resume-print-page,
+  .resume-print-page * {
+    visibility: visible;
+  }
+
+  .resume-print-page {
+    position: absolute;
+    left: 0;
+    top: 0;
+    transform: none !important;
+    box-shadow: none !important;
+  }
+
+  @page {
+    margin: 0;
+  }
+}
