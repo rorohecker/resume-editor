@@ -85,29 +85,17 @@ async function extractPdf(file: File): Promise<ExtractionResult> {
 
     // Two-column heuristic: clusters around left half AND right half, with no
     // significant content straddling the middle band (±20% of midpoint).
-    const left = chunks.filter((c) => c.x < midpoint - viewport.width * 0.05);
-    const right = chunks.filter((c) => c.x > midpoint + viewport.width * 0.05);
+    const leftEdge = midpoint - viewport.width * 0.05;
+    const rightEdge = midpoint + viewport.width * 0.05;
+    const left = chunks.filter((c) => c.x < leftEdge);
+    const right = chunks.filter((c) => c.x > rightEdge);
+    const center = chunks.filter((c) => c.x >= leftEdge && c.x <= rightEdge);
     const isTwoColumn = left.length > 8 && right.length > 8;
     if (isTwoColumn) twoColumnDetected = true;
 
-    const sorted = isTwoColumn
-      ? [
-          ...left.sort((a, b) => b.y - a.y || a.x - b.x),
-          ...right.sort((a, b) => b.y - a.y || a.x - b.x),
-        ]
-      : chunks.sort((a, b) => b.y - a.y || a.x - b.x);
-
-    // Group by approximate y bucket so words on the same line stay together.
-    const lineMap = new Map<number, Chunk[]>();
-    for (const chunk of sorted) {
-      const bucket = Math.round(chunk.y);
-      const existing = lineMap.get(bucket) ?? [];
-      existing.push(chunk);
-      lineMap.set(bucket, existing);
-    }
-    const pageText = Array.from(lineMap.values())
-      .map((line) => line.sort((a, b) => a.x - b.x).map((c) => c.text).join(' '))
-      .join('\n');
+    const pageText = isTwoColumn
+      ? [chunksToText(center), chunksToText(left), chunksToText(right)].filter(Boolean).join('\n')
+      : chunksToText(chunks);
     allText += pageText + '\n\n';
   }
 
@@ -129,6 +117,20 @@ async function extractPdf(file: File): Promise<ExtractionResult> {
     hints: { twoColumnDetected, isLikelyLinkedIn },
     warnings,
   };
+}
+
+function chunksToText(chunks: { x: number; y: number; text: string }[]): string {
+  const lineMap = new Map<number, { x: number; y: number; text: string }[]>();
+  for (const chunk of chunks) {
+    const bucket = Math.round(chunk.y);
+    const existing = lineMap.get(bucket) ?? [];
+    existing.push(chunk);
+    lineMap.set(bucket, existing);
+  }
+  return Array.from(lineMap.entries())
+    .sort(([a], [b]) => b - a)
+    .map(([, line]) => line.sort((a, b) => a.x - b.x).map((c) => c.text).join(' '))
+    .join('\n');
 }
 
 async function ocrPdfPages(

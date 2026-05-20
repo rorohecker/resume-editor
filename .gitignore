@@ -7,3 +7,7 @@ dist-ssr
 !.vscode/extensions.json
 .idea
 *.log
+# Build artifacts and incremental compile caches
+*.tsbuildinfo
+# Release zips shouldn't live in source; they are attached to GitHub releases instead
+resume-editor-*-dist.zip

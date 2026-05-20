@@ -29,16 +29,12 @@ export function BlockLibraryDrawer() {
   if (!resume) return null;
 
   const matches = (entry: Entry, bullet?: Bullet) => {
-    if (view === 'visible') {
-      const entryVisible = entry.visible !== false;
-      const bulletVisible = bullet ? bullet.visible : entryVisible;
-      if (!bulletVisible) return false;
-    }
-    if (view === 'hidden') {
-      const entryHidden = entry.visible === false;
-      const bulletHidden = bullet ? !bullet.visible : entryHidden;
-      if (!bulletHidden) return false;
-    }
+    // Effective visibility cascades: a bullet under a hidden entry is hidden
+    // even if its own visible flag is true.
+    const entryVisible = entry.visible !== false;
+    const effectivelyVisible = bullet ? entryVisible && bullet.visible : entryVisible;
+    if (view === 'visible' && !effectivelyVisible) return false;
+    if (view === 'hidden' && effectivelyVisible) return false;
     if (activeTag) {
       const targetTags = bullet?.tags ?? entry.tags ?? [];
       if (!targetTags.includes(activeTag)) return false;

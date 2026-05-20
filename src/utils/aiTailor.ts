@@ -55,8 +55,8 @@ export async function generateTailoring(
   if (!jobDescription.trim()) throw new Error('Paste a job description first.');
 
   const bulletMap = new Map<string, { sectionTitle: string; entryTitle: string; content: string }>();
-  for (const section of resume.sections) {
-    for (const entry of section.entries) {
+  for (const section of resume.sections.filter((item) => item.visible)) {
+    for (const entry of section.entries.filter((item) => item.visible !== false)) {
       for (const bullet of entry.bullets ?? []) {
         if (!bullet.visible) continue;
         bulletMap.set(bullet.id, {

@@ -62,6 +62,12 @@ export function applyVisibility(resume: Resume, visibility: VisibilityMap): Resu
 
 // Take a scored ranking of bullets and entries and toggle visibility on/off
 // greedily until the estimated page usage reaches the target threshold.
+//
+// Implementation note: we used to call applyVisibility + estimatePageUsage on
+// the full resume for every candidate, which is O(N^2) on large resumes. The
+// pure-add greedy doesn't need that. We approximate per-add page cost from
+// the current style and only call the full estimator twice (once for the
+// empty floor and once for the final answer) to ground the approximation.
 export function fitToPages(
   resume: Resume,
   scores: BlockScore[],
@@ -71,8 +77,6 @@ export function fitToPages(
   const maxPages = options.maxPages ?? 1;
   const cap = target * maxPages;
 
-  // Start with everything hidden, then turn things on in score order until we
-  // approach the page cap.
   const visibility: VisibilityMap = { entries: {}, bullets: {} };
   for (const section of resume.sections) {
     for (const entry of section.entries) {
@@ -81,41 +85,84 @@ export function fitToPages(
     }
   }
 
-  const sorted = [...scores].sort((a, b) => b.score - a.score);
-  const lookupEntryParent = new Map<string, string>(); // bulletId → entryId
+  // Build a parent index for bullets and approximate per-block usage costs.
+  // The page estimator's heuristic is roughly:
+  //   entry-row cost  ~= entryTitle line height + subtitle line if present
+  //   bullet cost     ~= one bullet line height
+  // We mirror that with `lineHeight = body * bullet`.
+  const lookupEntryParent = new Map<string, string>();
+  const entryRecord = new Map<string, { hasSubtitle: boolean }>();
   for (const section of resume.sections) {
     for (const entry of section.entries) {
+      entryRecord.set(entry.id, { hasSubtitle: Boolean(entry.subtitle || entry.location) });
       for (const bullet of entry.bullets ?? []) lookupEntryParent.set(bullet.id, entry.id);
     }
   }
 
+  const baseUsage = estimatePageUsage(applyVisibility(resume, visibility));
+  let usage = baseUsage;
+  const lineCost = (() => {
+    // Approximate "% of page used by one body line". Derived from
+    // styleChecks but reproduced inline so we don't pay an estimator call per
+    // iteration.
+    const pageHeightIn = resume.styles.paperSize === 'a4' ? 11.69 : 11;
+    const usable = (pageHeightIn - resume.styles.margins.top - resume.styles.margins.bottom) * 72;
+    const line = resume.styles.fontSize.body * resume.styles.spacing.bullet;
+    return (line / Math.max(1, usable)) * 100;
+  })();
+  const entryCost = (id: string): number => {
+    const rec = entryRecord.get(id);
+    if (!rec) return lineCost;
+    const titleCost = (resume.styles.fontSize.entryTitle * resume.styles.spacing.bullet) /
+      Math.max(1, (resume.styles.paperSize === 'a4' ? 11.69 : 11) - resume.styles.margins.top - resume.styles.margins.bottom) /
+      72 * 100;
+    return titleCost + (rec.hasSubtitle ? lineCost : 0) + resume.styles.spacing.entry / Math.max(1, ((resume.styles.paperSize === 'a4' ? 11.69 : 11) - resume.styles.margins.top - resume.styles.margins.bottom) * 72) * 100;
+  };
+
+  const sorted = [...scores].sort((a, b) => b.score - a.score);
+
   for (const score of sorted) {
-    // Always include the entry when including any of its bullets.
+    let costDelta = 0;
     if (score.bulletId) {
       const parent = lookupEntryParent.get(score.bulletId);
+      if (parent && !visibility.entries[parent]) costDelta += entryCost(parent);
+      if (!visibility.bullets[score.bulletId]) costDelta += lineCost;
+      if (usage + costDelta >= cap) break;
       if (parent) visibility.entries[parent] = true;
       visibility.bullets[score.bulletId] = true;
     } else {
+      if (visibility.entries[score.entryId]) continue;
+      costDelta = entryCost(score.entryId);
+      if (usage + costDelta >= cap) break;
       visibility.entries[score.entryId] = true;
     }
+    usage += costDelta;
+  }
 
-    const probe = applyVisibility(resume, visibility);
-    const usage = estimatePageUsage(probe);
-    if (usage >= cap) {
-      // Last addition tipped us over — undo it and stop.
-      if (score.bulletId) visibility.bullets[score.bulletId] = false;
-      else visibility.entries[score.entryId] = false;
-      break;
+  // Clean up dangling entries: if any entry is visible but every bullet under
+  // it is hidden AND the entry's section requires bullets, drop the entry.
+  for (const section of resume.sections) {
+    if (section.type === 'experience' || section.type === 'projects' || section.type === 'leadership' || section.type === 'research') {
+      for (const entry of section.entries) {
+        if (!visibility.entries[entry.id]) continue;
+        const hasAnyVisibleBullet = (entry.bullets ?? []).some((bullet) => visibility.bullets[bullet.id]);
+        if (!hasAnyVisibleBullet) visibility.entries[entry.id] = false;
+      }
     }
   }
 
-  // Tally
   let includedEntries = 0;
   let excludedEntries = 0;
-  for (const v of Object.values(visibility.entries)) v ? includedEntries++ : excludedEntries++;
+  for (const v of Object.values(visibility.entries)) {
+    if (v) includedEntries += 1;
+    else excludedEntries += 1;
+  }
   let includedBullets = 0;
   let excludedBullets = 0;
-  for (const v of Object.values(visibility.bullets)) v ? includedBullets++ : excludedBullets++;
+  for (const v of Object.values(visibility.bullets)) {
+    if (v) includedBullets += 1;
+    else excludedBullets += 1;
+  }
 
   return {
     visibility,

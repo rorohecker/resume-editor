@@ -158,8 +158,12 @@ export function scanAtsKeywords(resume: Resume, jobDescription: string): Keyword
 
 export function generateSummary(resume: Resume): string {
   const skills = resume.sections
-    .filter((section) => section.type === 'skills')
-    .flatMap((section) => section.entries.map((entry) => entry.subtitle ?? ''))
+    .filter((section) => section.visible && section.type === 'skills')
+    .flatMap((section) =>
+      section.entries
+        .filter((entry) => entry.visible !== false)
+        .map((entry) => entry.subtitle ?? ''),
+    )
     .join(', ')
     .split(',')
     .map((skill) => skill.trim())
@@ -167,8 +171,8 @@ export function generateSummary(resume: Resume): string {
     .slice(0, 6);
 
   const experience = resume.sections
-    .find((section) => section.type === 'experience')
-    ?.entries.find((entry) => entry.title || entry.subtitle);
+    .find((section) => section.visible && section.type === 'experience')
+    ?.entries.find((entry) => entry.visible !== false && (entry.title || entry.subtitle));
 
   const role = experience?.title || 'Early-career professional';
   const company = experience?.subtitle ? ` with experience at ${experience.subtitle}` : '';

@@ -1,5 +1,8 @@
 import { normalizeResume } from '@/types/schema';
 import { generateAiText, type AiSettings } from './aiByok';
+import { defaultLabelForContactType } from './contactIcon';
+import { makeId } from './id';
+import type { ContactFieldType, SectionType } from '@/types';
 import type { ImportParseResult } from './importParser';
 
 const SYSTEM_PROMPT = `You are a resume parser. Receive raw resume text and a preliminary structural parse.
@@ -65,10 +68,13 @@ export async function enrichWithBYOK(
           ? json.header.contactFields
               .slice(0, 7)
               .map((field, index: number) => ({
-                id: base.resume.header.contactFields[index]?.id ?? base.resume.header.contactFields[0]?.id ?? '',
-                type: field.type ?? 'custom',
+                id: existingOrNewId(base.resume.header.contactFields[index]?.id),
+                type: contactTypeOrCustom(field.type),
                 value: typeof field.value === 'string' ? field.value : '',
-                label: field.label ?? '',
+                label:
+                  typeof field.label === 'string' && field.label.trim()
+                    ? field.label
+                    : defaultLabelForContactType(contactTypeOrCustom(field.type)),
                 visible: true,
                 order: index,
               }))
@@ -76,21 +82,23 @@ export async function enrichWithBYOK(
           : base.resume.header.contactFields,
       },
       sections: Array.isArray(json.sections)
-        ? json.sections.map((section, sIdx: number) => ({
-            id: base.resume.sections[sIdx]?.id ?? '',
-            type: section.type ?? 'custom',
+        ? json.sections.map((section, sIdx: number) => {
+            const sectionType = sectionTypeOrCustom(section.type);
+            return {
+            id: existingOrNewId(base.resume.sections[sIdx]?.id),
+            type: sectionType,
             title: typeof section.title === 'string' ? section.title : 'Custom Section',
             visible: true,
             order: sIdx,
             layout:
-              section.type === 'skills'
+              sectionType === 'skills'
                 ? 'skills-grid'
-                : section.type === 'summary'
+                : sectionType === 'summary'
                 ? 'text-block'
                 : 'entry-based',
             entries: Array.isArray(section.entries)
               ? section.entries.map((entry, eIdx: number) => ({
-                  id: base.resume.sections[sIdx]?.entries[eIdx]?.id ?? '',
+                  id: existingOrNewId(base.resume.sections[sIdx]?.entries[eIdx]?.id),
                   title: entry.title ?? '',
                   subtitle: entry.subtitle ?? '',
                   location: entry.location ?? '',
@@ -99,8 +107,10 @@ export async function enrichWithBYOK(
                   current: Boolean(entry.current),
                   url: entry.url ?? '',
                   bullets: Array.isArray(entry.bullets)
-                    ? entry.bullets.map((content: string, bIdx: number) => ({
-                        id: '',
+                    ? entry.bullets
+                      .filter((content): content is string => typeof content === 'string')
+                      .map((content: string, bIdx: number) => ({
+                        id: existingOrNewId(base.resume.sections[sIdx]?.entries[eIdx]?.bullets?.[bIdx]?.id),
                         content,
                         visible: true,
                         order: bIdx,
@@ -109,7 +119,8 @@ export async function enrichWithBYOK(
                   customFields: {},
                 }))
               : [],
-          }))
+            };
+          })
         : base.resume.sections,
     };
 
@@ -128,6 +139,43 @@ export async function enrichWithBYOK(
       error: err instanceof Error ? err.message : 'Enrichment failed.',
     };
   }
+}
+
+const CONTACT_TYPES: ContactFieldType[] = [
+  'email',
+  'phone',
+  'linkedin',
+  'github',
+  'website',
+  'location',
+  'twitter',
+  'custom',
+];
+
+const SECTION_TYPES: SectionType[] = [
+  'experience',
+  'education',
+  'projects',
+  'skills',
+  'leadership',
+  'research',
+  'awards',
+  'certifications',
+  'publications',
+  'summary',
+  'custom',
+];
+
+function existingOrNewId(value: string | undefined): string {
+  return value && value.trim() ? value : makeId();
+}
+
+function contactTypeOrCustom(value: unknown): ContactFieldType {
+  return CONTACT_TYPES.includes(value as ContactFieldType) ? (value as ContactFieldType) : 'custom';
+}
+
+function sectionTypeOrCustom(value: unknown): SectionType {
+  return SECTION_TYPES.includes(value as SectionType) ? (value as SectionType) : 'custom';
 }
 
 interface RawJsonShape {

@@ -29,8 +29,17 @@ export default defineConfig({
       workbox: {
         // App is local-first, so cache everything for offline use.
         globPatterns: ['**/*.{js,css,html,ico,svg,woff,woff2,ttf}'],
-        // Skip caching the heavy lazy chunks (react-pdf, tesseract worker) so
-        // users don't get megabytes pre-loaded on first paint.
+        // Skip the heaviest lazy chunks so users don't get megabytes
+        // preloaded on first paint. They are fetched when the user opens the
+        // corresponding feature.
+        globIgnores: [
+          '**/react-pdf.browser-*.js',
+          '**/pdfWorker-*.js',
+          '**/pdf-*.js',
+          '**/mammoth.browser-*.js',
+          '**/RichBulletEditor-*.js',
+          '**/dist-*.js',
+        ],
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [

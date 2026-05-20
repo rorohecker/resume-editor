@@ -42,7 +42,14 @@ export function GenerateVariantModal() {
 
   useEffect(() => {
     if (open && resume) {
-      setVariantName(resume.name + ' — Tailored');
+      // Try to auto-derive a useful name from the tracked application; fall
+      // back to a generic "Tailored" suffix. No em dashes anywhere.
+      const role = resume.application?.targetRole?.trim();
+      const company = resume.application?.companyName?.trim();
+      if (role && company) setVariantName(`${resume.name} for ${role} at ${company}`);
+      else if (role) setVariantName(`${resume.name} for ${role}`);
+      else if (company) setVariantName(`${resume.name} for ${company}`);
+      else setVariantName(`${resume.name} Tailored`);
     }
   }, [open, resume]);
 

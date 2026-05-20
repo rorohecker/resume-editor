@@ -202,6 +202,7 @@ export function renameResume(id: string, name: string): Resume | null {
   const next = { ...resume, name, updatedAt: new Date().toISOString() };
   cache.resumes.set(id, next);
   queueWrite(RESUME_PREFIX + id, next);
+  broadcast({ type: 'resume:save', resume: next });
   return next;
 }
 
@@ -218,6 +219,7 @@ export function duplicateResume(id: string): Resume | null {
   };
   cache.resumes.set(duplicate.id, duplicate);
   queueWrite(RESUME_PREFIX + duplicate.id, duplicate);
+  broadcast({ type: 'resume:save', resume: duplicate });
   return duplicate;
 }
 

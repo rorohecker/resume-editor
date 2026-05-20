@@ -25,6 +25,9 @@ interface SortableListProps<T extends { id: string }> {
   onReorder: (next: T[]) => void;
   children: (item: T, handle: ReactNode) => ReactNode;
   className?: string;
+  // Passthrough for `data-*` attributes (used by the onboarding tour to find
+  // a sortable list to spotlight).
+  ['data-tour']?: string;
 }
 
 export function SortableList<T extends { id: string }>({
@@ -32,6 +35,7 @@ export function SortableList<T extends { id: string }>({
   onReorder,
   children,
   className,
+  ...rest
 }: SortableListProps<T>) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -60,10 +64,12 @@ export function SortableList<T extends { id: string }>({
     onReorder(arrayMove(items, index, target));
   };
 
+  const tourTag = rest['data-tour'];
+
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
       <SortableContext items={items.map((item) => item.id)} strategy={verticalListSortingStrategy}>
-        <div className={className}>
+        <div className={className} data-tour={tourTag}>
           {items.map((item) => (
             <SortableItem
               key={item.id}

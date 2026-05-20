@@ -188,6 +188,7 @@ export function EditorLeftPanel() {
             items={sections}
             onReorder={reorderSections}
             className="flex flex-col gap-2"
+            data-tour="sortable"
           >
             {(section, dragHandle) => (
               <SectionEditor

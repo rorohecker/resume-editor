@@ -115,7 +115,10 @@ export function ResumePreview() {
   }
 
   return (
-    <div className="relative flex h-full flex-col overflow-hidden bg-paper-tint">
+    <div
+      data-tour="preview"
+      className="relative flex h-full flex-col overflow-hidden bg-paper-tint"
+    >
       <div
         ref={scrollerRef}
         className="flex-1 overflow-auto p-8 touch-pan-x touch-pan-y"

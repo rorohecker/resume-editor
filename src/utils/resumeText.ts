@@ -30,8 +30,8 @@ export function resumeToPlainText(resume: Resume): string {
 }
 
 export function collectBullets(resume: Resume): ResumeBulletRef[] {
-  return resume.sections.flatMap((section) =>
-    section.entries.flatMap((entry) =>
+  return resume.sections.filter((section) => section.visible).flatMap((section) =>
+    section.entries.filter((entry) => entry.visible !== false).flatMap((entry) =>
       (entry.bullets ?? [])
         .filter((bullet) => bullet.visible && stripHtml(bullet.content).trim())
         .sort((a, b) => a.order - b.order)
@@ -75,11 +75,12 @@ function sectionToPlainText(section: Section, resume: Resume): string {
   }
 
   if (section.type === 'summary' || section.layout === 'text-block') {
-    return section.entries[0]?.title?.trim() ?? '';
+    return section.entries.find(entryHasContent)?.title?.trim() ?? '';
   }
 
   if (section.layout === 'bullet-list') {
-    return bulletsToText(section.entries[0]?.bullets ?? []);
+    const entry = section.entries.find((item) => item.visible !== false);
+    return bulletsToText(entry?.bullets ?? []);
   }
 
   return section.entries.filter(entryHasContent).map((entry) => entryToText(entry, resume)).join('\n');
@@ -105,6 +106,7 @@ function bulletsToText(bullets: Bullet[]): string {
 }
 
 function entryHasContent(entry: Entry): boolean {
+  if (entry.visible === false) return false;
   return Boolean(
     entry.title?.trim() ||
       entry.subtitle?.trim() ||
