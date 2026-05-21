@@ -3,7 +3,14 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'node:path';
 
+// Path the app expects to be served from. Default to relative ('./') so the
+// built bundle works from file://, any subpath, GitHub Pages, or a root
+// domain without changes. For a custom subpath (e.g. /resume-editor/),
+// pass APP_BASE at build time.
+const base = process.env.APP_BASE ?? './';
+
 export default defineConfig({
+  base,
   plugins: [
     react(),
     VitePWA({
@@ -11,15 +18,16 @@ export default defineConfig({
       includeAssets: ['favicon.svg'],
       manifest: {
         name: 'Resume Editor',
-        short_name: 'Resume',
+        short_name: 'Resume Editor',
         description: 'Local-first BYOK resume editor with live preview, AI tailoring, and offline support.',
         theme_color: '#0a0a0a',
         background_color: '#ffffff',
         display: 'standalone',
-        start_url: '/',
+        start_url: '.',
+        scope: '.',
         icons: [
           {
-            src: '/favicon.svg',
+            src: 'favicon.svg',
             sizes: 'any',
             type: 'image/svg+xml',
             purpose: 'any maskable',
@@ -27,11 +35,7 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // App is local-first, so cache everything for offline use.
         globPatterns: ['**/*.{js,css,html,ico,svg,woff,woff2,ttf}'],
-        // Skip the heaviest lazy chunks so users don't get megabytes
-        // preloaded on first paint. They are fetched when the user opens the
-        // corresponding feature.
         globIgnores: [
           '**/react-pdf.browser-*.js',
           '**/pdfWorker-*.js',
@@ -40,7 +44,7 @@ export default defineConfig({
           '**/RichBulletEditor-*.js',
           '**/dist-*.js',
         ],
-        navigateFallback: '/index.html',
+        navigateFallback: 'index.html',
         navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
           {

@@ -2,7 +2,9 @@
 
 Local-first resume editor that runs entirely in your browser. Write a long master resume, tag every block, then generate a tailored one-pager for a specific job in one click. Bring your own AI key, or use the offline heuristics.
 
-Live demo: not deployed yet. Run locally with `npm install && npm run dev`.
+Live demo: https://rorohecker.github.io/resume-editor/
+
+Or run locally with `npm install && npm run dev`.
 
 ## Why this exists
 

@@ -1,14 +1,15 @@
 import { lazy, Suspense } from 'react';
-import { createBrowserRouter, Navigate } from 'react-router-dom';
+// HashRouter so the app works the same from file://, GitHub Pages, a custom
+// subpath, or a root domain. Static hosts don't need a SPA fallback rule and
+// double-click-open-in-browser still works.
+import { createHashRouter, Navigate, RouterProvider } from 'react-router-dom';
 import { LandingPage } from './pages/Landing';
 
-// Editor pulls in the largest editor surface (TipTap, dnd-kit, preview renderer).
-// Keep the landing page light by lazy-loading the editor on first navigation.
 const EditorPage = lazy(() =>
   import('./pages/Editor').then((m) => ({ default: m.EditorPage })),
 );
 
-export const router = createBrowserRouter([
+export const router = createHashRouter([
   { path: '/', element: <LandingPage /> },
   {
     path: '/editor/:resumeId',
@@ -26,3 +27,6 @@ export const router = createBrowserRouter([
   },
   { path: '*', element: <Navigate to="/" replace /> },
 ]);
+
+// Re-export so main.tsx can keep its existing import shape.
+export { RouterProvider };
