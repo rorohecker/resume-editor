@@ -55,8 +55,10 @@ export interface BulletAnalysis {
   content: string;
   hasMetric: boolean;
   startsWithAction: boolean;
-  suggestions: string[];
+  suggestions: BulletSuggestion[];
 }
+
+export type BulletSuggestion = 'actionVerb' | 'metric' | 'length';
 
 export interface WeakLanguageHit {
   phrase: string;
@@ -95,11 +97,11 @@ export function analyzeSingleBullet(rawHtml: string): BulletAnalysis {
   const startsWithAction = allActionVerbs().some(
     (verb) => verb.toLowerCase() === firstWord?.toLowerCase(),
   );
-  const suggestions: string[] = [];
-  if (!startsWithAction && content.trim().length > 0) suggestions.push('Start with a stronger action verb.');
+  const suggestions: BulletSuggestion[] = [];
+  if (!startsWithAction && content.trim().length > 0) suggestions.push('actionVerb');
   if (!hasMetric && content.trim().length > 0)
-    suggestions.push('Add a measurable result (%, dollars, users, time saved).');
-  if (content.length > 200) suggestions.push('Tighten to roughly two resume lines.');
+    suggestions.push('metric');
+  if (content.length > 200) suggestions.push('length');
   return {
     id: '',
     label: '',
@@ -117,10 +119,10 @@ export function analyzeBullets(resume: Resume): BulletAnalysis[] {
     const startsWithAction = allActionVerbs().some(
       (verb) => verb.toLowerCase() === firstWord?.toLowerCase(),
     );
-    const suggestions: string[] = [];
-    if (!startsWithAction) suggestions.push('Start with a stronger action verb.');
-    if (!hasMetric) suggestions.push('Add a measurable result such as %, dollars, users, or time saved.');
-    if (bullet.content.length > 200) suggestions.push('Tighten this to fit roughly two resume lines.');
+    const suggestions: BulletSuggestion[] = [];
+    if (!startsWithAction) suggestions.push('actionVerb');
+    if (!hasMetric) suggestions.push('metric');
+    if (bullet.content.length > 200) suggestions.push('length');
 
     return {
       id: bullet.bulletId,

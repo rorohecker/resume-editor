@@ -88,13 +88,19 @@ export function MoreActionsMenu() {
       label: pdfPreviewMode ? t('editor.pdfPreviewOn') : t('editor.pdfPreviewOff'),
       icon: FileText,
       active: pdfPreviewMode,
-      onClick: () => setPdfPreviewMode(!pdfPreviewMode),
+      onClick: () => {
+        setOpen(false);
+        setPdfPreviewMode(!pdfPreviewMode);
+      },
     },
     {
       label: anonymized ? t('editor.anonymizeOn') : t('editor.anonymizeOff'),
       icon: anonymized ? EyeOff : Eye,
       active: anonymized,
-      onClick: () => setAnonymized(!anonymized),
+      onClick: () => {
+        setOpen(false);
+        setAnonymized(!anonymized);
+      },
     },
   ];
 

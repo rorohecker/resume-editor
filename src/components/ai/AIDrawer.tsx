@@ -141,7 +141,7 @@ export function AIDrawer() {
           {
             id: makeId(),
             type: 'summary',
-            title: 'Summary',
+            title: t('editor.sectionSummary'),
             visible: true,
             order: 0,
             layout: 'text-block',
@@ -311,7 +311,7 @@ export function AIDrawer() {
                         {item.suggestions.length > 0 ? (
                           <ul className="mt-2 list-disc pl-5">
                             {item.suggestions.map((s) => (
-                              <li key={s}>{s}</li>
+                              <li key={s}>{t(`ai.suggestion.${s}`)}</li>
                             ))}
                           </ul>
                         ) : (

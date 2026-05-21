@@ -190,10 +190,13 @@ async function callOpenAi(settings: AiSettings, prompt: string, maxTokens: numbe
 }
 
 async function callGemini(settings: AiSettings, prompt: string, maxTokens: number): Promise<string> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(settings.model)}:generateContent?key=${encodeURIComponent(settings.apiKey)}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(settings.model)}:generateContent`;
   const response = await fetch(url, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      'x-goog-api-key': settings.apiKey,
+    },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: { maxOutputTokens: maxTokens },

@@ -9,7 +9,6 @@ import { loadAiSettings } from '@/utils/aiByok';
 import { scoreBlocksWithAi } from '@/utils/aiVariant';
 import {
   applyVisibility,
-  buildVisibilityFrom,
   fitToPages,
   localScoreBlocks,
   type BlockScore,
@@ -43,15 +42,15 @@ export function GenerateVariantModal() {
   useEffect(() => {
     if (open && resume) {
       // Try to auto-derive a useful name from the tracked application; fall
-      // back to a generic "Tailored" suffix. No em dashes anywhere.
+      // back to a generic tailored suffix.
       const role = resume.application?.targetRole?.trim();
       const company = resume.application?.companyName?.trim();
-      if (role && company) setVariantName(`${resume.name} for ${role} at ${company}`);
-      else if (role) setVariantName(`${resume.name} for ${role}`);
-      else if (company) setVariantName(`${resume.name} for ${company}`);
-      else setVariantName(`${resume.name} Tailored`);
+      if (role && company) setVariantName(t('variant.defaultNameRoleCompany', { name: resume.name, role, company }));
+      else if (role) setVariantName(t('variant.defaultNameRole', { name: resume.name, role }));
+      else if (company) setVariantName(t('variant.defaultNameCompany', { name: resume.name, company }));
+      else setVariantName(t('variant.defaultName', { name: resume.name }));
     }
-  }, [open, resume]);
+  }, [open, resume, t]);
 
   const settings = useMemo(() => loadAiSettings(), [open]);
   const hasKey = Boolean(settings.apiKey.trim());
@@ -88,8 +87,8 @@ export function GenerateVariantModal() {
   const previewUsage = previewResume ? estimatePageUsage(previewResume) : 0;
 
   const create = () => {
-    if (!resume) return;
-    const baseVisibility: VisibilityMap = fit?.visibility ?? buildVisibilityFrom(resume);
+    if (!resume || !fit) return;
+    const baseVisibility: VisibilityMap = fit.visibility;
     const next = applyVisibility(resume, baseVisibility);
     const variant = createVariantFrom(
       next,
@@ -118,10 +117,11 @@ export function GenerateVariantModal() {
             <button
               type="button"
               className="btn-primary"
-              disabled={!resume}
+              disabled={!resume || !fit}
+              title={!fit ? t('variant.scoreFirst') : undefined}
               onClick={create}
             >
-              {t('variant.create')}
+              {fit ? t('variant.create') : t('variant.scoreFirst')}
             </button>
           </div>
         </div>

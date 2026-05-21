@@ -1,13 +1,9 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Resume } from '@/types';
 
 const PDFViewerLazy = lazy(async () => {
   const mod = await import('@react-pdf/renderer');
-  const fontsModule = await import('@/utils/pdfFonts');
-  // Pre-register the chosen font before the first render so the viewer doesn't
-  // flash with a fallback face.
-  // Done lazily per-resume by the caller via ensureFontRegistered.
   return {
     default: ({ resume, document }: { resume: Resume; document: React.ReactElement }) => {
       void resume;
@@ -18,7 +14,6 @@ const PDFViewerLazy = lazy(async () => {
         </Viewer>
       );
     },
-    fontsModule,
   };
 });
 
@@ -26,11 +21,13 @@ export function PdfPreview({ resume }: { resume: Resume }) {
   const { t } = useTranslation();
   const [doc, setDoc] = useState<React.ReactElement | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const resumeKey = useMemo(() => JSON.stringify(resume), [resume]);
+  const resumeKey = `${resume.id}:${resume.updatedAt}:${resume.styles.font}`;
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      setErr(null);
+      setDoc(null);
       try {
         const [{ createPdfDocumentFor }, { ensureFontRegistered }, pdfMod] = await Promise.all([
           import('@/utils/pdfDocument'),
@@ -47,7 +44,7 @@ export function PdfPreview({ resume }: { resume: Resume }) {
     return () => {
       cancelled = true;
     };
-  }, [resumeKey, resume]);
+  }, [resumeKey, t]);
 
   if (err) {
     return (

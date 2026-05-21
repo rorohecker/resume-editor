@@ -34,10 +34,10 @@ export function TipsPanel() {
             </div>
             <ul className="space-y-1 text-xs">
               {health.breakdown.map((category) => (
-                <li key={category.label} className="flex items-start justify-between gap-2">
+                <li key={category.key} className="flex items-start justify-between gap-2">
                   <span className="min-w-0 flex-1">
-                    <span className="font-medium text-ink">{category.label}</span>
-                    <span className="text-ink-subtle"> — {category.notes.join(' ')}</span>
+                    <span className="font-medium text-ink">{t(category.labelKey)}</span>
+                    <span className="text-ink-subtle"> - {t(category.noteKey, category.noteValues)}</span>
                   </span>
                   <span className="flex-shrink-0 tabular-nums text-ink-muted">
                     {category.score}/{category.max}

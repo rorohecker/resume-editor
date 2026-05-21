@@ -4,8 +4,17 @@ import { estimatePageUsage, isDarkProfessionalColor } from './styleChecks';
 import { collectBullets } from './resumeText';
 
 export interface HealthScore {
-  total: number; // 0–100
-  breakdown: { label: string; score: number; max: number; notes: string[] }[];
+  total: number; // 0-100
+  breakdown: HealthBreakdownItem[];
+}
+
+export interface HealthBreakdownItem {
+  key: string;
+  labelKey: string;
+  noteKey: string;
+  noteValues?: Record<string, number | string>;
+  score: number;
+  max: number;
 }
 
 export function computeHealthScore(resume: Resume): HealthScore {
@@ -14,7 +23,7 @@ export function computeHealthScore(resume: Resume): HealthScore {
   const weak = detectWeakLanguage(resume);
   const usage = estimatePageUsage(resume);
 
-  // Each category is scored 0–max; total is the sum capped at 100.
+  // Each category is scored 0-max; total is the sum capped at 100.
 
   // 1. Action verb usage (30 pts)
   const actionPct = bullets.length === 0 ? 0 : analyses.filter((a) => a.startsWithAction).length / bullets.length;
@@ -24,11 +33,11 @@ export function computeHealthScore(resume: Resume): HealthScore {
   const metricPct = bullets.length === 0 ? 0 : analyses.filter((a) => a.hasMetric).length / bullets.length;
   const metricScore = Math.round(metricPct * 25);
 
-  // 3. Weak language (15 pts — full marks if none)
+  // 3. Weak language (15 pts, full marks if none)
   const weakPenalty = Math.min(15, weak.length * 3);
   const weakScore = 15 - weakPenalty;
 
-  // 4. Length (15 pts — sweet spot around 70–95% usage)
+  // 4. Length (15 pts, sweet spot around 70-95% usage)
   let lengthScore = 15;
   if (usage < 50) lengthScore = 8;
   else if (usage < 70) lengthScore = 12;
@@ -59,50 +68,58 @@ export function computeHealthScore(resume: Resume): HealthScore {
     total,
     breakdown: [
       {
-        label: 'Action verbs',
+        key: 'actionVerbs',
+        labelKey: 'tips.healthActionVerbs',
+        noteKey: actionPct >= 0.9 ? 'tips.healthActionGood' : 'tips.healthActionPct',
+        noteValues: { pct: Math.round(actionPct * 100) },
         score: actionScore,
         max: 30,
-        notes: [
-          actionPct >= 0.9
-            ? 'Almost every bullet starts strong.'
-            : `${Math.round(actionPct * 100)}% of bullets start with a verb from the action bank.`,
-        ],
       },
       {
-        label: 'Measurable impact',
+        key: 'metricImpact',
+        labelKey: 'tips.healthMetric',
+        noteKey: 'tips.healthMetricPct',
+        noteValues: { pct: Math.round(metricPct * 100) },
         score: metricScore,
         max: 25,
-        notes: [`${Math.round(metricPct * 100)}% of bullets cite a metric.`],
       },
       {
-        label: 'No weak language',
+        key: 'weakLanguage',
+        labelKey: 'tips.healthWeak',
+        noteKey: weak.length === 0 ? 'tips.healthWeakClean' : 'tips.healthWeakFound',
+        noteValues: { count: weak.length },
         score: weakScore,
         max: 15,
-        notes: [weak.length === 0 ? 'Clean — no weak phrases detected.' : `${weak.length} weak phrase(s) found.`],
       },
       {
-        label: 'Page length',
+        key: 'pageLength',
+        labelKey: 'tips.healthLength',
+        noteKey: 'tips.healthLengthUsage',
+        noteValues: { usage },
         score: lengthScore,
         max: 15,
-        notes: [`Estimated page usage: ${usage}%.`],
       },
       {
-        label: 'Contact info',
+        key: 'contactInfo',
+        labelKey: 'tips.healthContact',
+        noteKey: 'tips.healthContactFilled',
+        noteValues: { count: filledContacts },
         score: contactScore,
         max: 5,
-        notes: [`${filledContacts} contact field(s) filled.`],
       },
       {
-        label: 'ATS colors',
+        key: 'atsColors',
+        labelKey: 'tips.healthColors',
+        noteKey: colorOk ? 'tips.healthColorsOk' : 'tips.healthColorsBad',
         score: colorScore,
         max: 5,
-        notes: [colorOk ? 'Body text uses an ATS-safe color.' : 'Body text isn\'t dark enough for some ATS systems.'],
       },
       {
-        label: 'Header',
+        key: 'header',
+        labelKey: 'tips.healthHeader',
+        noteKey: headerOk ? 'tips.healthHeaderOk' : 'tips.healthHeaderMissing',
         score: headerScore,
         max: 5,
-        notes: [headerOk ? 'Name is set.' : 'Add your name to the header.'],
       },
     ],
   };
