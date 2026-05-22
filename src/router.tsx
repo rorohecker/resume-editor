@@ -4,25 +4,35 @@ import { lazy, Suspense } from 'react';
 // double-click-open-in-browser still works.
 import { createHashRouter, Navigate, RouterProvider } from 'react-router-dom';
 import { LandingPage } from './pages/Landing';
+import { AppErrorBoundary } from './components/shared/AppErrorBoundary';
 
 const EditorPage = lazy(() =>
   import('./pages/Editor').then((m) => ({ default: m.EditorPage })),
 );
 
 export const router = createHashRouter([
-  { path: '/', element: <LandingPage /> },
+  {
+    path: '/',
+    element: (
+      <AppErrorBoundary>
+        <LandingPage />
+      </AppErrorBoundary>
+    ),
+  },
   {
     path: '/editor/:resumeId',
     element: (
-      <Suspense
-        fallback={
-          <div className="flex h-full items-center justify-center text-sm text-ink-subtle">
-            Loading editor…
-          </div>
-        }
-      >
-        <EditorPage />
-      </Suspense>
+      <AppErrorBoundary>
+        <Suspense
+          fallback={
+            <div className="flex h-full items-center justify-center text-sm text-ink-subtle">
+              Loading editor…
+            </div>
+          }
+        >
+          <EditorPage />
+        </Suspense>
+      </AppErrorBoundary>
     ),
   },
   { path: '*', element: <Navigate to="/" replace /> },
