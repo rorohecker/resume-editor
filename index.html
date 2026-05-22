@@ -15,5 +15,36 @@
   <body class="bg-paper-tint text-ink antialiased">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // Self-heal: if the app fails to mount within 6s (almost always a stale
+      // service-worker shell pointing at obsolete asset URLs), unregister all
+      // workers, drop caches, and reload once. Guarded so we never loop.
+      (function () {
+        var KEY = '__resume_editor_self_heal';
+        setTimeout(function () {
+          var root = document.getElementById('root');
+          if (root && root.children.length > 0) return;
+          if (sessionStorage.getItem(KEY)) return;
+          sessionStorage.setItem(KEY, '1');
+          var done = function () { window.location.reload(); };
+          var jobs = [];
+          if ('serviceWorker' in navigator) {
+            jobs.push(
+              navigator.serviceWorker.getRegistrations().then(function (regs) {
+                return Promise.all(regs.map(function (r) { return r.unregister(); }));
+              }).catch(function () {}),
+            );
+          }
+          if (window.caches && caches.keys) {
+            jobs.push(
+              caches.keys().then(function (keys) {
+                return Promise.all(keys.map(function (k) { return caches.delete(k); }));
+              }).catch(function () {}),
+            );
+          }
+          Promise.all(jobs).then(done, done);
+        }, 6000);
+      })();
+    </script>
   </body>
 </html>

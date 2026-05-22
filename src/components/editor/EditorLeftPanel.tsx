@@ -1541,9 +1541,12 @@ function entryLabels(type: SectionType, t?: TFunction): EntryLabels {
         current: false,
         bullets: false,
         customFields: [
-          { key: 'major', label: label(t, 'editor.major', 'Major') },
+          { key: 'major', label: label(t, 'editor.major', 'Major'), placeholder: label(t, 'editor.majorPlaceholder', 'e.g. Electrical and Computer Engineering') },
+          { key: 'secondMajor', label: label(t, 'editor.secondMajor', 'Second major'), placeholder: label(t, 'editor.secondMajorPlaceholder', 'Optional additional major') },
+          { key: 'minor', label: label(t, 'editor.minor', 'Minor'), placeholder: label(t, 'editor.minorPlaceholder', 'e.g. Business, Mathematics') },
+          { key: 'coursework', label: label(t, 'editor.coursework', 'Relevant coursework'), placeholder: label(t, 'editor.courseworkPlaceholder', 'Comma-separated, shown under degree') },
+          { key: 'studyAbroad', label: label(t, 'editor.studyAbroad', 'Study abroad'), placeholder: label(t, 'editor.studyAbroadPlaceholder', 'e.g. Universidad Carlos III, Madrid (Spring 2026)') },
           { key: 'gpa', label: label(t, 'editor.gpa', 'GPA') },
-          { key: 'coursework', label: label(t, 'editor.coursework', 'Relevant coursework') },
           { key: 'honors', label: label(t, 'editor.honors', 'Honors / Awards') },
         ],
       };

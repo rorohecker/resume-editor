@@ -476,7 +476,14 @@ function EmptyResumeHint() {
 
 function titleForPreview(entry: Entry, section: Section): string {
   if (section.type === 'education') {
-    return [entry.title, entry.customFields?.major].filter(Boolean).join(', ');
+    const majors = [entry.customFields?.major, entry.customFields?.secondMajor]
+      .map((m) => m?.trim())
+      .filter(Boolean);
+    const minor = entry.customFields?.minor?.trim();
+    const parts: string[] = [entry.title?.trim() || ''].filter(Boolean) as string[];
+    if (majors.length) parts.push(majors.join(' & '));
+    if (minor) parts.push(`Minor in ${minor}`);
+    return parts.filter(Boolean).join(', ');
   }
   return entry.title ?? '';
 }
@@ -494,6 +501,7 @@ function tertiaryForPreview(entry: Entry, section: Section): string {
       entry.location,
       entry.customFields?.gpa ? `GPA: ${entry.customFields.gpa}` : '',
       entry.customFields?.coursework ? `Coursework: ${entry.customFields.coursework}` : '',
+      entry.customFields?.studyAbroad ? `Study abroad: ${entry.customFields.studyAbroad}` : '',
       entry.customFields?.honors ? `Honors: ${entry.customFields.honors}` : '',
     ]
       .filter(Boolean)
