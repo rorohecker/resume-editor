@@ -223,17 +223,81 @@ function sectionToPdfContent(section: Section, resume: Resume, pdfModule: PdfMod
   );
 }
 
+const MCCOMBS_SWAP_BOLD_PDF: Section['type'][] = ['experience', 'leadership', 'research'];
+
 function createPdfEntryRow(
   entry: Entry,
   section: Section,
   resume: Resume,
-  { Text, View, Link }: PdfModule,
+  pdfModule: PdfModule,
   styles: PdfStyles,
 ) {
+  const { Text, View, Link } = pdfModule;
+  const date = formatDateRange(entry.startDate, entry.endDate, entry.current, resume.styles.dateFormat);
+
+  if (resume.template === 'mccombs' && section.type === 'education') {
+    const cf = entry.customFields ?? {};
+    const majors = [cf.major, cf.secondMajor].map((m) => m?.trim()).filter(Boolean);
+    const degreeLine = [entry.title?.trim(), majors.join(' & ')].filter(Boolean).join(', ');
+    const lines: string[] = [];
+    if (degreeLine) lines.push(degreeLine);
+    if (cf.track?.trim()) lines.push(`Track: ${cf.track.trim()}`);
+    if (cf.minor?.trim()) lines.push(`Minor: ${cf.minor.trim()}`);
+    if (cf.certificate?.trim()) lines.push(`Certificate: ${cf.certificate.trim()}`);
+    if (cf.additionalCoursework?.trim())
+      lines.push(`Additional Coursework in ${cf.additionalCoursework.trim()}`);
+    if (cf.studyAbroad?.trim()) lines.push(cf.studyAbroad.trim());
+    if (cf.gpa?.trim()) lines.push(`Overall GPA: ${cf.gpa.trim()}`);
+    if (cf.honors?.trim()) lines.push(cf.honors.trim());
+
+    return createElement(
+      View,
+      { style: { flexDirection: 'row', gap: 10 } },
+      createElement(
+        View,
+        { style: { flexBasis: '32%', flexShrink: 0 } },
+        createElement(Text, { style: styles.entryTitle }, entry.subtitle?.trim() || ''),
+      ),
+      createElement(
+        View,
+        { style: { flexGrow: 1, flexShrink: 1 } },
+        ...lines.map((line, i) => createElement(Text, { key: `l${i}` }, line)),
+        cf.coursework?.trim() &&
+          createElement(
+            Text,
+            { key: 'cw', style: { marginTop: 2 } },
+            createElement(Text, { style: { fontWeight: 700 } }, 'Relevant Coursework: '),
+            cf.coursework.trim(),
+          ),
+      ),
+      date && createElement(Text, { style: { ...styles.date, flexShrink: 0 }, wrap: false }, date),
+    );
+  }
+
+  if (resume.template === 'mccombs' && MCCOMBS_SWAP_BOLD_PDF.includes(section.type)) {
+    const company = entry.subtitle?.trim();
+    const role = entry.title?.trim();
+    const location = entry.location?.trim();
+    const inline: ReturnType<typeof createElement>[] = [];
+    if (company) inline.push(createElement(Text, { key: 'c', style: { fontWeight: 700 } }, company));
+    if (company && role) inline.push(createElement(Text, { key: 'sep' }, ' - '));
+    if (role) inline.push(createElement(Text, { key: 'r', style: { fontStyle: 'italic' } }, role));
+    if ((company || role) && location)
+      inline.push(createElement(Text, { key: 'loc' }, `; ${location}`));
+    if (!company && !role && location)
+      inline.push(createElement(Text, { key: 'loc' }, location));
+
+    return createElement(
+      View,
+      { style: styles.entryRow },
+      createElement(View, { style: styles.entryLeft }, createElement(Text, null, ...inline)),
+      date && createElement(Text, { style: styles.date, wrap: false }, date),
+    );
+  }
+
   const title = titleForPreview(entry, section);
   const subtitle = subtitleForPreview(entry, section);
   const tertiary = tertiaryForPreview(entry, section);
-  const date = formatDateRange(entry.startDate, entry.endDate, entry.current, resume.styles.dateFormat);
 
   return createElement(
     View,

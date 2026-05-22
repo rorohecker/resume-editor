@@ -37,15 +37,15 @@ export const TEMPLATES: TemplateMeta[] = [
   {
     id: 'mccombs',
     name: 'UT Austin McCombs',
-    tagline: 'Business · Conservative',
+    tagline: 'Business · Per UT McCombs guide',
     description:
-      'Two-column header feel, single-column body, serif font. Conservative section order.',
+      '3-column education (school | degree | date). Company bold, position italic. Matches the McCombs BBA Recruit guide.',
     styles: {
       font: 'EB Garamond',
-      fontSize: { name: 24, sectionHeader: 11, entryTitle: 11, body: 10.5, contactLine: 10 },
+      fontSize: { name: 16, sectionHeader: 10.5, entryTitle: 10.5, body: 10, contactLine: 10 },
       colors: baseColors,
-      margins: { top: 0.75, bottom: 0.75, left: 0.75, right: 0.75 },
-      spacing: baseSpacing,
+      margins: { top: 0.6, bottom: 0.6, left: 0.6, right: 0.6 },
+      spacing: { section: 6, entry: 3, bullet: 1.15 },
       ruleStyle: { variant: 'full', weight: 0.5 },
       dateFormat: 'month-year',
       paperSize: 'letter',
@@ -53,10 +53,12 @@ export const TEMPLATES: TemplateMeta[] = [
     defaultSections: [
       { type: 'education', title: 'Education' },
       { type: 'experience', title: 'Experience' },
-      { type: 'leadership', title: 'Leadership' },
-      { type: 'skills', title: 'Skills' },
+      { type: 'projects', title: 'Projects / Independent Work / Academic Projects' },
+      { type: 'leadership', title: 'Leadership Experience and Activities' },
+      { type: 'awards', title: 'Honors' },
+      { type: 'skills', title: 'Additional Information & Skills' },
     ],
-    defaultContactFields: ['email', 'phone', 'linkedin', 'location'],
+    defaultContactFields: ['location', 'email', 'phone', 'linkedin', 'github'],
   },
   {
     id: 'natural-sciences',

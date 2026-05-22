@@ -258,6 +258,8 @@ function TextSection({ section }: { section: Section }) {
   return <p style={{ margin: 0 }}>{text}</p>;
 }
 
+const MCCOMBS_SWAP_BOLD: Section['type'][] = ['experience', 'leadership', 'research'];
+
 function EntryBlock({
   entry,
   section,
@@ -278,6 +280,20 @@ function EntryBlock({
   );
 
   const entrySpacing = section.styleOverrides?.entrySpacing ?? styles.spacing.entry;
+
+  // McCombs education uses a 3-column layout: institution | degree details | date.
+  if (resume.template === 'mccombs' && section.type === 'education') {
+    return (
+      <div style={{ marginTop: first ? 0 : pt(entrySpacing) }}>
+        <McCombsEducationRow entry={entry} resume={resume} date={date} />
+      </div>
+    );
+  }
+
+  // McCombs experience/leadership/research render the entity bold and the role italic on one line.
+  const swapBold =
+    resume.template === 'mccombs' && MCCOMBS_SWAP_BOLD.includes(section.type);
+
   return (
     <div style={{ marginTop: first ? 0 : pt(entrySpacing) }}>
       <div
@@ -289,7 +305,11 @@ function EntryBlock({
         }}
       >
         <div style={{ minWidth: 0 }}>
-          <EntryLeft entry={entry} section={section} resume={resume} />
+          {swapBold ? (
+            <McCombsInlineHeader entry={entry} section={section} resume={resume} />
+          ) : (
+            <EntryLeft entry={entry} section={section} resume={resume} />
+          )}
         </div>
         {date && (
           <div
@@ -306,6 +326,96 @@ function EntryBlock({
 
       {sectionHasBullets(section) && (
         <BulletList bullets={entry.bullets ?? []} resume={resume} />
+      )}
+    </div>
+  );
+}
+
+function McCombsEducationRow({
+  entry,
+  resume,
+  date,
+}: {
+  entry: Entry;
+  resume: Resume;
+  date: string;
+}) {
+  const { styles } = resume;
+  const cf = entry.customFields ?? {};
+  const majors = [cf.major, cf.secondMajor].map((m) => m?.trim()).filter(Boolean);
+  const degreeLine = [entry.title?.trim(), majors.join(' & ')].filter(Boolean).join(', ');
+  const lines: string[] = [];
+  if (degreeLine) lines.push(degreeLine);
+  if (cf.track?.trim()) lines.push(`Track: ${cf.track.trim()}`);
+  if (cf.minor?.trim()) lines.push(`Minor: ${cf.minor.trim()}`);
+  if (cf.certificate?.trim()) lines.push(`Certificate: ${cf.certificate.trim()}`);
+  if (cf.additionalCoursework?.trim())
+    lines.push(`Additional Coursework in ${cf.additionalCoursework.trim()}`);
+  if (cf.studyAbroad?.trim()) lines.push(cf.studyAbroad.trim());
+  if (cf.gpa?.trim()) lines.push(`Overall GPA: ${cf.gpa.trim()}`);
+  if (cf.honors?.trim()) lines.push(cf.honors.trim());
+
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'minmax(140px, 1.1fr) minmax(0, 2.2fr) max-content',
+        columnGap: pt(10),
+        alignItems: 'baseline',
+      }}
+    >
+      <div style={{ fontWeight: 700, fontSize: pt(styles.fontSize.entryTitle) }}>
+        {entry.subtitle?.trim() || ''}
+      </div>
+      <div style={{ minWidth: 0 }}>
+        {lines.map((line, i) => (
+          <div key={i}>{line}</div>
+        ))}
+        {cf.coursework?.trim() && (
+          <div style={{ marginTop: pt(2) }}>
+            <span style={{ fontWeight: 700 }}>Relevant Coursework:</span> {cf.coursework.trim()}
+          </div>
+        )}
+      </div>
+      {date && (
+        <div style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>{date}</div>
+      )}
+    </div>
+  );
+}
+
+function McCombsInlineHeader({
+  entry,
+  section,
+  resume,
+}: {
+  entry: Entry;
+  section: Section;
+  resume: Resume;
+}) {
+  const company = entry.subtitle?.trim();
+  const role = entry.title?.trim();
+  const location = entry.location?.trim();
+  return (
+    <div
+      style={{
+        fontSize: pt(resume.styles.fontSize.entryTitle),
+      }}
+    >
+      {company && <span style={{ fontWeight: 700 }}>{company}</span>}
+      {company && role && <span> - </span>}
+      {role && <span style={{ fontStyle: 'italic' }}>{role}</span>}
+      {(company || role) && location && <span>; {location}</span>}
+      {!company && !role && location && <span>{location}</span>}
+      {section.type === 'projects' && entry.customFields?.githubUrl && (
+        <div>
+          <a
+            href={hrefFromRaw(entry.customFields.githubUrl)}
+            style={{ color: resume.styles.colors.accent, textDecoration: 'none' }}
+          >
+            {entry.customFields.githubUrl}
+          </a>
+        </div>
       )}
     </div>
   );
