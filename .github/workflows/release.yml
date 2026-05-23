@@ -1,0 +1,52 @@
+name: Attach single-file html to release
+
+# Fires when a release tag is pushed (e.g. v0.2.4) or a release is published
+# from the GitHub UI. Builds the self-contained single-file html and attaches
+# it to the matching GitHub Release so users have a one-click download.
+on:
+  push:
+    tags:
+      - 'v*'
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-attach:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Build single-file html
+        run: npm run build:single
+      - name: Compute version
+        id: ver
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME}"
+          else
+            VERSION="v$(node -p "require('./package.json').version")"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+      - name: Rename for download
+        run: cp dist-single/index.html "resume-editor-${{ steps.ver.outputs.version }}.html"
+      - name: Ensure release exists, then upload asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.ver.outputs.version }}"
+          # If no release exists for this tag yet (tag-push path), create one.
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --notes "Automated build. See commit history for changes." \
+              "resume-editor-${TAG}.html"
+          else
+            gh release upload "$TAG" "resume-editor-${TAG}.html" --clobber
+          fi
