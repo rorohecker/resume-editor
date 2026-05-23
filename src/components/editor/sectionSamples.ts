@@ -38,6 +38,24 @@ export function sampleEntryForSection(section: Section) {
           coursework: 'Algorithms, Operating Systems, Databases',
         },
       };
+    case 'study-abroad':
+      return {
+        id,
+        title: 'Semester Exchange Program',
+        subtitle: 'Host University Name',
+        location: 'City, Country',
+        startDate: 'Spring 2026',
+        endDate: 'May 2026',
+        bullets: [
+          { id: makeId(), content: 'Cross-Cultural Negotiation (taught in English)', visible: true, order: 0 },
+          { id: makeId(), content: 'European Business Strategy', visible: true, order: 1 },
+        ],
+        customFields: {
+          gpa: '3.85',
+          coursework: 'Intl Marketing, Comparative Economics, Business Spanish',
+          language: 'Spanish',
+        },
+      };
     case 'projects':
       return {
         id,

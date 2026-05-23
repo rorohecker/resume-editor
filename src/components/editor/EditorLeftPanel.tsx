@@ -33,6 +33,7 @@ import type {
   SectionLayout,
   SectionType,
   SeparatorStyle,
+  TemplateId,
 } from '@/types';
 import { iconForContactType } from '@/utils/contactIcon';
 import { makeId } from '@/utils/id';
@@ -57,6 +58,7 @@ const CONTACT_TYPES: ContactFieldType[] = [
 const SECTION_TYPES: SectionType[] = [
   'experience',
   'education',
+  'study-abroad',
   'projects',
   'skills',
   'leadership',
@@ -66,6 +68,50 @@ const SECTION_TYPES: SectionType[] = [
   'publications',
   'summary',
   'custom',
+];
+
+// Common UT McCombs majors / tracks. Used by the McCombs-track select on
+// Education entries. Picking one auto-fills the Major field.
+export const MCCOMBS_TRACKS: { value: string; label: string; major: string }[] = [
+  { value: 'undeclared', label: 'Undeclared Business', major: 'Undeclared Business' },
+  { value: 'accounting', label: 'Accounting', major: 'Accounting' },
+  { value: 'business-analytics', label: 'Business Analytics', major: 'Business Analytics' },
+  { value: 'canfield-honors', label: 'Canfield Business Honors Program', major: 'Canfield Business Honors Program' },
+  { value: 'finance', label: 'Finance', major: 'Finance' },
+  { value: 'impa', label: 'Integrated MPA', major: 'Integrated MPA' },
+  { value: 'international-business', label: 'International Business (Skills Track)', major: 'International Business' },
+  { value: 'management', label: 'Management', major: 'Management' },
+  { value: 'mis', label: 'Management Information Systems', major: 'Management Information Systems' },
+  { value: 'marketing', label: 'Marketing', major: 'Marketing' },
+  { value: 'supply-chain', label: 'Supply Chain Management', major: 'Supply Chain Management' },
+];
+
+// Common degree title suggestions. Datalist on the Degree input so users can
+// type either the short form (BBA) or the long form (Bachelor of Business
+// Administration) without guessing the convention.
+const DEGREE_SUGGESTIONS = [
+  'BBA',
+  'Bachelor of Business Administration',
+  'BSE',
+  'Bachelor of Science in Engineering',
+  'BS',
+  'Bachelor of Science',
+  'BSBA',
+  'BA',
+  'Bachelor of Arts',
+  'BFA',
+  'Bachelor of Fine Arts',
+  'MBA',
+  'Master of Business Administration',
+  'MS',
+  'Master of Science',
+  'MA',
+  'Master of Arts',
+  'MFA',
+  'MPA',
+  'JD',
+  'MD',
+  'PhD',
 ];
 
 const DATE_FORMATS: { value: DateFormat; label: string }[] = [
@@ -769,7 +815,14 @@ function SectionEditor({
   };
 
   const addEntry = () => {
-    patchSection({ entries: [...section.entries, createEntry(section, t)] });
+    updateResume((current) => ({
+      ...current,
+      sections: current.sections.map((item) =>
+        item.id === section.id
+          ? { ...item, entries: [...item.entries, createEntry(item, t, current.template)] }
+          : item,
+      ),
+    }));
   };
 
   const updateEntry = (entryId: string, patch: Partial<Entry>) => {
@@ -1043,11 +1096,29 @@ function EntryEditor({
       <div className="space-y-3">
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <Field label={labels.title}>
-            <input
-              value={entry.title ?? ''}
-              onChange={(e) => onUpdate({ title: e.target.value })}
-              className="input"
-            />
+            {labels.titleSuggestions ? (
+              <>
+                <input
+                  value={entry.title ?? ''}
+                  onChange={(e) => onUpdate({ title: e.target.value })}
+                  list={`title-suggest-${entry.id}`}
+                  placeholder={labels.titlePlaceholder}
+                  className="input"
+                />
+                <datalist id={`title-suggest-${entry.id}`}>
+                  {labels.titleSuggestions.map((opt) => (
+                    <option key={opt} value={opt} />
+                  ))}
+                </datalist>
+              </>
+            ) : (
+              <input
+                value={entry.title ?? ''}
+                onChange={(e) => onUpdate({ title: e.target.value })}
+                placeholder={labels.titlePlaceholder}
+                className="input"
+              />
+            )}
           </Field>
           {labels.subtitle && (
             <Field label={labels.subtitle}>
@@ -1070,23 +1141,67 @@ function EntryEditor({
           </Field>
         )}
 
-        {labels.customFields.map((field) => (
-          <Field key={field.key} label={field.label}>
-            <input
-              value={entry.customFields?.[field.key] ?? ''}
-              onChange={(e) =>
-                onUpdate({
-                  customFields: {
-                    ...(entry.customFields ?? {}),
-                    [field.key]: e.target.value,
-                  },
-                })
-              }
-              placeholder={field.placeholder}
-              className="input"
-            />
-          </Field>
-        ))}
+        {labels.customFields.map((field) => {
+          // Select fields render as <select>. mccombsTrack additionally auto-
+          // fills the Major field with the track's canonical major name.
+          if (field.options) {
+            const value = entry.customFields?.[field.key] ?? '';
+            return (
+              <Field key={field.key} label={field.label}>
+                <select
+                  value={value}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    const patch: Record<string, string> = {
+                      ...(entry.customFields ?? {}),
+                      [field.key]: next,
+                    };
+                    if (field.autoFill) {
+                      const filled = field.autoFill(next);
+                      for (const [k, v] of Object.entries(filled)) {
+                        patch[k] = v;
+                      }
+                    }
+                    onUpdate({ customFields: patch });
+                  }}
+                  className="input"
+                >
+                  <option value="">{field.placeholder ?? '—'}</option>
+                  {field.options.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            );
+          }
+          return (
+            <Field key={field.key} label={field.label}>
+              <input
+                value={entry.customFields?.[field.key] ?? ''}
+                onChange={(e) =>
+                  onUpdate({
+                    customFields: {
+                      ...(entry.customFields ?? {}),
+                      [field.key]: e.target.value,
+                    },
+                  })
+                }
+                placeholder={field.placeholder}
+                list={field.suggestions ? `cf-suggest-${entry.id}-${field.key}` : undefined}
+                className="input"
+              />
+              {field.suggestions && (
+                <datalist id={`cf-suggest-${entry.id}-${field.key}`}>
+                  {field.suggestions.map((opt) => (
+                    <option key={opt} value={opt} />
+                  ))}
+                </datalist>
+              )}
+            </Field>
+          );
+        })}
 
         {labels.url && (
           <Field label={labels.url}>
@@ -1517,16 +1632,32 @@ function InlineWarning({ children }: { children: ReactNode }) {
   );
 }
 
+interface CustomFieldConfig {
+  key: string;
+  label: string;
+  placeholder?: string;
+  // Datalist suggestions for free-text inputs.
+  suggestions?: string[];
+  // If present, the field renders as a <select>. autoFill optionally returns
+  // additional customFields to set when the user picks an option (used by the
+  // McCombs track selector to populate Major).
+  options?: { value: string; label: string }[];
+  autoFill?: (value: string) => Record<string, string>;
+}
+
 interface EntryLabels {
   add: string;
   title: string;
+  // Datalist suggestions for the title input (e.g. degree shortforms/longforms).
+  titleSuggestions?: string[];
+  titlePlaceholder?: string;
   subtitle?: string;
   location?: string;
   dates: boolean;
   current: boolean;
   bullets: boolean;
   url?: string;
-  customFields: { key: string; label: string; placeholder?: string }[];
+  customFields: CustomFieldConfig[];
 }
 
 function entryLabels(type: SectionType, t?: TFunction): EntryLabels {
@@ -1535,22 +1666,50 @@ function entryLabels(type: SectionType, t?: TFunction): EntryLabels {
       return {
         add: label(t, 'editor.addSchool', 'Add school'),
         title: label(t, 'editor.degree', 'Degree'),
+        titleSuggestions: DEGREE_SUGGESTIONS,
+        titlePlaceholder: label(t, 'editor.degreePlaceholder', 'e.g. BBA or Bachelor of Business Administration'),
         subtitle: label(t, 'editor.institution', 'Institution'),
         location: label(t, 'editor.location', 'Location'),
         dates: true,
         current: false,
         bullets: false,
         customFields: [
+          {
+            key: 'mccombsTrack',
+            label: label(t, 'editor.mccombsTrack', 'McCombs track (UT Austin)'),
+            placeholder: label(t, 'editor.mccombsTrackPlaceholder', 'Not a McCombs student'),
+            options: MCCOMBS_TRACKS.map((tr) => ({ value: tr.value, label: tr.label })),
+            autoFill: (value): Record<string, string> => {
+              const found = MCCOMBS_TRACKS.find((tr) => tr.value === value);
+              if (!found) return {};
+              return { major: found.major };
+            },
+          },
           { key: 'major', label: label(t, 'editor.major', 'Major'), placeholder: label(t, 'editor.majorPlaceholder', 'e.g. Electrical and Computer Engineering') },
           { key: 'secondMajor', label: label(t, 'editor.secondMajor', 'Second major'), placeholder: label(t, 'editor.secondMajorPlaceholder', 'Optional additional major') },
-          { key: 'track', label: label(t, 'editor.track', 'Track'), placeholder: label(t, 'editor.trackPlaceholder', 'e.g. Corporate Finance & Investment Banking') },
+          { key: 'track', label: label(t, 'editor.track', 'Track / concentration'), placeholder: label(t, 'editor.trackPlaceholder', 'e.g. Corporate Finance & Investment Banking') },
           { key: 'minor', label: label(t, 'editor.minor', 'Minor'), placeholder: label(t, 'editor.minorPlaceholder', 'e.g. Business, Mathematics') },
           { key: 'certificate', label: label(t, 'editor.certificate', 'Certificate'), placeholder: label(t, 'editor.certificatePlaceholder', 'e.g. Digital Arts & Media, Elements of Computing') },
           { key: 'additionalCoursework', label: label(t, 'editor.additionalCoursework', 'Additional coursework'), placeholder: label(t, 'editor.additionalCourseworkPlaceholder', 'e.g. Marketing, 9 hours') },
           { key: 'coursework', label: label(t, 'editor.coursework', 'Relevant coursework'), placeholder: label(t, 'editor.courseworkPlaceholder', 'Comma-separated; rendered below the entry') },
-          { key: 'studyAbroad', label: label(t, 'editor.studyAbroad', 'Study abroad (inline)'), placeholder: label(t, 'editor.studyAbroadPlaceholder', 'Inline note. For a full row, add a second Education entry.') },
+          { key: 'studyAbroad', label: label(t, 'editor.studyAbroad', 'Study abroad (inline)'), placeholder: label(t, 'editor.studyAbroadPlaceholder', 'Inline note. For a full row, use the Study Abroad section.') },
           { key: 'gpa', label: label(t, 'editor.gpa', 'GPA') },
           { key: 'honors', label: label(t, 'editor.honors', 'Honors / Awards') },
+        ],
+      };
+    case 'study-abroad':
+      return {
+        add: label(t, 'editor.addStudyAbroad', 'Add study abroad'),
+        title: label(t, 'editor.program', 'Program'),
+        subtitle: label(t, 'editor.institution', 'Host institution'),
+        location: label(t, 'editor.location', 'City, Country'),
+        dates: true,
+        current: false,
+        bullets: true,
+        customFields: [
+          { key: 'gpa', label: label(t, 'editor.gpa', 'GPA'), placeholder: label(t, 'editor.gpaPlaceholder', 'e.g. 3.85') },
+          { key: 'coursework', label: label(t, 'editor.coursesTaken', 'Courses taken'), placeholder: label(t, 'editor.coursesTakenPlaceholder', 'Comma-separated; rendered below the entry') },
+          { key: 'language', label: label(t, 'editor.languageOfInstruction', 'Language of instruction'), placeholder: 'e.g. Spanish, English' },
         ],
       };
     case 'projects':
@@ -1657,7 +1816,7 @@ function createSection(type: SectionType, order: number, t?: TFunction): Section
   };
 }
 
-function createEntry(section: Section, t?: TFunction): Entry {
+function createEntry(section: Section, t?: TFunction, templateId?: TemplateId): Entry {
   if (section.type === 'skills' || section.layout === 'skills-grid') {
     return { id: makeId(), title: label(t, 'editor.defaultSkillCategory', 'Languages'), subtitle: '' };
   }
@@ -1681,7 +1840,10 @@ function createEntry(section: Section, t?: TFunction): Entry {
     bullets: entryLabels(section.type).bullets
       ? [{ id: makeId(), content: '', visible: true, order: 0 }]
       : [],
-    customFields: {},
+    customFields:
+      templateId === 'mccombs' && section.type === 'education'
+        ? { mccombsTrack: 'undeclared', major: 'Undeclared Business' }
+        : {},
   };
 }
 
@@ -1725,6 +1887,8 @@ function defaultSectionTitle(type: SectionType, t?: TFunction): string {
       return label(t, 'editor.sectionExperience', 'Experience');
     case 'education':
       return label(t, 'editor.sectionEducation', 'Education');
+    case 'study-abroad':
+      return label(t, 'editor.sectionStudyAbroad', 'Study Abroad');
     case 'projects':
       return label(t, 'editor.sectionProjects', 'Projects');
     case 'skills':

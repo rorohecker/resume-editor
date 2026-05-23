@@ -323,6 +323,7 @@ export function ImportResumeModal({
 const SECTION_TYPES_FOR_PICKER: SectionType[] = [
   'experience',
   'education',
+  'study-abroad',
   'projects',
   'skills',
   'leadership',

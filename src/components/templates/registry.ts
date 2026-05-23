@@ -52,6 +52,7 @@ export const TEMPLATES: TemplateMeta[] = [
     },
     defaultSections: [
       { type: 'education', title: 'Education' },
+      { type: 'study-abroad', title: 'Study Abroad' },
       { type: 'experience', title: 'Experience' },
       { type: 'projects', title: 'Projects / Independent Work / Academic Projects' },
       { type: 'leadership', title: 'Leadership Experience and Activities' },

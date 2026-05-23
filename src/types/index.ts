@@ -10,6 +10,7 @@ export type TemplateId =
 export type SectionType =
   | 'experience'
   | 'education'
+  | 'study-abroad'
   | 'projects'
   | 'skills'
   | 'leadership'

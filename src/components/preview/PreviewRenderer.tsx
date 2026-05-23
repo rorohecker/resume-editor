@@ -281,11 +281,15 @@ function EntryBlock({
 
   const entrySpacing = section.styleOverrides?.entrySpacing ?? styles.spacing.entry;
 
-  // McCombs education uses a 3-column layout: institution | degree details | date.
-  if (resume.template === 'mccombs' && section.type === 'education') {
+  // McCombs education (and the parallel Study Abroad section) use a 3-column
+  // layout: institution | degree-or-program details | date.
+  if (
+    resume.template === 'mccombs' &&
+    (section.type === 'education' || section.type === 'study-abroad')
+  ) {
     return (
       <div style={{ marginTop: first ? 0 : pt(entrySpacing) }}>
-        <McCombsEducationRow entry={entry} resume={resume} date={date} />
+        <McCombsEducationRow entry={entry} section={section} resume={resume} date={date} />
       </div>
     );
   }
@@ -333,27 +337,38 @@ function EntryBlock({
 
 function McCombsEducationRow({
   entry,
+  section,
   resume,
   date,
 }: {
   entry: Entry;
+  section: Section;
   resume: Resume;
   date: string;
 }) {
   const { styles } = resume;
   const cf = entry.customFields ?? {};
-  const majors = [cf.major, cf.secondMajor].map((m) => m?.trim()).filter(Boolean);
-  const degreeLine = [entry.title?.trim(), majors.join(' & ')].filter(Boolean).join(', ');
   const lines: string[] = [];
-  if (degreeLine) lines.push(degreeLine);
-  if (cf.track?.trim()) lines.push(`Track: ${cf.track.trim()}`);
-  if (cf.minor?.trim()) lines.push(`Minor: ${cf.minor.trim()}`);
-  if (cf.certificate?.trim()) lines.push(`Certificate: ${cf.certificate.trim()}`);
-  if (cf.additionalCoursework?.trim())
-    lines.push(`Additional Coursework in ${cf.additionalCoursework.trim()}`);
-  if (cf.studyAbroad?.trim()) lines.push(cf.studyAbroad.trim());
-  if (cf.gpa?.trim()) lines.push(`Overall GPA: ${cf.gpa.trim()}`);
-  if (cf.honors?.trim()) lines.push(cf.honors.trim());
+  if (section.type === 'study-abroad') {
+    const program = entry.title?.trim();
+    const loc = entry.location?.trim();
+    const header = program && loc ? `${program} in ${loc}` : program || loc || '';
+    if (header) lines.push(header);
+    if (cf.language?.trim()) lines.push(`Language of instruction: ${cf.language.trim()}`);
+    if (cf.gpa?.trim()) lines.push(`Overall GPA: ${cf.gpa.trim()}`);
+  } else {
+    const majors = [cf.major, cf.secondMajor].map((m) => m?.trim()).filter(Boolean);
+    const degreeLine = [entry.title?.trim(), majors.join(' & ')].filter(Boolean).join(', ');
+    if (degreeLine) lines.push(degreeLine);
+    if (cf.track?.trim()) lines.push(`Track: ${cf.track.trim()}`);
+    if (cf.minor?.trim()) lines.push(`Minor: ${cf.minor.trim()}`);
+    if (cf.certificate?.trim()) lines.push(`Certificate: ${cf.certificate.trim()}`);
+    if (cf.additionalCoursework?.trim())
+      lines.push(`Additional Coursework in ${cf.additionalCoursework.trim()}`);
+    if (cf.studyAbroad?.trim()) lines.push(cf.studyAbroad.trim());
+    if (cf.gpa?.trim()) lines.push(`Overall GPA: ${cf.gpa.trim()}`);
+    if (cf.honors?.trim()) lines.push(cf.honors.trim());
+  }
 
   return (
     <div
@@ -373,7 +388,10 @@ function McCombsEducationRow({
         ))}
         {cf.coursework?.trim() && (
           <div style={{ marginTop: pt(2) }}>
-            <span style={{ fontWeight: 700 }}>Relevant Coursework:</span> {cf.coursework.trim()}
+            <span style={{ fontWeight: 700 }}>
+              {section.type === 'study-abroad' ? 'Courses Taken:' : 'Relevant Coursework:'}
+            </span>{' '}
+            {cf.coursework.trim()}
           </div>
         )}
       </div>
@@ -613,6 +631,16 @@ function tertiaryForPreview(entry: Entry, section: Section): string {
       entry.customFields?.coursework ? `Coursework: ${entry.customFields.coursework}` : '',
       entry.customFields?.studyAbroad ? `Study abroad: ${entry.customFields.studyAbroad}` : '',
       entry.customFields?.honors ? `Honors: ${entry.customFields.honors}` : '',
+    ]
+      .filter(Boolean)
+      .join(' | ');
+  }
+  if (section.type === 'study-abroad') {
+    return [
+      entry.location,
+      entry.customFields?.gpa ? `GPA: ${entry.customFields.gpa}` : '',
+      entry.customFields?.language ? `Language: ${entry.customFields.language}` : '',
+      entry.customFields?.coursework ? `Courses: ${entry.customFields.coursework}` : '',
     ]
       .filter(Boolean)
       .join(' | ');

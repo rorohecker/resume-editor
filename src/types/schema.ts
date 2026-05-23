@@ -23,6 +23,7 @@ const TEMPLATE_IDS: TemplateId[] = ['mccombs', 'natural-sciences', 'cs-swe', 'ge
 const SECTION_TYPES: SectionType[] = [
   'experience',
   'education',
+  'study-abroad',
   'projects',
   'skills',
   'leadership',
@@ -283,6 +284,8 @@ function defaultSectionTitle(type: SectionType): string {
       return 'Experience';
     case 'education':
       return 'Education';
+    case 'study-abroad':
+      return 'Study Abroad';
     case 'projects':
       return 'Projects';
     case 'skills':

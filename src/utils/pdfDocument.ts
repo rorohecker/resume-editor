@@ -235,20 +235,32 @@ function createPdfEntryRow(
   const { Text, View, Link } = pdfModule;
   const date = formatDateRange(entry.startDate, entry.endDate, entry.current, resume.styles.dateFormat);
 
-  if (resume.template === 'mccombs' && section.type === 'education') {
+  if (
+    resume.template === 'mccombs' &&
+    (section.type === 'education' || section.type === 'study-abroad')
+  ) {
     const cf = entry.customFields ?? {};
-    const majors = [cf.major, cf.secondMajor].map((m) => m?.trim()).filter(Boolean);
-    const degreeLine = [entry.title?.trim(), majors.join(' & ')].filter(Boolean).join(', ');
     const lines: string[] = [];
-    if (degreeLine) lines.push(degreeLine);
-    if (cf.track?.trim()) lines.push(`Track: ${cf.track.trim()}`);
-    if (cf.minor?.trim()) lines.push(`Minor: ${cf.minor.trim()}`);
-    if (cf.certificate?.trim()) lines.push(`Certificate: ${cf.certificate.trim()}`);
-    if (cf.additionalCoursework?.trim())
-      lines.push(`Additional Coursework in ${cf.additionalCoursework.trim()}`);
-    if (cf.studyAbroad?.trim()) lines.push(cf.studyAbroad.trim());
-    if (cf.gpa?.trim()) lines.push(`Overall GPA: ${cf.gpa.trim()}`);
-    if (cf.honors?.trim()) lines.push(cf.honors.trim());
+    if (section.type === 'study-abroad') {
+      const program = entry.title?.trim();
+      const loc = entry.location?.trim();
+      const header = program && loc ? `${program} in ${loc}` : program || loc || '';
+      if (header) lines.push(header);
+      if (cf.language?.trim()) lines.push(`Language of instruction: ${cf.language.trim()}`);
+      if (cf.gpa?.trim()) lines.push(`Overall GPA: ${cf.gpa.trim()}`);
+    } else {
+      const majors = [cf.major, cf.secondMajor].map((m) => m?.trim()).filter(Boolean);
+      const degreeLine = [entry.title?.trim(), majors.join(' & ')].filter(Boolean).join(', ');
+      if (degreeLine) lines.push(degreeLine);
+      if (cf.track?.trim()) lines.push(`Track: ${cf.track.trim()}`);
+      if (cf.minor?.trim()) lines.push(`Minor: ${cf.minor.trim()}`);
+      if (cf.certificate?.trim()) lines.push(`Certificate: ${cf.certificate.trim()}`);
+      if (cf.additionalCoursework?.trim())
+        lines.push(`Additional Coursework in ${cf.additionalCoursework.trim()}`);
+      if (cf.studyAbroad?.trim()) lines.push(cf.studyAbroad.trim());
+      if (cf.gpa?.trim()) lines.push(`Overall GPA: ${cf.gpa.trim()}`);
+      if (cf.honors?.trim()) lines.push(cf.honors.trim());
+    }
 
     return createElement(
       View,
@@ -266,7 +278,11 @@ function createPdfEntryRow(
           createElement(
             Text,
             { key: 'cw', style: { marginTop: 2 } },
-            createElement(Text, { style: { fontWeight: 700 } }, 'Relevant Coursework: '),
+            createElement(
+              Text,
+              { style: { fontWeight: 700 } },
+              section.type === 'study-abroad' ? 'Courses Taken: ' : 'Relevant Coursework: ',
+            ),
             cf.coursework.trim(),
           ),
       ),
@@ -376,6 +392,16 @@ function tertiaryForPreview(entry: Entry, section: Section): string {
       entry.customFields?.coursework ? `Coursework: ${entry.customFields.coursework}` : '',
       entry.customFields?.studyAbroad ? `Study abroad: ${entry.customFields.studyAbroad}` : '',
       entry.customFields?.honors ? `Honors: ${entry.customFields.honors}` : '',
+    ]
+      .filter(Boolean)
+      .join(' | ');
+  }
+  if (section.type === 'study-abroad') {
+    return [
+      entry.location,
+      entry.customFields?.gpa ? `GPA: ${entry.customFields.gpa}` : '',
+      entry.customFields?.language ? `Language: ${entry.customFields.language}` : '',
+      entry.customFields?.coursework ? `Courses: ${entry.customFields.coursework}` : '',
     ]
       .filter(Boolean)
       .join(' | ');

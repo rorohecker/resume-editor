@@ -1,7 +1,32 @@
-import type { Resume, TemplateId } from '@/types';
+import type { Entry, Resume, SectionType, TemplateId } from '@/types';
 import { makeId } from '@/utils/id';
 import { defaultLabelForContactType } from '@/utils/contactIcon';
 import { getTemplate } from './registry';
+
+// Pre-seeded entries for templates that have a sensible default starting point.
+// Today only McCombs seeds an Education entry with the Undeclared Business
+// track so new students don't stare at an empty section.
+function seedEntriesFor(templateId: TemplateId, sectionType: SectionType): Entry[] {
+  if (templateId === 'mccombs' && sectionType === 'education') {
+    return [
+      {
+        id: makeId(),
+        title: 'BBA',
+        subtitle: 'The University of Texas at Austin',
+        location: 'Austin, TX',
+        startDate: '',
+        endDate: '',
+        bullets: [],
+        customFields: {
+          mccombsTrack: 'undeclared',
+          major: 'Undeclared Business',
+          gpa: '',
+        },
+      },
+    ];
+  }
+  return [];
+}
 
 export function createResumeFromTemplate(templateId: TemplateId): Resume {
   const tpl = getTemplate(templateId);
@@ -32,7 +57,7 @@ export function createResumeFromTemplate(templateId: TemplateId): Resume {
       visible: true,
       order: i,
       layout: seed.type === 'skills' ? 'skills-grid' : 'entry-based',
-      entries: [],
+      entries: seedEntriesFor(templateId, seed.type),
     })),
     styles: tpl.styles,
   };

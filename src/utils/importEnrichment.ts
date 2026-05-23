@@ -155,6 +155,7 @@ const CONTACT_TYPES: ContactFieldType[] = [
 const SECTION_TYPES: SectionType[] = [
   'experience',
   'education',
+  'study-abroad',
   'projects',
   'skills',
   'leadership',
