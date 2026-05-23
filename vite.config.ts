@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import { viteSingleFile } from 'vite-plugin-singlefile';
 import path from 'node:path';
 
 // Path the app expects to be served from. Default to relative ('./') so the
@@ -9,10 +10,16 @@ import path from 'node:path';
 // pass APP_BASE at build time.
 const base = process.env.APP_BASE ?? './';
 
+// SINGLE_FILE=1 collapses the whole app into one self-contained index.html that
+// runs from file:// with no extra files. Disables the PWA service worker
+// because SWs cannot register from a file:// origin.
+const singleFile = process.env.SINGLE_FILE === '1';
+
 export default defineConfig({
   base,
   plugins: [
     react(),
+    !singleFile &&
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg'],
@@ -66,6 +73,7 @@ export default defineConfig({
         ],
       },
     }),
+    singleFile && viteSingleFile({ removeViteModuleLoader: true }),
   ],
   resolve: {
     alias: {
@@ -78,5 +86,20 @@ export default defineConfig({
   },
   build: {
     chunkSizeWarningLimit: 1600,
+    // In single-file mode, force everything inline by killing chunk splitting,
+    // CSS code-splitting, and asset inlining limits.
+    ...(singleFile
+      ? {
+          cssCodeSplit: false,
+          assetsInlineLimit: 100_000_000,
+          outDir: 'dist-single',
+          rollupOptions: {
+            output: {
+              manualChunks: undefined,
+              inlineDynamicImports: true,
+            },
+          },
+        }
+      : {}),
   },
 });

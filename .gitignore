@@ -1,5 +1,6 @@
 node_modules
 dist
+dist-single
 dist-ssr
 *.local
 .DS_Store

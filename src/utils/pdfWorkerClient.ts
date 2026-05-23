@@ -10,6 +10,13 @@ let workerBroken = false;
 function getWorker(): Worker | null {
   if (workerBroken) return null;
   if (worker) return worker;
+  // Module workers from file:// fail in most browsers. The single-file build
+  // runs from file://, so skip the worker entirely and let the main-thread
+  // fallback handle rendering.
+  if (typeof location !== 'undefined' && location.protocol === 'file:') {
+    workerBroken = true;
+    return null;
+  }
   try {
     worker = new Worker(new URL('@/workers/pdfWorker.ts', import.meta.url), {
       type: 'module',
