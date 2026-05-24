@@ -21,6 +21,7 @@ import { analyzeSingleBullet } from '@/utils/aiAssist';
 import { sampleEntryForSection } from './sectionSamples';
 import type {
   Bullet,
+  BulletGlyph,
   ContactField,
   ContactFieldType,
   DateFormat,
@@ -740,6 +741,20 @@ function AppearanceControls({
               <option value="a4">{t('editor.paperA4')}</option>
             </select>
           </Field>
+          <Field label={t('editor.bulletStyle', { defaultValue: 'Bullet style' })}>
+            <select
+              value={resume.styles.bulletStyle ?? 'disc'}
+              onChange={(e) => updateStyles({ bulletStyle: e.target.value as BulletGlyph })}
+              className="input"
+            >
+              <option value="disc">• {t('editor.bulletDisc', { defaultValue: 'Disc' })}</option>
+              <option value="circle">◦ {t('editor.bulletCircle', { defaultValue: 'Circle' })}</option>
+              <option value="square">▪ {t('editor.bulletSquare', { defaultValue: 'Square' })}</option>
+              <option value="dash">– {t('editor.bulletDash', { defaultValue: 'Dash' })}</option>
+              <option value="arrow">› {t('editor.bulletArrow', { defaultValue: 'Arrow' })}</option>
+              <option value="none">{t('editor.bulletNone', { defaultValue: 'None (no marker)' })}</option>
+            </select>
+          </Field>
           <label className="mt-5 flex items-center gap-2 text-xs text-ink-muted">
             <input
               type="checkbox"
@@ -1047,6 +1062,17 @@ function EntryListEditor({
           />
         )}
       </SortableList>
+
+      {section.entries.length > 0 && (
+        <button
+          type="button"
+          onClick={onAdd}
+          className="flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-paper-edge px-3 py-2 text-xs font-medium text-ink-muted hover:border-ink-subtle hover:bg-paper-tint hover:text-ink"
+        >
+          <Plus size={14} />
+          {labels.add}
+        </button>
+      )}
     </div>
   );
 }
@@ -1078,13 +1104,28 @@ function EntryEditor({
     ...(entry.customFields ? Object.values(entry.customFields) : []),
   ].join(' ').length;
 
+  const hidden = entry.visible === false;
   return (
-    <div className="rounded-md border border-paper-edge bg-paper px-3 py-3">
+    <div className={`rounded-md border border-paper-edge bg-paper px-3 py-3 ${hidden ? 'opacity-60' : ''}`}>
       <div className="mb-3 flex items-center gap-2">
         {dragHandle}
         <div className="flex-1 text-xs font-semibold text-ink-muted">
           {t('editor.entryLabel', { n: index + 1 })}
+          {hidden && (
+            <span className="ml-2 rounded bg-paper-tint px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-ink-subtle">
+              {t('editor.hidden', { defaultValue: 'Hidden' })}
+            </span>
+          )}
         </div>
+        <button
+          type="button"
+          className="icon-btn h-7 w-7"
+          onClick={() => onUpdate({ visible: hidden ? true : false })}
+          title={hidden ? t('editor.show', { defaultValue: 'Show on resume' }) : t('editor.hide', { defaultValue: 'Hide on resume' })}
+          aria-pressed={!hidden}
+        >
+          {hidden ? <EyeOff size={14} /> : <Eye size={14} />}
+        </button>
         <button type="button" className="icon-btn h-7 w-7" onClick={onDuplicate} title={t('common.duplicate')}>
           <Copy size={14} />
         </button>

@@ -374,7 +374,11 @@ function McCombsEducationRow({
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: 'minmax(140px, 1.1fr) minmax(0, 2.2fr) max-content',
+        // Fixed widths so every Education/Study Abroad row lines up the same
+        // way: institution column is 2.1in, date column is 1in, body fills
+        // the middle. Without fixed widths each row sized itself independently
+        // and rows visibly mis-aligned.
+        gridTemplateColumns: '2.1in minmax(0, 1fr) 1in',
         columnGap: pt(10),
         alignItems: 'baseline',
       }}
@@ -497,6 +501,15 @@ function EntryLeft({
   );
 }
 
+const BULLET_GLYPH: Record<string, string> = {
+  disc: '•',
+  circle: '◦',
+  square: '▪',
+  dash: '–',
+  arrow: '›',
+  none: '',
+};
+
 function BulletList({ bullets, resume }: { bullets: Bullet[]; resume: Resume }) {
   const visible = bullets
     .filter((bullet) => bullet.visible && bullet.content.trim())
@@ -504,11 +517,15 @@ function BulletList({ bullets, resume }: { bullets: Bullet[]; resume: Resume }) 
 
   if (visible.length === 0) return null;
 
+  const glyph = BULLET_GLYPH[resume.styles.bulletStyle ?? 'disc'] ?? '•';
+  const indent = glyph ? pt(14) : 0;
+
   return (
     <ul
       style={{
-        margin: `${pt(1)} 0 0 ${pt(14)}`,
+        margin: `${pt(1)} 0 0 0`,
         padding: 0,
+        listStyle: 'none',
         lineHeight: resume.styles.spacing.bullet,
       }}
     >
@@ -517,9 +534,15 @@ function BulletList({ bullets, resume }: { bullets: Bullet[]; resume: Resume }) 
           key={bullet.id}
           data-preview-bullet={bullet.id}
           title="Alt-click to hide this bullet"
-          style={{ cursor: 'default' }}
+          style={{
+            cursor: 'default',
+            display: 'grid',
+            gridTemplateColumns: glyph ? `${indent} 1fr` : '1fr',
+            alignItems: 'baseline',
+          }}
         >
-          {plainTextFromBullet(bullet.content)}
+          {glyph && <span aria-hidden style={{ userSelect: 'none' }}>{glyph}</span>}
+          <span>{plainTextFromBullet(bullet.content)}</span>
         </li>
       ))}
     </ul>

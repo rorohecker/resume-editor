@@ -159,6 +159,8 @@ export interface RuleStyle {
   weight: RuleWeight;
 }
 
+export type BulletGlyph = 'disc' | 'circle' | 'square' | 'dash' | 'arrow' | 'none';
+
 export interface ResumeStyles {
   font: FontFamily;
   fontSize: FontSizeConfig;
@@ -170,6 +172,9 @@ export interface ResumeStyles {
   paperSize: 'letter' | 'a4';
   onePageMode?: boolean;
   pageNumbers?: boolean;
+  // Symbol used for unordered list items. Defaults to 'disc' (•). 'none' hides
+  // the marker so users who write run-on bullets aren't forced into list mode.
+  bulletStyle?: BulletGlyph;
 }
 
 export type ApplicationStatus =

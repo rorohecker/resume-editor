@@ -209,6 +209,8 @@ function sectionToPdfContent(section: Section, resume: Resume, pdfModule: PdfMod
     ? { marginTop: section.styleOverrides.entrySpacing }
     : styles.entry;
 
+  const glyph = BULLET_GLYPH_PDF[resume.styles.bulletStyle ?? 'disc'] ?? '\u2022';
+  const prefix = glyph ? `${glyph} ` : '';
   return section.entries.filter(entryHasContent).map((entry, index) =>
     createElement(
       View,
@@ -217,11 +219,20 @@ function sectionToPdfContent(section: Section, resume: Resume, pdfModule: PdfMod
       ...(entry.bullets ?? [])
         .filter((bullet) => bullet.visible && stripHtml(bullet.content))
         .map((bullet) =>
-          createElement(Text, { key: bullet.id, style: styles.bullet }, `\u2022 ${stripHtml(bullet.content)}`),
+          createElement(Text, { key: bullet.id, style: styles.bullet }, `${prefix}${stripHtml(bullet.content)}`),
         ),
     ),
   );
 }
+
+const BULLET_GLYPH_PDF: Record<string, string> = {
+  disc: '\u2022',
+  circle: '\u25e6',
+  square: '\u25aa',
+  dash: '\u2013',
+  arrow: '\u203a',
+  none: '',
+};
 
 const MCCOMBS_SWAP_BOLD_PDF: Section['type'][] = ['experience', 'leadership', 'research'];
 
@@ -262,12 +273,13 @@ function createPdfEntryRow(
       if (cf.honors?.trim()) lines.push(cf.honors.trim());
     }
 
+    // Fixed widths so every row aligns: institution 2.1in, date 1in. 1in = 72pt.
     return createElement(
       View,
       { style: { flexDirection: 'row', gap: 10 } },
       createElement(
         View,
-        { style: { flexBasis: '32%', flexShrink: 0 } },
+        { style: { width: 2.1 * 72, flexShrink: 0 } },
         createElement(Text, { style: styles.entryTitle }, entry.subtitle?.trim() || ''),
       ),
       createElement(
@@ -286,7 +298,7 @@ function createPdfEntryRow(
             cf.coursework.trim(),
           ),
       ),
-      date && createElement(Text, { style: { ...styles.date, flexShrink: 0 }, wrap: false }, date),
+      date && createElement(Text, { style: { width: 72, textAlign: 'right', flexShrink: 0 }, wrap: false }, date),
     );
   }
 
