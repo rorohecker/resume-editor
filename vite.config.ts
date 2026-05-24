@@ -19,9 +19,9 @@ export default defineConfig({
   base,
   plugins: [
     react(),
-    !singleFile &&
     VitePWA({
-      registerType: 'autoUpdate',
+      disable: singleFile,
+      registerType: 'prompt',
       includeAssets: ['favicon.svg'],
       manifest: {
         name: 'Resume Editor',

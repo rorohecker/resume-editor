@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+/// <reference types="vite-plugin-pwa/client" />
 
 declare module 'mammoth/mammoth.browser' {
   interface Message { message: string; type: string; }
