@@ -71,6 +71,15 @@ const SECTION_TYPES: SectionType[] = [
   'custom',
 ];
 
+const QUICK_SECTION_TYPES: SectionType[] = [
+  'education',
+  'experience',
+  'projects',
+  'skills',
+  'leadership',
+  'study-abroad',
+];
+
 // Common UT McCombs majors / tracks. Used by the McCombs-track select on
 // Education entries. Picking one auto-fills the Major field.
 export const MCCOMBS_TRACKS: { value: string; label: string; major: string }[] = [
@@ -167,12 +176,12 @@ export function EditorLeftPanel() {
 
   if (!resume) return null;
 
-  const addSection = () => {
+  const addSection = (type = newSectionType) => {
     updateCurrentResume((current) => ({
       ...current,
       sections: [
         ...current.sections,
-        createSection(newSectionType, current.sections.length, t),
+        createSection(type, current.sections.length, t),
       ],
     }));
   };
@@ -205,11 +214,27 @@ export function EditorLeftPanel() {
                 </option>
               ))}
             </select>
-            <button type="button" className="btn-secondary text-xs" onClick={addSection}>
+            <button type="button" className="btn-secondary text-xs" onClick={() => addSection()}>
               <Plus size={14} />
               {t('editor.addSection')}
             </button>
           </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 text-[11px] font-semibold uppercase tracking-wide text-ink-subtle">
+            {t('editor.quickAdd')}
+          </span>
+          {QUICK_SECTION_TYPES.map((type) => (
+            <button
+              key={type}
+              type="button"
+              className="rounded-md border border-paper-edge bg-paper px-2 py-1 text-[11px] font-medium text-ink-muted hover:border-ink-subtle hover:bg-paper-tint hover:text-ink"
+              onClick={() => addSection(type)}
+            >
+              {sectionTypeLabel(type, t)}
+            </button>
+          ))}
         </div>
 
         {sections.length > 8 && (
@@ -865,7 +890,18 @@ function SectionEditor({
   return (
     <div>
       <AccordionShell
-        title={section.title || t('editor.untitledSection')}
+        title={
+          <input
+            value={section.title}
+            onChange={(e) => patchSection({ title: e.target.value })}
+            aria-label={t('editor.sectionName')}
+            placeholder={t('editor.untitledSection')}
+            className="h-8 w-full rounded border border-transparent bg-transparent px-2 text-sm font-medium text-ink hover:border-paper-edge hover:bg-paper-tint focus:border-accent focus:bg-paper focus:outline-none"
+          />
+        }
+        toggleLabel={t('editor.toggleSection', {
+          title: section.title || t('editor.untitledSection'),
+        })}
         open={open}
         onOpenChange={setOpen}
         leading={dragHandle}
@@ -900,14 +936,7 @@ function SectionEditor({
         }
       >
         <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto]">
-            <Field label={t('editor.sectionName')}>
-              <input
-                value={section.title}
-                onChange={(e) => patchSection({ title: e.target.value })}
-                className="input"
-              />
-            </Field>
+          <div className="grid grid-cols-1 gap-2">
             <Field label={t('editor.sectionTypeLabel')}>
               <select
                 value={section.type}
@@ -1103,7 +1132,7 @@ function effectiveLabels(
       {
         key: 'coursework',
         label: label(t, 'editor.coursesTaken', 'Classes taken'),
-        placeholder: label(t, 'editor.coursesTakenPlaceholder', 'Comma-separated; rendered as Courses: ...'),
+        placeholder: label(t, 'editor.coursesTakenPlaceholder', 'Comma-separated; rendered inline as Courses: ...'),
       },
       {
         key: 'language',
@@ -1227,24 +1256,44 @@ function EntryEditor({
           // fills the Major field with the track's canonical major name.
           if (field.options) {
             const value = entry.customFields?.[field.key] ?? '';
+            const updateOptionField = (next: string) => {
+              const patch: Record<string, string> = {
+                ...(entry.customFields ?? {}),
+              };
+              if (next) {
+                patch[field.key] = next;
+              } else {
+                delete patch[field.key];
+              }
+              if (field.autoFill) {
+                const filled = field.autoFill(next);
+                for (const [k, v] of Object.entries(filled)) {
+                  patch[k] = v;
+                }
+              }
+              onUpdate({ customFields: patch });
+            };
+
+            if (field.key === 'kind') {
+              return (
+                <FieldGroup key={field.key} label={field.label}>
+                  <SegmentedToggle
+                    value={value === 'study-abroad' ? 'study-abroad' : ''}
+                    options={[
+                      { value: '', label: t('editor.entryKindDegree') },
+                      { value: 'study-abroad', label: t('editor.entryKindStudyAbroadShort') },
+                    ]}
+                    onChange={updateOptionField}
+                  />
+                </FieldGroup>
+              );
+            }
+
             return (
               <Field key={field.key} label={field.label}>
                 <select
                   value={value}
-                  onChange={(e) => {
-                    const next = e.target.value;
-                    const patch: Record<string, string> = {
-                      ...(entry.customFields ?? {}),
-                      [field.key]: next,
-                    };
-                    if (field.autoFill) {
-                      const filled = field.autoFill(next);
-                      for (const [k, v] of Object.entries(filled)) {
-                        patch[k] = v;
-                      }
-                    }
-                    onUpdate({ customFields: patch });
-                  }}
+                  onChange={(e) => updateOptionField(e.target.value)}
                   className="input"
                 >
                   <option value="">{field.placeholder ?? '—'}</option>
@@ -1603,13 +1652,15 @@ function BulletEditor({
 
 function AccordionShell({
   title,
+  toggleLabel,
   open,
   onOpenChange,
   leading,
   actions,
   children,
 }: {
-  title: string;
+  title: ReactNode;
+  toggleLabel?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   leading: ReactNode;
@@ -1623,12 +1674,25 @@ function AccordionShell({
         <button
           type="button"
           onClick={() => onOpenChange(!open)}
-          className="flex min-w-0 flex-1 items-center gap-1.5 rounded px-1 py-0.5 text-left text-sm font-medium text-ink hover:bg-paper-tint"
+          className="flex h-7 w-7 flex-none items-center justify-center rounded text-ink-muted hover:bg-paper-tint hover:text-ink"
           aria-expanded={open}
+          aria-label={toggleLabel ?? (typeof title === 'string' ? title : undefined)}
+          title={toggleLabel ?? (typeof title === 'string' ? title : undefined)}
         >
           {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          <span className="truncate">{title}</span>
         </button>
+        {typeof title === 'string' ? (
+          <button
+            type="button"
+            onClick={() => onOpenChange(!open)}
+            className="min-w-0 flex-1 rounded px-1 py-0.5 text-left text-sm font-medium text-ink hover:bg-paper-tint"
+            aria-expanded={open}
+          >
+            <span className="block truncate">{title}</span>
+          </button>
+        ) : (
+          <div className="min-w-0 flex-1">{title}</div>
+        )}
         {actions && <div className="flex items-center gap-1">{actions}</div>}
       </div>
       {open && <div className="border-t border-paper-edge px-4 py-4">{children}</div>}
@@ -1719,12 +1783,58 @@ function ColorField({
   );
 }
 
+function SegmentedToggle({
+  value,
+  options,
+  onChange,
+}: {
+  value: string;
+  options: { value: string; label: string }[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div
+      className="grid grid-cols-2 rounded-md border border-paper-edge bg-paper-tint p-0.5"
+      role="radiogroup"
+    >
+      {options.map((option) => {
+        const active = value === option.value;
+        return (
+          <button
+            key={option.value || 'default'}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            className={`h-8 rounded px-2 text-xs font-medium ${
+              active
+                ? 'bg-paper text-ink shadow-sm'
+                : 'text-ink-muted hover:bg-paper/70 hover:text-ink'
+            }`}
+            onClick={() => onChange(option.value)}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="block">
       <span className="mb-1 block text-xs font-medium text-ink-muted">{label}</span>
       {children}
     </label>
+  );
+}
+
+function FieldGroup({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="block">
+      <span className="mb-1 block text-xs font-medium text-ink-muted">{label}</span>
+      {children}
+    </div>
   );
 }
 

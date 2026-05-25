@@ -344,7 +344,7 @@ function EntryBlock({
         )}
       </div>
 
-      {sectionHasBullets(section) && (
+      {(sectionHasBullets(section) || isStudyAbroadKind) && (
         <BulletList bullets={entry.bullets ?? []} resume={resume} />
       )}
     </div>
@@ -366,10 +366,9 @@ function McCombsEducationRow({
   const { styles } = resume;
   const cf = entry.customFields ?? {};
   const lines: string[] = [];
+  const coursework = cf.coursework?.trim();
   if (studyAbroadKind) {
-    // Compact one-line layout: "Program in City, Country | GPA 3.85 | Spanish".
-    // Coursework drops to the second line as "Courses: ..." since it tends to
-    // be long. Everything else fits on the same row to save vertical space.
+    // Compact one-line layout: "Program in City, Country | GPA 3.85 | Spanish | Courses: ...".
     const program = entry.title?.trim();
     const loc = entry.location?.trim();
     const header = program && loc ? `${program} in ${loc}` : program || loc || '';
@@ -377,6 +376,7 @@ function McCombsEducationRow({
     if (header) inline.push(header);
     if (cf.gpa?.trim()) inline.push(`GPA ${cf.gpa.trim()}`);
     if (cf.language?.trim()) inline.push(cf.language.trim());
+    if (coursework) inline.push(`Courses: ${coursework}`);
     if (inline.length) lines.push(inline.join(' | '));
   } else {
     // Comma joiner reads more naturally than " & " when the major itself
@@ -414,17 +414,14 @@ function McCombsEducationRow({
         {lines.map((line, i) => (
           <div key={i}>{line}</div>
         ))}
-        {cf.coursework?.trim() && (
-          <div style={{ marginTop: pt(2) }}>
-            <span style={{ fontWeight: 700 }}>
-              {studyAbroadKind ? 'Courses:' : 'Coursework:'}
-            </span>{' '}
-            {cf.coursework.trim()}
-          </div>
-        )}
       </div>
       {date && (
         <div style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>{date}</div>
+      )}
+      {!studyAbroadKind && coursework && (
+        <div style={{ gridColumn: '1 / -1', marginTop: pt(2) }}>
+          <span style={{ fontWeight: 700 }}>Coursework:</span> {coursework}
+        </div>
       )}
     </div>
   );

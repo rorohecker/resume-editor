@@ -254,8 +254,9 @@ function createPdfEntryRow(
     const studyAbroadKind =
       section.type === 'study-abroad' || cf.kind === 'study-abroad';
     const lines: string[] = [];
+    const coursework = cf.coursework?.trim();
     if (studyAbroadKind) {
-      // One-line layout where possible: program + GPA + language joined by pipes.
+      // One-line layout where possible: program + GPA + language + courses joined by pipes.
       const program = entry.title?.trim();
       const loc = entry.location?.trim();
       const header = program && loc ? `${program} in ${loc}` : program || loc || '';
@@ -263,6 +264,7 @@ function createPdfEntryRow(
       if (header) inline.push(header);
       if (cf.gpa?.trim()) inline.push(`GPA ${cf.gpa.trim()}`);
       if (cf.language?.trim()) inline.push(cf.language.trim());
+      if (coursework) inline.push(`Courses: ${coursework}`);
       if (inline.length) lines.push(inline.join(' | '));
     } else {
       const majors = [cf.major, cf.secondMajor].map((m) => m?.trim()).filter(Boolean);
@@ -282,29 +284,30 @@ function createPdfEntryRow(
     // middle so long degree lines have the best chance of fitting on one line.
     return createElement(
       View,
-      { style: { flexDirection: 'row', gap: 8 } },
+      null,
       createElement(
         View,
-        { style: { width: 1.95 * 72, flexShrink: 0 } },
-        createElement(Text, { style: styles.entryTitle }, entry.subtitle?.trim() || ''),
+        { style: { flexDirection: 'row', gap: 8 } },
+        createElement(
+          View,
+          { style: { width: 1.95 * 72, flexShrink: 0 } },
+          createElement(Text, { style: styles.entryTitle }, entry.subtitle?.trim() || ''),
+        ),
+        createElement(
+          View,
+          { style: { flexGrow: 1, flexShrink: 1 } },
+          ...lines.map((line, i) => createElement(Text, { key: `l${i}` }, line)),
+        ),
+        date && createElement(Text, { style: { width: 0.85 * 72, textAlign: 'right', flexShrink: 0 }, wrap: false }, date),
       ),
-      createElement(
-        View,
-        { style: { flexGrow: 1, flexShrink: 1 } },
-        ...lines.map((line, i) => createElement(Text, { key: `l${i}` }, line)),
-        cf.coursework?.trim() &&
-          createElement(
-            Text,
-            { key: 'cw', style: { marginTop: 2 } },
-            createElement(
-              Text,
-              { style: { fontWeight: 700 } },
-              studyAbroadKind ? 'Courses: ' : 'Coursework: ',
-            ),
-            cf.coursework.trim(),
-          ),
-      ),
-      date && createElement(Text, { style: { width: 0.85 * 72, textAlign: 'right', flexShrink: 0 }, wrap: false }, date),
+      !studyAbroadKind &&
+        coursework &&
+        createElement(
+          Text,
+          { key: 'cw', style: { marginTop: 2 } },
+          createElement(Text, { style: { fontWeight: 700 } }, 'Coursework: '),
+          coursework,
+        ),
     );
   }
 
