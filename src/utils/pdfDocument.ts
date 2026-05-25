@@ -251,17 +251,19 @@ function createPdfEntryRow(
     (section.type === 'education' || section.type === 'study-abroad')
   ) {
     const cf = entry.customFields ?? {};
+    const studyAbroadKind =
+      section.type === 'study-abroad' || cf.kind === 'study-abroad';
     const lines: string[] = [];
-    if (section.type === 'study-abroad') {
+    if (studyAbroadKind) {
       const program = entry.title?.trim();
       const loc = entry.location?.trim();
       const header = program && loc ? `${program} in ${loc}` : program || loc || '';
       if (header) lines.push(header);
-      if (cf.language?.trim()) lines.push(`Language of instruction: ${cf.language.trim()}`);
+      if (cf.language?.trim()) lines.push(`Language: ${cf.language.trim()}`);
       if (cf.gpa?.trim()) lines.push(`Overall GPA: ${cf.gpa.trim()}`);
     } else {
       const majors = [cf.major, cf.secondMajor].map((m) => m?.trim()).filter(Boolean);
-      const degreeLine = [entry.title?.trim(), majors.join(' & ')].filter(Boolean).join(', ');
+      const degreeLine = [entry.title?.trim(), majors.join(', ')].filter(Boolean).join(', ');
       if (degreeLine) lines.push(degreeLine);
       if (cf.track?.trim()) lines.push(`Track: ${cf.track.trim()}`);
       if (cf.minor?.trim()) lines.push(`Minor: ${cf.minor.trim()}`);
@@ -273,13 +275,14 @@ function createPdfEntryRow(
       if (cf.honors?.trim()) lines.push(cf.honors.trim());
     }
 
-    // Fixed widths so every row aligns: institution 2.1in, date 1in. 1in = 72pt.
+    // Slightly narrower institution and date columns leave more room for the
+    // middle so long degree lines have the best chance of fitting on one line.
     return createElement(
       View,
-      { style: { flexDirection: 'row', gap: 10 } },
+      { style: { flexDirection: 'row', gap: 8 } },
       createElement(
         View,
-        { style: { width: 2.1 * 72, flexShrink: 0 } },
+        { style: { width: 1.95 * 72, flexShrink: 0 } },
         createElement(Text, { style: styles.entryTitle }, entry.subtitle?.trim() || ''),
       ),
       createElement(
@@ -293,12 +296,12 @@ function createPdfEntryRow(
             createElement(
               Text,
               { style: { fontWeight: 700 } },
-              section.type === 'study-abroad' ? 'Courses Taken: ' : 'Relevant Coursework: ',
+              studyAbroadKind ? 'Courses: ' : 'Coursework: ',
             ),
             cf.coursework.trim(),
           ),
       ),
-      date && createElement(Text, { style: { width: 72, textAlign: 'right', flexShrink: 0 }, wrap: false }, date),
+      date && createElement(Text, { style: { width: 0.85 * 72, textAlign: 'right', flexShrink: 0 }, wrap: false }, date),
     );
   }
 
@@ -319,6 +322,45 @@ function createPdfEntryRow(
       View,
       { style: styles.entryRow },
       createElement(View, { style: styles.entryLeft }, createElement(Text, null, ...inline)),
+      date && createElement(Text, { style: styles.date, wrap: false }, date),
+    );
+  }
+
+  // Projects: bold name + italic tech stack on the same line, regardless of
+  // template, so each project costs one line instead of two.
+  if (section.type === 'projects') {
+    const projectName = entry.title?.trim();
+    const techStack = entry.subtitle?.trim();
+    const inline: ReturnType<typeof createElement>[] = [];
+    if (projectName) {
+      inline.push(
+        entry.url
+          ? createElement(
+              Link,
+              { key: 't', src: hrefFromRaw(entry.url), style: [styles.entryTitle, styles.link] },
+              projectName,
+            )
+          : createElement(Text, { key: 't', style: { fontWeight: 700 } }, projectName),
+      );
+    }
+    if (projectName && techStack) inline.push(createElement(Text, { key: 'sep' }, ' – '));
+    if (techStack)
+      inline.push(createElement(Text, { key: 'ts', style: { fontStyle: 'italic' } }, techStack));
+
+    return createElement(
+      View,
+      { style: styles.entryRow },
+      createElement(
+        View,
+        { style: styles.entryLeft },
+        createElement(Text, null, ...inline),
+        entry.customFields?.githubUrl &&
+          createElement(
+            Link,
+            { src: hrefFromRaw(entry.customFields.githubUrl), style: styles.link },
+            entry.customFields.githubUrl,
+          ),
+      ),
       date && createElement(Text, { style: styles.date, wrap: false }, date),
     );
   }

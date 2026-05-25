@@ -1716,6 +1716,14 @@ function entryLabels(type: SectionType, t?: TFunction): EntryLabels {
         bullets: false,
         customFields: [
           {
+            key: 'kind',
+            label: label(t, 'editor.entryKind', 'Entry type'),
+            placeholder: label(t, 'editor.entryKindRegular', 'Regular degree'),
+            options: [
+              { value: 'study-abroad', label: label(t, 'editor.entryKindStudyAbroad', 'Study abroad (in this section)') },
+            ],
+          },
+          {
             key: 'mccombsTrack',
             label: label(t, 'editor.mccombsTrack', 'McCombs track (UT Austin)'),
             placeholder: label(t, 'editor.mccombsTrackPlaceholder', 'Not a McCombs student'),

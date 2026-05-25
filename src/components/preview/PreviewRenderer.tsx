@@ -282,21 +282,35 @@ function EntryBlock({
   const entrySpacing = section.styleOverrides?.entrySpacing ?? styles.spacing.entry;
 
   // McCombs education (and the parallel Study Abroad section) use a 3-column
-  // layout: institution | degree-or-program details | date.
+  // layout: institution | degree-or-program details | date. An individual
+  // Education entry can also be flagged as a study-abroad row via
+  // customFields.kind = 'study-abroad' so users don't need a whole separate
+  // section just for one row.
+  const isStudyAbroadKind =
+    section.type === 'study-abroad' || entry.customFields?.kind === 'study-abroad';
   if (
     resume.template === 'mccombs' &&
     (section.type === 'education' || section.type === 'study-abroad')
   ) {
     return (
       <div style={{ marginTop: first ? 0 : pt(entrySpacing) }}>
-        <McCombsEducationRow entry={entry} section={section} resume={resume} date={date} />
+        <McCombsEducationRow
+          entry={entry}
+          section={section}
+          resume={resume}
+          date={date}
+          studyAbroadKind={isStudyAbroadKind}
+        />
       </div>
     );
   }
 
-  // McCombs experience/leadership/research render the entity bold and the role italic on one line.
+  // McCombs experience/leadership/research render the entity bold and the
+  // role italic on one line. Projects also fold to one line so the tech-stack
+  // sits next to the project name instead of taking its own row.
   const swapBold =
     resume.template === 'mccombs' && MCCOMBS_SWAP_BOLD.includes(section.type);
+  const inlineProject = section.type === 'projects';
 
   return (
     <div style={{ marginTop: first ? 0 : pt(entrySpacing) }}>
@@ -311,6 +325,8 @@ function EntryBlock({
         <div style={{ minWidth: 0 }}>
           {swapBold ? (
             <McCombsInlineHeader entry={entry} section={section} resume={resume} />
+          ) : inlineProject ? (
+            <ProjectInlineHeader entry={entry} resume={resume} />
           ) : (
             <EntryLeft entry={entry} section={section} resume={resume} />
           )}
@@ -337,28 +353,32 @@ function EntryBlock({
 
 function McCombsEducationRow({
   entry,
-  section,
   resume,
   date,
+  studyAbroadKind,
 }: {
   entry: Entry;
   section: Section;
   resume: Resume;
   date: string;
+  studyAbroadKind: boolean;
 }) {
   const { styles } = resume;
   const cf = entry.customFields ?? {};
   const lines: string[] = [];
-  if (section.type === 'study-abroad') {
+  if (studyAbroadKind) {
     const program = entry.title?.trim();
     const loc = entry.location?.trim();
     const header = program && loc ? `${program} in ${loc}` : program || loc || '';
     if (header) lines.push(header);
-    if (cf.language?.trim()) lines.push(`Language of instruction: ${cf.language.trim()}`);
+    if (cf.language?.trim()) lines.push(`Language: ${cf.language.trim()}`);
     if (cf.gpa?.trim()) lines.push(`Overall GPA: ${cf.gpa.trim()}`);
   } else {
+    // Comma joiner reads more naturally than " & " when the major itself
+    // already contains the word "and", e.g. "Electrical and Computer
+    // Engineering Honors, Canfield Business Honors".
     const majors = [cf.major, cf.secondMajor].map((m) => m?.trim()).filter(Boolean);
-    const degreeLine = [entry.title?.trim(), majors.join(' & ')].filter(Boolean).join(', ');
+    const degreeLine = [entry.title?.trim(), majors.join(', ')].filter(Boolean).join(', ');
     if (degreeLine) lines.push(degreeLine);
     if (cf.track?.trim()) lines.push(`Track: ${cf.track.trim()}`);
     if (cf.minor?.trim()) lines.push(`Minor: ${cf.minor.trim()}`);
@@ -374,12 +394,11 @@ function McCombsEducationRow({
     <div
       style={{
         display: 'grid',
-        // Fixed widths so every Education/Study Abroad row lines up the same
-        // way: institution column is 2.1in, date column is 1in, body fills
-        // the middle. Without fixed widths each row sized itself independently
-        // and rows visibly mis-aligned.
-        gridTemplateColumns: '2.1in minmax(0, 1fr) 1in',
-        columnGap: pt(10),
+        // Slightly narrower institution and date columns so a long single-line
+        // degree statement (BSE & BBA + two majors) has the best chance of
+        // fitting on one line before it wraps.
+        gridTemplateColumns: '1.95in minmax(0, 1fr) 0.85in',
+        columnGap: pt(8),
         alignItems: 'baseline',
       }}
     >
@@ -393,7 +412,7 @@ function McCombsEducationRow({
         {cf.coursework?.trim() && (
           <div style={{ marginTop: pt(2) }}>
             <span style={{ fontWeight: 700 }}>
-              {section.type === 'study-abroad' ? 'Courses Taken:' : 'Relevant Coursework:'}
+              {studyAbroadKind ? 'Courses:' : 'Coursework:'}
             </span>{' '}
             {cf.coursework.trim()}
           </div>
@@ -430,6 +449,52 @@ function McCombsInlineHeader({
       {(company || role) && location && <span>; {location}</span>}
       {!company && !role && location && <span>{location}</span>}
       {section.type === 'projects' && entry.customFields?.githubUrl && (
+        <div>
+          <a
+            href={hrefFromRaw(entry.customFields.githubUrl)}
+            style={{ color: resume.styles.colors.accent, textDecoration: 'none' }}
+          >
+            {entry.customFields.githubUrl}
+          </a>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProjectInlineHeader({
+  entry,
+  resume,
+}: {
+  entry: Entry;
+  resume: Resume;
+}) {
+  // Project name bold + tech stack italic on the SAME line, so each project
+  // costs one row instead of two. URLs (project url / github) drop to their
+  // own line underneath, same as before.
+  const title = entry.title?.trim();
+  const techStack = entry.subtitle?.trim();
+  return (
+    <div style={{ fontSize: pt(resume.styles.fontSize.entryTitle) }}>
+      <span>
+        {title && (
+          <span style={{ fontWeight: 700 }}>
+            {entry.url ? (
+              <a
+                href={hrefFromRaw(entry.url)}
+                style={{ color: resume.styles.colors.accent, textDecoration: 'none' }}
+              >
+                {title}
+              </a>
+            ) : (
+              title
+            )}
+          </span>
+        )}
+        {title && techStack && <span> – </span>}
+        {techStack && <span style={{ fontStyle: 'italic' }}>{techStack}</span>}
+      </span>
+      {entry.customFields?.githubUrl && (
         <div>
           <a
             href={hrefFromRaw(entry.customFields.githubUrl)}
