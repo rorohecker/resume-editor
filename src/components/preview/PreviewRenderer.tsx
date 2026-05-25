@@ -310,6 +310,7 @@ function EntryBlock({
   // sits next to the project name instead of taking its own row.
   const swapBold =
     resume.template === 'mccombs' && MCCOMBS_SWAP_BOLD.includes(section.type);
+  const inlineStudyAbroad = resume.template !== 'mccombs' && isStudyAbroadKind;
   const inlineProject = section.type === 'projects';
 
   return (
@@ -325,6 +326,8 @@ function EntryBlock({
         <div style={{ minWidth: 0 }}>
           {swapBold ? (
             <McCombsInlineHeader entry={entry} section={section} resume={resume} />
+          ) : inlineStudyAbroad ? (
+            <StudyAbroadInlineHeader entry={entry} resume={resume} />
           ) : inlineProject ? (
             <ProjectInlineHeader entry={entry} resume={resume} />
           ) : (
@@ -412,7 +415,9 @@ function McCombsEducationRow({
       </div>
       <div style={{ minWidth: 0 }}>
         {lines.map((line, i) => (
-          <div key={i}>{line}</div>
+          <div key={i} style={studyAbroadKind ? { whiteSpace: 'nowrap' } : undefined}>
+            {line}
+          </div>
         ))}
       </div>
       {date && (
@@ -423,6 +428,27 @@ function McCombsEducationRow({
           <span style={{ fontWeight: 700 }}>Coursework:</span> {coursework}
         </div>
       )}
+    </div>
+  );
+}
+
+function StudyAbroadInlineHeader({
+  entry,
+  resume,
+}: {
+  entry: Entry;
+  resume: Resume;
+}) {
+  const line = studyAbroadLine(entry);
+  const host = entry.subtitle?.trim();
+  return (
+    <div style={{ fontSize: pt(resume.styles.fontSize.entryTitle) }}>
+      {line && (
+        <div style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+          {line}
+        </div>
+      )}
+      {host && <div>{host}</div>}
     </div>
   );
 }
@@ -726,16 +752,24 @@ function tertiaryForPreview(entry: Entry, section: Section): string {
       .join(' | ');
   }
   if (section.type === 'study-abroad') {
-    return [
-      entry.location,
-      entry.customFields?.gpa ? `GPA: ${entry.customFields.gpa}` : '',
-      entry.customFields?.language ? `Language: ${entry.customFields.language}` : '',
-      entry.customFields?.coursework ? `Courses: ${entry.customFields.coursework}` : '',
-    ]
-      .filter(Boolean)
-      .join(' | ');
+    return '';
   }
   return entry.location ?? '';
+}
+
+function studyAbroadLine(entry: Entry): string {
+  const cf = entry.customFields ?? {};
+  const program = entry.title?.trim();
+  const loc = entry.location?.trim();
+  const header = program && loc ? `${program} in ${loc}` : program || loc || '';
+  return [
+    header,
+    cf.gpa?.trim() ? `GPA ${cf.gpa.trim()}` : '',
+    cf.language?.trim() ? cf.language.trim() : '',
+    cf.coursework?.trim() ? `Courses: ${cf.coursework.trim()}` : '',
+  ]
+    .filter(Boolean)
+    .join(' | ');
 }
 
 function sectionHasContent(section: Section): boolean {

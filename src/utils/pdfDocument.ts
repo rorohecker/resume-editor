@@ -296,7 +296,9 @@ function createPdfEntryRow(
         createElement(
           View,
           { style: { flexGrow: 1, flexShrink: 1 } },
-          ...lines.map((line, i) => createElement(Text, { key: `l${i}` }, line)),
+          ...lines.map((line, i) =>
+            createElement(Text, { key: `l${i}`, wrap: studyAbroadKind ? false : undefined }, line),
+          ),
         ),
         date && createElement(Text, { style: { width: 0.85 * 72, textAlign: 'right', flexShrink: 0 }, wrap: false }, date),
       ),
@@ -308,6 +310,23 @@ function createPdfEntryRow(
           createElement(Text, { style: { fontWeight: 700 } }, 'Coursework: '),
           coursework,
         ),
+    );
+  }
+
+  const studyAbroadKind =
+    section.type === 'study-abroad' || entry.customFields?.kind === 'study-abroad';
+  if (studyAbroadKind) {
+    const line = studyAbroadLine(entry);
+    return createElement(
+      View,
+      { style: styles.entryRow },
+      createElement(
+        View,
+        { style: styles.entryLeft },
+        line && createElement(Text, { style: styles.entryTitle, wrap: false }, line),
+        entry.subtitle?.trim() && createElement(Text, null, entry.subtitle.trim()),
+      ),
+      date && createElement(Text, { style: styles.date, wrap: false }, date),
     );
   }
 
@@ -457,16 +476,24 @@ function tertiaryForPreview(entry: Entry, section: Section): string {
       .join(' | ');
   }
   if (section.type === 'study-abroad') {
-    return [
-      entry.location,
-      entry.customFields?.gpa ? `GPA: ${entry.customFields.gpa}` : '',
-      entry.customFields?.language ? `Language: ${entry.customFields.language}` : '',
-      entry.customFields?.coursework ? `Courses: ${entry.customFields.coursework}` : '',
-    ]
-      .filter(Boolean)
-      .join(' | ');
+    return '';
   }
   return entry.location ?? '';
+}
+
+function studyAbroadLine(entry: Entry): string {
+  const cf = entry.customFields ?? {};
+  const program = entry.title?.trim();
+  const loc = entry.location?.trim();
+  const header = program && loc ? `${program} in ${loc}` : program || loc || '';
+  return [
+    header,
+    cf.gpa?.trim() ? `GPA ${cf.gpa.trim()}` : '',
+    cf.language?.trim() ? cf.language.trim() : '',
+    cf.coursework?.trim() ? `Courses: ${cf.coursework.trim()}` : '',
+  ]
+    .filter(Boolean)
+    .join(' | ');
 }
 
 function ruleWidth(resume: Resume): number {
