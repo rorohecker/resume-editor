@@ -258,6 +258,7 @@ export default {
     degree: 'Título',
     degreePlaceholder: 'ej. BBA o Bachelor of Business Administration',
     institution: 'Institución',
+    hostInstitution: 'Institución anfitriona',
     location: 'Ubicación',
     entryKind: 'Tipo de entrada',
     entryKindDegree: 'Título',

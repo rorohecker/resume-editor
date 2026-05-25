@@ -1122,7 +1122,7 @@ function effectiveLabels(
     add: baseLabels.add,
     title: label(t, 'editor.program', 'Program'),
     titleSuggestions: undefined,
-    subtitle: label(t, 'editor.institution', 'Host institution'),
+    subtitle: label(t, 'editor.hostInstitution', 'Host institution'),
     location: label(t, 'editor.location', 'City, Country'),
     bullets: true,
     customFields: [
@@ -1924,14 +1924,14 @@ function entryLabels(type: SectionType, t?: TFunction): EntryLabels {
       return {
         add: label(t, 'editor.addStudyAbroad', 'Add study abroad'),
         title: label(t, 'editor.program', 'Program'),
-        subtitle: label(t, 'editor.institution', 'Host institution'),
+        subtitle: label(t, 'editor.hostInstitution', 'Host institution'),
         location: label(t, 'editor.location', 'City, Country'),
         dates: true,
         current: false,
         bullets: true,
         customFields: [
           { key: 'gpa', label: label(t, 'editor.gpa', 'GPA'), placeholder: label(t, 'editor.gpaPlaceholder', 'e.g. 3.85') },
-          { key: 'coursework', label: label(t, 'editor.coursesTaken', 'Courses taken'), placeholder: label(t, 'editor.coursesTakenPlaceholder', 'Comma-separated; rendered below the entry') },
+          { key: 'coursework', label: label(t, 'editor.coursesTaken', 'Courses taken'), placeholder: label(t, 'editor.coursesTakenPlaceholder', 'Comma-separated; rendered inline as Courses: ...') },
           { key: 'language', label: label(t, 'editor.languageOfInstruction', 'Language of instruction'), placeholder: 'e.g. Spanish, English' },
         ],
       };

@@ -120,5 +120,12 @@ function entryHasContent(entry: Entry): boolean {
 }
 
 function labelFromKey(key: string): string {
+  const labels: Record<string, string> = {
+    doiUrl: 'DOI / URL',
+    githubUrl: 'GitHub URL',
+    gpa: 'GPA',
+    url: 'URL',
+  };
+  if (labels[key]) return labels[key];
   return key.replace(/([A-Z])/g, ' $1').replace(/^./, (letter) => letter.toUpperCase());
 }

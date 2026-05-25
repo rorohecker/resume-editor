@@ -256,13 +256,13 @@ function createPdfEntryRow(
     const lines: string[] = [];
     const coursework = cf.coursework?.trim();
     if (studyAbroadKind) {
-      // One-line layout where possible: program + GPA + language + courses joined by pipes.
+      // One-line layout where possible: program + GPA, language, and courses joined by pipes.
       const program = entry.title?.trim();
       const loc = entry.location?.trim();
       const header = program && loc ? `${program} in ${loc}` : program || loc || '';
       const inline: string[] = [];
       if (header) inline.push(header);
-      if (cf.gpa?.trim()) inline.push(`GPA ${cf.gpa.trim()}`);
+      if (cf.gpa?.trim()) inline.push(`GPA: ${cf.gpa.trim()}`);
       if (cf.language?.trim()) inline.push(cf.language.trim());
       if (coursework) inline.push(`Courses: ${coursework}`);
       if (inline.length) lines.push(inline.join(' | '));
@@ -488,7 +488,7 @@ function studyAbroadLine(entry: Entry): string {
   const header = program && loc ? `${program} in ${loc}` : program || loc || '';
   return [
     header,
-    cf.gpa?.trim() ? `GPA ${cf.gpa.trim()}` : '',
+    cf.gpa?.trim() ? `GPA: ${cf.gpa.trim()}` : '',
     cf.language?.trim() ? cf.language.trim() : '',
     cf.coursework?.trim() ? `Courses: ${cf.coursework.trim()}` : '',
   ]
