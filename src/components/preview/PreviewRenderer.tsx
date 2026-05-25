@@ -402,11 +402,10 @@ function McCombsEducationRow({
     <div
       style={{
         display: 'grid',
-        // Slightly narrower institution and date columns so a long single-line
-        // degree statement (BSE & BBA + two majors) has the best chance of
-        // fitting on one line before it wraps.
-        gridTemplateColumns: '1.95in minmax(0, 1fr) 0.85in',
-        columnGap: pt(8),
+        // Keep the institution/date columns compact so long degree statements
+        // like BSE & BBA + honors programs have room to stay on one line.
+        gridTemplateColumns: '1.75in minmax(0, 1fr) 0.7in',
+        columnGap: pt(6),
         alignItems: 'baseline',
       }}
     >

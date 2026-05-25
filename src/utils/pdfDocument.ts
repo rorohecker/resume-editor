@@ -280,17 +280,17 @@ function createPdfEntryRow(
       if (cf.honors?.trim()) lines.push(cf.honors.trim());
     }
 
-    // Slightly narrower institution and date columns leave more room for the
-    // middle so long degree lines have the best chance of fitting on one line.
+    // Keep institution/date columns compact so long degree lines have room to
+    // stay on one line in both the preview and exported PDF.
     return createElement(
       View,
       null,
       createElement(
         View,
-        { style: { flexDirection: 'row', gap: 8 } },
+        { style: { flexDirection: 'row', gap: 6 } },
         createElement(
           View,
-          { style: { width: 1.95 * 72, flexShrink: 0 } },
+          { style: { width: 1.75 * 72, flexShrink: 0 } },
           createElement(Text, { style: styles.entryTitle }, entry.subtitle?.trim() || ''),
         ),
         createElement(
@@ -300,7 +300,7 @@ function createPdfEntryRow(
             createElement(Text, { key: `l${i}`, wrap: studyAbroadKind ? false : undefined }, line),
           ),
         ),
-        date && createElement(Text, { style: { width: 0.85 * 72, textAlign: 'right', flexShrink: 0 }, wrap: false }, date),
+        date && createElement(Text, { style: { width: 0.7 * 72, textAlign: 'right', flexShrink: 0 }, wrap: false }, date),
       ),
       !studyAbroadKind &&
         coursework &&
