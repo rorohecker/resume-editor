@@ -90,6 +90,62 @@ export function rewriteBullet(content: string, instruction: string): string[] {
   return Array.from(new Set(options));
 }
 
+// One-line fit threshold. EB Garamond at 10pt on a 6.5in body fits roughly
+// 95-110 plain-text characters per line. We use 100 as the conservative cutoff
+// for warning the user that their bullet probably wraps.
+export const ONE_LINE_TARGET = 100;
+
+// Local heuristic shortener: removes redundant fillers, collapses common
+// long phrases, and trims helping verbs that pad without adding meaning.
+// Pure text-in / text-out so it can run offline (no AI key needed). Returns
+// the original content untouched if it can't shave anything off.
+export function shortenBullet(rawHtml: string, target = ONE_LINE_TARGET): string {
+  const clean = stripHtml(rawHtml).trim();
+  if (clean.length <= target) return clean;
+
+  let next = clean;
+  // Drop weak fillers (whole-word, case-insensitive).
+  const fillers = [
+    /\b(very|really|just|simply|truly|actually|literally|quite|basically|currently)\s/gi,
+    /\b(in order to)\b/gi,
+    /\b(was able to|were able to)\b/gi,
+    /\b(a lot of|lots of)\b/gi,
+    /\b(due to the fact that)\b/gi,
+    /\b(at the time of|at this time)\b/gi,
+    /\b(as well as)\b/gi,
+    /\b(in addition to)\b/gi,
+    /\b(approximately|roughly|around)\b/gi,
+    /\b(of the|of a|of an)\b/gi,
+  ];
+  const replacements: [RegExp, string][] = [
+    [/\b(in order to)\b/gi, 'to'],
+    [/\b(was able to|were able to)\b/gi, ''],
+    [/\b(a lot of|lots of)\b/gi, 'many'],
+    [/\b(due to the fact that)\b/gi, 'because'],
+    [/\b(at the time of|at this time)\b/gi, 'when'],
+    [/\b(as well as)\b/gi, 'and'],
+    [/\b(in addition to)\b/gi, 'and'],
+    [/\b(approximately|roughly|around)\b/gi, '~'],
+  ];
+  for (const [pattern, replacement] of replacements) {
+    next = next.replace(pattern, replacement);
+  }
+  for (const filler of fillers) {
+    if (next.length <= target) break;
+    next = next.replace(filler, ' ');
+  }
+  next = next.replace(/\s{2,}/g, ' ').replace(/\s+([,.;:!?])/g, '$1').trim();
+
+  // Still too long? Trim trailing parenthetical / "to..." clauses.
+  if (next.length > target) {
+    next = next.replace(/\s*\([^)]*\)\s*$/, '').trim();
+  }
+  if (next.length > target) {
+    next = next.replace(/,\s*[^,]{0,80}$/, '').trim();
+  }
+  return next || clean;
+}
+
 export function analyzeSingleBullet(rawHtml: string): BulletAnalysis {
   const content = stripHtml(rawHtml);
   const firstWord = content.split(/\s+/)[0]?.replace(/[^a-z]/gi, '');

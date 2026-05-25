@@ -17,7 +17,7 @@ import { RichBulletEditor } from './LazyRichBulletEditor';
 import { SortableList } from '@/components/shared/Sortable';
 import { SectionStyleOverridesPanel } from './SectionStyleOverrides';
 import { ApplicationEditor } from '@/components/jobs/ApplicationEditor';
-import { analyzeSingleBullet } from '@/utils/aiAssist';
+import { analyzeSingleBullet, shortenBullet } from '@/utils/aiAssist';
 import { sampleEntryForSection } from './sectionSamples';
 import type {
   Bullet,
@@ -1077,6 +1077,43 @@ function EntryListEditor({
   );
 }
 
+// When an Education entry is flagged as study-abroad, swap its field labels so
+// the editor reads like the Study Abroad section did: Program, Host, Classes
+// taken, GPA — instead of Degree, Institution, Major, etc.
+function effectiveLabels(
+  section: Section,
+  entry: Entry,
+  baseLabels: EntryLabels,
+  t: TFunction,
+): EntryLabels {
+  if (section.type !== 'education') return baseLabels;
+  if (entry.customFields?.kind !== 'study-abroad') return baseLabels;
+  return {
+    ...baseLabels,
+    add: baseLabels.add,
+    title: label(t, 'editor.program', 'Program'),
+    titleSuggestions: undefined,
+    subtitle: label(t, 'editor.institution', 'Host institution'),
+    location: label(t, 'editor.location', 'City, Country'),
+    bullets: true,
+    customFields: [
+      // Keep the kind selector first so the user can flip back.
+      ...baseLabels.customFields.filter((f) => f.key === 'kind'),
+      { key: 'gpa', label: label(t, 'editor.gpa', 'GPA'), placeholder: 'e.g. 3.85' },
+      {
+        key: 'coursework',
+        label: label(t, 'editor.coursesTaken', 'Classes taken'),
+        placeholder: label(t, 'editor.coursesTakenPlaceholder', 'Comma-separated; rendered as Courses: ...'),
+      },
+      {
+        key: 'language',
+        label: label(t, 'editor.languageOfInstruction', 'Language of instruction'),
+        placeholder: 'e.g. Spanish, English',
+      },
+    ],
+  };
+}
+
 function EntryEditor({
   section,
   entry,
@@ -1097,6 +1134,9 @@ function EntryEditor({
   dragHandle: ReactNode;
 }) {
   const { t } = useTranslation();
+  // For Education entries flagged as study-abroad, swap to study-abroad labels
+  // so the editor matches what the renderer will produce.
+  labels = effectiveLabels(section, entry, labels, t);
   const leftTextLength = [
     entry.title,
     entry.subtitle,
@@ -1487,7 +1527,9 @@ function BulletEditor({
 
       {ordered.map((bullet) => {
         const analysis = analyzeSingleBullet(bullet.content);
-        const tooLong = plainTextLen(bullet.content) > 200;
+        const len = plainTextLen(bullet.content);
+        const tooLong = len > 200;
+        const wrapsLikely = len > 100;
         return (
           <div key={bullet.id}>
             <div className="flex gap-2">
@@ -1525,9 +1567,31 @@ function BulletEditor({
                 <BulletBadge ok={analysis.hasMetric}>
                   {analysis.hasMetric ? t('editor.metricOk') : t('editor.metricMissing')}
                 </BulletBadge>
-                <BulletBadge ok={!tooLong}>
-                  {t('editor.charCount', { count: plainTextLen(bullet.content), max: 200 })}
+                <BulletBadge ok={!wrapsLikely}>
+                  {wrapsLikely
+                    ? t('editor.bulletWraps', { defaultValue: 'Likely wraps · {{count}} chars', count: len })
+                    : t('editor.bulletFitsOneLine', { defaultValue: 'Fits one line · {{count}} chars', count: len })}
                 </BulletBadge>
+                {tooLong && (
+                  <BulletBadge ok={false}>
+                    {t('editor.charCount', { count: len, max: 200 })}
+                  </BulletBadge>
+                )}
+                {wrapsLikely && (
+                  <button
+                    type="button"
+                    className="rounded-full bg-paper-tint px-2 py-0.5 text-[10px] font-medium text-ink hover:bg-paper-edge"
+                    onClick={() => {
+                      const shorter = shortenBullet(bullet.content);
+                      if (shorter && shorter !== analysis.content.trim()) {
+                        updateBullet(bullet.id, { content: shorter });
+                      }
+                    }}
+                    title={t('editor.shortenHint', { defaultValue: 'Drop fillers and abbreviate common phrases to fit one line' })}
+                  >
+                    {t('editor.shortenBullet', { defaultValue: 'Shorten' })}
+                  </button>
+                )}
               </div>
             )}
           </div>

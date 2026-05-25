@@ -255,12 +255,15 @@ function createPdfEntryRow(
       section.type === 'study-abroad' || cf.kind === 'study-abroad';
     const lines: string[] = [];
     if (studyAbroadKind) {
+      // One-line layout where possible: program + GPA + language joined by pipes.
       const program = entry.title?.trim();
       const loc = entry.location?.trim();
       const header = program && loc ? `${program} in ${loc}` : program || loc || '';
-      if (header) lines.push(header);
-      if (cf.language?.trim()) lines.push(`Language: ${cf.language.trim()}`);
-      if (cf.gpa?.trim()) lines.push(`Overall GPA: ${cf.gpa.trim()}`);
+      const inline: string[] = [];
+      if (header) inline.push(header);
+      if (cf.gpa?.trim()) inline.push(`GPA ${cf.gpa.trim()}`);
+      if (cf.language?.trim()) inline.push(cf.language.trim());
+      if (inline.length) lines.push(inline.join(' | '));
     } else {
       const majors = [cf.major, cf.secondMajor].map((m) => m?.trim()).filter(Boolean);
       const degreeLine = [entry.title?.trim(), majors.join(', ')].filter(Boolean).join(', ');

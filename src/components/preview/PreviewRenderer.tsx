@@ -367,12 +367,17 @@ function McCombsEducationRow({
   const cf = entry.customFields ?? {};
   const lines: string[] = [];
   if (studyAbroadKind) {
+    // Compact one-line layout: "Program in City, Country | GPA 3.85 | Spanish".
+    // Coursework drops to the second line as "Courses: ..." since it tends to
+    // be long. Everything else fits on the same row to save vertical space.
     const program = entry.title?.trim();
     const loc = entry.location?.trim();
     const header = program && loc ? `${program} in ${loc}` : program || loc || '';
-    if (header) lines.push(header);
-    if (cf.language?.trim()) lines.push(`Language: ${cf.language.trim()}`);
-    if (cf.gpa?.trim()) lines.push(`Overall GPA: ${cf.gpa.trim()}`);
+    const inline: string[] = [];
+    if (header) inline.push(header);
+    if (cf.gpa?.trim()) inline.push(`GPA ${cf.gpa.trim()}`);
+    if (cf.language?.trim()) inline.push(cf.language.trim());
+    if (inline.length) lines.push(inline.join(' | '));
   } else {
     // Comma joiner reads more naturally than " & " when the major itself
     // already contains the word "and", e.g. "Electrical and Computer
