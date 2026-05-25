@@ -10,6 +10,7 @@ import { LocaleToggle } from '@/components/shared/LocaleToggle';
 import { STATUS_META, STATUS_ORDER } from '@/components/jobs/jobStatus';
 import { useStatusLabel } from '@/components/jobs/statusLabels';
 import { toast } from '@/hooks/useToast';
+import { recordBackup } from '@/utils/updateCheck';
 import { useStore } from '@/store';
 import type { Resume } from '@/types';
 import {
@@ -68,6 +69,8 @@ export function LandingPage() {
     link.download = `resume-editor-backup-${new Date().toISOString().slice(0, 10)}.json`;
     link.click();
     URL.revokeObjectURL(url);
+    recordBackup();
+    toast('Backup saved to your downloads', { tone: 'success', ttl: 2000 });
   };
 
   return (

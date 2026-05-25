@@ -2,7 +2,8 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { RouterProvider } from 'react-router-dom';
 import { router } from './router';
-import { PwaUpdateToast } from './components/shared/PwaUpdateToast';
+import { UpdateBanner } from './components/shared/UpdateBanner';
+import { BackupNag } from './components/shared/BackupNag';
 import { hydratePersistence } from './store/persistence';
 import { applyStoredTheme } from './hooks/useTheme';
 import './i18n';
@@ -18,6 +19,7 @@ void hydratePersistence();
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <RouterProvider router={router} />
-    <PwaUpdateToast />
+    <UpdateBanner />
+    <BackupNag />
   </StrictMode>,
 );
