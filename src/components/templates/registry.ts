@@ -44,7 +44,7 @@ export const TEMPLATES: TemplateMeta[] = [
       font: 'EB Garamond',
       fontSize: { name: 16, sectionHeader: 10.5, entryTitle: 10.5, body: 10, contactLine: 10 },
       colors: baseColors,
-      margins: { top: 0.6, bottom: 0.6, left: 0.6, right: 0.6 },
+      margins: { top: 0.5, bottom: 0.5, left: 0.5, right: 0.5 },
       spacing: { section: 6, entry: 3, bullet: 1.15 },
       ruleStyle: { variant: 'full', weight: 0.5 },
       dateFormat: 'month-year',

@@ -69,7 +69,7 @@ const APPLICATION_STATUSES: ApplicationStatus[] = [
   'archived',
 ];
 
-export const RESUME_SCHEMA_VERSION = 2;
+export const RESUME_SCHEMA_VERSION = 3;
 
 export function normalizeResume(input: unknown): Resume | null {
   if (!isRecord(input)) return null;
@@ -80,6 +80,20 @@ export function normalizeResume(input: unknown): Resume | null {
   const sections = Array.isArray(input.sections)
     ? input.sections.map((section, order) => normalizeSection(section, order)).filter(Boolean)
     : [];
+
+  const priorVersion =
+    typeof input.schemaVersion === 'number' ? (input.schemaVersion as number) : 1;
+
+  // v3 migration: tighten the McCombs default margins from 0.6in to 0.5in so
+  // long dual-degree lines have more horizontal room. Only fires if the user
+  // is still on the prior default of exactly 0.6 across all four sides, so we
+  // never trample customised margins.
+  if (priorVersion < 3 && template === 'mccombs') {
+    const m = styles.margins;
+    if (m.top === 0.6 && m.bottom === 0.6 && m.left === 0.6 && m.right === 0.6) {
+      styles.margins = { top: 0.5, bottom: 0.5, left: 0.5, right: 0.5 };
+    }
+  }
 
   return {
     id: stringValue(input.id, makeId()),
