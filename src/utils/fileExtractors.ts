@@ -28,7 +28,7 @@ export async function extractFromFile(file: File): Promise<ExtractionResult> {
   if (ext === 'docx' || mime.includes('officedocument.wordprocessingml')) {
     return extractDocx(file);
   }
-  if (['png', 'jpg', 'jpeg'].includes(ext) || mime.startsWith('image/')) {
+  if (['png', 'jpg', 'jpeg', 'webp', 'bmp'].includes(ext) || mime.startsWith('image/')) {
     return extractImage(file);
   }
   // Fallback: best-effort text read
@@ -38,16 +38,46 @@ export async function extractFromFile(file: File): Promise<ExtractionResult> {
   };
 }
 
+// Bundle the pdfjs worker as a Vite asset so it ships with the app and works
+// from any origin (hosted, single-file html, file://). The CDN fallback we
+// used to rely on breaks under CSP and offline. The ?url import gives us a
+// hashed URL that Vite serves correctly in both build modes.
+let pdfWorkerConfigured = false;
+async function configurePdfWorker(pdfjs: typeof import('pdfjs-dist')): Promise<void> {
+  if (pdfWorkerConfigured) return;
+  try {
+    const workerUrl = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default;
+    pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+  } catch {
+    // Last-ditch CDN fallback if the bundler couldn't resolve the worker URL.
+    pdfjs.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+  }
+  pdfWorkerConfigured = true;
+}
+
 async function extractPdf(file: File): Promise<ExtractionResult> {
   const pdfjs = await import('pdfjs-dist');
-  // Vite-friendly worker. The ?url import returns a URL string for the worker bundle.
-  // We have to rely on a CDN worker path since bundling the worker as an asset is brittle
-  // across pdfjs versions; CDN keeps the version pinned to whatever's in node_modules.
-  const workerVersion = pdfjs.version;
-  pdfjs.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${workerVersion}/build/pdf.worker.min.mjs`;
+  await configurePdfWorker(pdfjs);
 
   const buffer = await file.arrayBuffer();
-  const pdf = await pdfjs.getDocument({ data: buffer }).promise;
+  // The worker can fail to spin up under file:// or strict CSP. Try the
+  // normal path first; if the worker errors during getDocument, fall back to
+  // the main-thread parse path so the user still gets text out.
+  let pdf;
+  try {
+    pdf = await pdfjs.getDocument({ data: buffer }).promise;
+  } catch (err) {
+    if (err instanceof Error && /worker/i.test(err.message)) {
+      pdf = await pdfjs.getDocument({
+        data: buffer,
+        // The disableWorker option forces the parser to run on the main thread.
+        // Slower for large PDFs but works everywhere.
+        disableWorker: true,
+      } as Parameters<typeof pdfjs.getDocument>[0]).promise;
+    } else {
+      throw err;
+    }
+  }
 
   let allText = '';
   let twoColumnDetected = false;
@@ -137,39 +167,64 @@ async function ocrPdfPages(
   pdf: { numPages: number; getPage: (n: number) => Promise<unknown> },
   warnings: string[],
 ): Promise<ExtractionResult> {
-  const Tesseract = (await import('tesseract.js')).default;
-  let combinedText = '';
-  let totalConfidence = 0;
-  let pagesScanned = 0;
+  const worker = await createOcrWorker();
+  try {
+    let combinedText = '';
+    let totalConfidence = 0;
+    let pagesScanned = 0;
 
-  for (let pageNo = 1; pageNo <= pdf.numPages; pageNo += 1) {
-    const page = (await pdf.getPage(pageNo)) as {
-      getViewport: (opts: { scale: number }) => { width: number; height: number };
-      render: (opts: { canvasContext: CanvasRenderingContext2D; viewport: unknown; canvas: HTMLCanvasElement }) => { promise: Promise<void> };
+    for (let pageNo = 1; pageNo <= pdf.numPages; pageNo += 1) {
+      const page = (await pdf.getPage(pageNo)) as {
+        getViewport: (opts: { scale: number }) => { width: number; height: number };
+        render: (opts: { canvasContext: CanvasRenderingContext2D; viewport: unknown; canvas: HTMLCanvasElement }) => { promise: Promise<void> };
+      };
+      const viewport = page.getViewport({ scale: 2 });
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) continue;
+      await page.render({ canvasContext: ctx, viewport, canvas }).promise;
+      // Convert to blob — Tesseract handles blobs reliably across browsers,
+      // whereas direct canvas handoff can fail in Safari and Firefox.
+      const blob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob((b) => resolve(b), 'image/png'),
+      );
+      if (!blob) continue;
+      const result = await worker.recognize(blob);
+      combinedText += result.data.text + '\n\n';
+      totalConfidence += result.data.confidence;
+      pagesScanned += 1;
+    }
+    const avgConfidence = pagesScanned > 0 ? totalConfidence / pagesScanned : 0;
+    if (avgConfidence < 75) {
+      warnings.push(
+        `OCR confidence is low (${Math.round(avgConfidence)}%). Please review every field carefully.`,
+      );
+    }
+    return {
+      text: combinedText,
+      hints: { ocrConfidence: avgConfidence },
+      warnings,
     };
-    const viewport = page.getViewport({ scale: 2 });
-    const canvas = document.createElement('canvas');
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) continue;
-    await page.render({ canvasContext: ctx, viewport, canvas }).promise;
-    const result = await Tesseract.recognize(canvas, 'eng');
-    combinedText += result.data.text + '\n\n';
-    totalConfidence += result.data.confidence;
-    pagesScanned += 1;
+  } finally {
+    void worker.terminate();
   }
-  const avgConfidence = pagesScanned > 0 ? totalConfidence / pagesScanned : 0;
-  if (avgConfidence < 75) {
-    warnings.push(
-      `OCR confidence is low (${Math.round(avgConfidence)}%). Please review every field carefully.`,
+}
+
+// Centralise worker creation. tesseract.js v6+ shipped CJS exports so the
+// previous `(await import('tesseract.js')).default` resolved to undefined
+// under some Vite interop paths. Destructure the named export instead.
+async function createOcrWorker() {
+  const tess = await import('tesseract.js');
+  const ns = (tess as unknown as { default?: typeof tess }).default ?? tess;
+  const { createWorker } = ns as { createWorker: typeof tess.createWorker };
+  if (typeof createWorker !== 'function') {
+    throw new Error(
+      'Failed to load OCR engine (tesseract.js). Try refreshing the page or check your network connection.',
     );
   }
-  return {
-    text: combinedText,
-    hints: { ocrConfidence: avgConfidence },
-    warnings,
-  };
+  return createWorker('eng');
 }
 
 async function extractDocx(file: File): Promise<ExtractionResult> {
@@ -183,19 +238,27 @@ async function extractDocx(file: File): Promise<ExtractionResult> {
 }
 
 async function extractImage(file: File): Promise<ExtractionResult> {
-  const Tesseract = (await import('tesseract.js')).default;
-  const result = await Tesseract.recognize(file, 'eng');
-  const text = result.data.text;
-  const confidence = result.data.confidence;
-  const warnings: string[] = [];
-  if (confidence < 75) {
-    warnings.push(
-      `OCR confidence is low (${Math.round(confidence)}%). Please review all fields carefully before continuing.`,
-    );
+  const worker = await createOcrWorker();
+  try {
+    const result = await worker.recognize(file);
+    const text = result.data.text;
+    const confidence = result.data.confidence;
+    const warnings: string[] = [];
+    if (!text.trim()) {
+      warnings.push(
+        'OCR returned no text. Make sure the image is clear and the text is right-side up.',
+      );
+    } else if (confidence < 75) {
+      warnings.push(
+        `OCR confidence is low (${Math.round(confidence)}%). Please review all fields carefully before continuing.`,
+      );
+    }
+    return {
+      text,
+      hints: { ocrConfidence: confidence },
+      warnings,
+    };
+  } finally {
+    void worker.terminate();
   }
-  return {
-    text,
-    hints: { ocrConfidence: confidence },
-    warnings,
-  };
 }
