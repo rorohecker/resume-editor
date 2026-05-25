@@ -7,6 +7,7 @@ import {
   EyeOff,
   FileText,
   GitCompare,
+  HardDriveDownload,
   Layers,
   Library,
   ListChecks,
@@ -31,9 +32,12 @@ import { ApplicationEditor } from '@/components/jobs/ApplicationEditor';
 import { MoreActionsMenu } from './MoreActionsMenu';
 import {
   deleteVersionSnapshot,
+  exportAllData,
   listVersionSnapshots,
 } from '@/store/persistence';
 import { toast } from '@/hooks/useToast';
+import { lastBackupAt, recordBackup } from '@/utils/updateCheck';
+import { FileSyncControl } from './FileSyncControl';
 
 export function EditorTopNav() {
   const { t } = useTranslation();
@@ -126,6 +130,7 @@ export function EditorTopNav() {
               <Check size={12} className="text-ok" /> {t('editor.saved')}
             </span>
           )}
+          {!savedHint && <BackupHint />}
           <div className="ml-2 hidden md:block">
             <ApplicationEditor
               resume={resume}
@@ -238,6 +243,30 @@ export function EditorTopNav() {
         >
           <Upload size={16} />
         </button>
+        <button
+          type="button"
+          onClick={() => {
+            const blob = new Blob([JSON.stringify(exportAllData(), null, 2)], {
+              type: 'application/json;charset=utf-8',
+            });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `resume-editor-backup-${new Date().toISOString().slice(0, 10)}.json`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+            recordBackup();
+            toast(t('editor.backupSaved', { defaultValue: 'Backup downloaded' }), { tone: 'success', ttl: 1800 });
+          }}
+          className="icon-btn"
+          title={t('editor.backupNow', { defaultValue: 'Back up all resumes (JSON)' })}
+          aria-label={t('editor.backupNow', { defaultValue: 'Back up all resumes (JSON)' })}
+        >
+          <HardDriveDownload size={16} />
+        </button>
+        <FileSyncControl />
         <button
           type="button"
           className="icon-btn"
@@ -404,5 +433,40 @@ export function EditorTopNav() {
       }}
     />
     </>
+  );
+}
+
+// Small hint near the resume name: when was the last JSON backup taken?
+// Stays muted and quiet until we're more than a day stale, then gets a
+// gentle nudge color. Disappears the moment a save indicator is showing.
+function BackupHint() {
+  const [, force] = useState(0);
+  // Re-render on a slow interval so "5 minutes ago" becomes "an hour ago".
+  useEffect(() => {
+    const id = window.setInterval(() => force((v) => v + 1), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+  const ts = lastBackupAt();
+  if (!ts) {
+    return (
+      <span className="ml-2 hidden text-xs text-ink-subtle md:inline" title="No JSON backup has been saved yet">
+        · Not backed up
+      </span>
+    );
+  }
+  const minutes = (Date.now() - ts) / 60_000;
+  const stale = minutes > 60 * 24 * 7;
+  const text =
+    minutes < 1 ? 'Backed up just now'
+    : minutes < 60 ? `Backed up ${Math.floor(minutes)}m ago`
+    : minutes < 60 * 24 ? `Backed up ${Math.floor(minutes / 60)}h ago`
+    : `Backed up ${Math.floor(minutes / 60 / 24)}d ago`;
+  return (
+    <span
+      className={`ml-2 hidden text-xs md:inline ${stale ? 'text-warn' : 'text-ink-subtle'}`}
+      title={new Date(ts).toLocaleString()}
+    >
+      · {text}
+    </span>
   );
 }
