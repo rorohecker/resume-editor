@@ -36,6 +36,52 @@
     --c-ok: 74 222 128;
   }
 
+  /* Accent palettes — chrome only. The default `:root` already ships a
+     conservative blue, so the .accent-* classes overlay alternatives. */
+
+  /* Minimal: greyscale chrome, no accent color. Used by people who want the
+     editor to feel as quiet as the printed resume. */
+  .accent-minimal {
+    --c-accent: 23 23 23;
+    --c-accent-hover: 55 65 81;
+  }
+  .accent-minimal.dark {
+    --c-accent: 209 213 219;
+    --c-accent-hover: 243 244 246;
+  }
+
+  /* Accent (default): subtle blue tied into existing accents, soft tint on
+     paper-tint so cards have a faint warmth. */
+  .accent-accent {
+    --c-paper-tint: 246 248 252;
+    --c-accent: 29 78 216;
+    --c-accent-hover: 30 64 175;
+  }
+  .accent-accent.dark {
+    --c-paper-tint: 30 33 41;
+    --c-accent: 96 165 250;
+    --c-accent-hover: 147 197 253;
+  }
+
+  /* Distinct: bolder palette with a teal/coral split. Section headers, badges,
+     and hover states pick up the warmer accent so the editor feels lively. */
+  .accent-distinct {
+    --c-paper-tint: 247 245 240;
+    --c-paper-edge: 217 211 197;
+    --c-accent: 17 94 89;
+    --c-accent-hover: 13 148 136;
+    --c-warn: 194 65 12;
+    --c-ok: 22 101 52;
+  }
+  .accent-distinct.dark {
+    --c-paper: 25 29 32;
+    --c-paper-tint: 36 41 45;
+    --c-paper-edge: 65 73 79;
+    --c-accent: 45 212 191;
+    --c-accent-hover: 94 234 212;
+    --c-warn: 251 146 60;
+  }
+
   html,
   body,
   #root {

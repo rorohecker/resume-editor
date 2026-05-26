@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import {
@@ -815,6 +815,22 @@ function SectionEditor({
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(section.entries.length === 0);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  // When the preview asks us to focus this section, expand it and scroll it
+  // into view. We watch the focusedSectionToken counter rather than just the
+  // id so re-clicking the same section header still re-fires the effect.
+  const focusedSectionId = useStore((s) => s.focusedSectionId);
+  const focusedSectionToken = useStore((s) => s.focusedSectionToken);
+  useEffect(() => {
+    if (focusedSectionId !== section.id) return;
+    setOpen(true);
+    // Slight delay so the accordion has expanded before we scroll into view.
+    const timer = window.setTimeout(() => {
+      containerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
+    return () => window.clearTimeout(timer);
+  }, [focusedSectionId, focusedSectionToken, section.id]);
 
   const patchSection = (patch: Partial<Section>) => {
     updateResume((current) => ({
@@ -888,7 +904,7 @@ function SectionEditor({
   const content = sectionContentKind(section);
 
   return (
-    <div>
+    <div ref={containerRef} data-section-id={section.id}>
       <AccordionShell
         title={
           <input

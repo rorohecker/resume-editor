@@ -42,9 +42,7 @@ export function createPdfDocumentFor(resume: Resume, pdfModule: PdfModule): Retu
     contactLine: {
       marginTop: 4,
       fontSize: resume.styles.fontSize.contactLine,
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      justifyContent: resume.template === 'cs-swe' ? 'flex-start' : 'center',
+      textAlign: resume.template === 'cs-swe' ? 'left' : 'center',
     },
     section: {
       marginTop: resume.styles.spacing.section,
@@ -131,24 +129,35 @@ function createPdfHeader(resume: Resume, { Text, View, Link }: PdfModule, styles
     .sort((a, b) => a.order - b.order);
   const separator = ` ${separatorText(resume.header.separatorStyle)} `;
 
+  // Render the entire contact line as a single Text element so the contents
+  // flow inline and wrap as text — the old approach used a flex-row View with
+  // individual Link/Text children, which broke the visual line on wrap and
+  // sometimes dropped trailing entries (e.g. GitHub) when the parent didn't
+  // forward width constraints. Inline children inside Text wrap as one
+  // paragraph and stay together.
+  const contactChildren: ReturnType<typeof createElement>[] = [];
+  contacts.forEach((field, index) => {
+    const value = field.value.trim();
+    if (index > 0) {
+      contactChildren.push(createElement(Text, { key: `${field.id}-sep` }, separator));
+    }
+    contactChildren.push(
+      linkableContact(field.type)
+        ? createElement(
+            Link,
+            { key: field.id, src: hrefFor(field.type, value), style: styles.link },
+            value,
+          )
+        : createElement(Text, { key: field.id }, value),
+    );
+  });
+
   return createElement(
     View,
     { style: styles.header },
     createElement(Text, { style: styles.name }, resume.header.name || resume.name),
     contacts.length > 0 &&
-      createElement(
-        View,
-        { style: styles.contactLine },
-        ...contacts.flatMap((field, index) => {
-          const value = field.value.trim();
-          const content = linkableContact(field.type)
-            ? createElement(Link, { key: field.id, src: hrefFor(field.type, value), style: styles.link }, value)
-            : createElement(Text, { key: field.id }, value);
-          return index === 0
-            ? [content]
-            : [createElement(Text, { key: `${field.id}-sep` }, separator), content];
-        }),
-      ),
+      createElement(Text, { style: styles.contactLine }, ...contactChildren),
   );
 }
 
@@ -300,7 +309,7 @@ function createPdfEntryRow(
             createElement(Text, { key: `l${i}`, wrap: studyAbroadKind ? false : undefined }, line),
           ),
         ),
-        date && createElement(Text, { style: { width: 0.7 * 72, textAlign: 'right', flexShrink: 0 }, wrap: false }, date),
+        date && createElement(Text, { style: { width: 1.1 * 72, textAlign: 'right', flexShrink: 0 }, wrap: false }, date),
       ),
       !studyAbroadKind &&
         coursework &&

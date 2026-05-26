@@ -27,6 +27,7 @@ import { ChangeTemplateMenu } from './ChangeTemplateMenu';
 import { ImportResumeModal } from '@/components/import/ImportResumeModal';
 import { SaveSnapshotModal } from './SaveSnapshotModal';
 import { ThemeToggle } from '@/components/shared/ThemeToggle';
+import { AccentToggle } from '@/components/shared/AccentToggle';
 import { SnapshotRestoreModal } from './SnapshotRestoreModal';
 import { ApplicationEditor } from '@/components/jobs/ApplicationEditor';
 import { MoreActionsMenu } from './MoreActionsMenu';
@@ -374,7 +375,8 @@ export function EditorTopNav() {
         </button>
 
         <div className="mx-2 hidden h-6 w-px bg-paper-edge md:block" />
-        <div className="hidden md:block">
+        <div className="hidden items-center gap-1 md:flex">
+          <AccentToggle compact />
           <ThemeToggle compact />
         </div>
 

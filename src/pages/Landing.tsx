@@ -6,6 +6,7 @@ import { TEMPLATES } from '@/components/templates/registry';
 import { ImportResumeModal } from '@/components/import/ImportResumeModal';
 import { ToastViewport } from '@/components/shared/ToastViewport';
 import { ThemeToggle } from '@/components/shared/ThemeToggle';
+import { AccentToggle } from '@/components/shared/AccentToggle';
 import { LocaleToggle } from '@/components/shared/LocaleToggle';
 import { STATUS_META, STATUS_ORDER } from '@/components/jobs/jobStatus';
 import { useStatusLabel } from '@/components/jobs/statusLabels';
@@ -85,6 +86,7 @@ export function LandingPage() {
           </div>
           <div className="flex items-center gap-2">
             <LocaleToggle />
+            <AccentToggle compact />
             <ThemeToggle compact />
             <button className="btn-secondary" type="button" onClick={() => setImportOpen(true)}>
               <Upload size={16} />

@@ -62,16 +62,37 @@ function yieldToBrowser(): Promise<void> {
 async function exportDocx(resume: Resume): Promise<void> {
   const docx = await import('docx');
   const {
+    AlignmentType,
+    BorderStyle,
     Document,
     HeadingLevel,
+    LevelFormat,
     Packer,
+    PageOrientation,
     Paragraph,
+    TabStopPosition,
+    TabStopType,
     TextRun,
   } = docx;
 
-  const children = [
+  // 1in = 1440 twips, 1pt = 20 twips. Mirror the resume's own margin settings
+  // so the Word output matches the on-screen layout instead of dumping into
+  // Word's default 1in margins.
+  const margins = {
+    top: Math.round(resume.styles.margins.top * 1440),
+    right: Math.round(resume.styles.margins.right * 1440),
+    bottom: Math.round(resume.styles.margins.bottom * 1440),
+    left: Math.round(resume.styles.margins.left * 1440),
+  };
+
+  // Page width minus side margins, in twips, used for the right-aligned date tab.
+  const pageWidthTwips = 8.5 * 1440;
+  const usableWidth = pageWidthTwips - margins.left - margins.right;
+
+  const children: import('docx').Paragraph[] = [
     new Paragraph({
-      alignment: 'center',
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 60 },
       children: [
         new TextRun({
           text: resume.header.name || resume.name,
@@ -87,31 +108,87 @@ async function exportDocx(resume: Resume): Promise<void> {
     .sort((a, b) => a.order - b.order)
     .map((field) => field.value.trim());
   if (contacts.length > 0) {
-    children.push(new Paragraph({ alignment: 'center', text: contacts.join(' | ') }));
+    children.push(
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 160 },
+        children: [
+          new TextRun({
+            text: contacts.join(' | '),
+            size: Math.round(resume.styles.fontSize.contactLine * 2),
+          }),
+        ],
+      }),
+    );
   }
 
   for (const section of visibleSections(resume)) {
-    const sectionChildren = sectionToDocx(section, resume, docx);
+    const sectionChildren = sectionToDocx(section, resume, docx, usableWidth);
     if (sectionChildren.length === 0) continue;
     children.push(
       new Paragraph({
-        text: section.title.toUpperCase(),
-        heading: HeadingLevel.HEADING_2,
-        thematicBreak: true,
+        spacing: { before: 200, after: 40 },
+        border: {
+          bottom: { color: '000000', space: 1, style: BorderStyle.SINGLE, size: 4 },
+        },
+        children: [
+          new TextRun({
+            text: section.title.toUpperCase(),
+            bold: true,
+            size: Math.round(resume.styles.fontSize.sectionHeader * 2),
+          }),
+        ],
       }),
       ...sectionChildren,
     );
   }
 
   const doc = new Document({
+    styles: {
+      default: {
+        document: {
+          run: {
+            font: 'Calibri',
+            size: Math.round(resume.styles.fontSize.body * 2),
+          },
+        },
+      },
+    },
+    numbering: {
+      config: [
+        {
+          reference: 'resume-bullets',
+          levels: [
+            {
+              level: 0,
+              format: LevelFormat.BULLET,
+              text: '•',
+              alignment: AlignmentType.LEFT,
+              style: {
+                paragraph: { indent: { left: 360, hanging: 240 } },
+              },
+            },
+          ],
+        },
+      ],
+    },
     sections: [
       {
-        properties: {},
+        properties: {
+          page: {
+            margin: margins,
+            size: { orientation: PageOrientation.PORTRAIT },
+          },
+        },
         children,
       },
     ],
   });
   const blob = await Packer.toBlob(doc);
+  // HeadingLevel + TabStopPosition kept imported in case future tweaks need them.
+  void HeadingLevel;
+  void TabStopPosition;
+  void TabStopType;
   downloadBlob(blob, `${fileBaseName(resume)}.docx`, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
 }
 
@@ -139,46 +216,100 @@ async function exportPng(resume: Resume): Promise<void> {
   downloadBlob(blob, `${fileBaseName(resume)}.png`, 'image/png');
 }
 
-function sectionToDocx(section: Section, resume: Resume, docx: DocxModule) {
+function sectionToDocx(section: Section, resume: Resume, docx: DocxModule, usableWidth: number) {
   const { Paragraph, TextRun } = docx;
 
   if (section.type === 'summary' || section.layout === 'text-block') {
     const text = section.entries[0]?.title?.trim();
-    return text ? [new Paragraph(text)] : [];
+    return text ? [new Paragraph({ children: [new TextRun(text)] })] : [];
   }
 
   if (section.type === 'skills' || section.layout === 'skills-grid') {
     return section.entries
       .filter((entry) => entry.title || entry.subtitle)
-      .map((entry) =>
-        new Paragraph({
-          children: [
-            new TextRun({ text: `${entry.title || 'Skills'}: `, bold: true }),
-            new TextRun(entry.subtitle ?? ''),
-          ],
-        }),
+      .map(
+        (entry) =>
+          new Paragraph({
+            spacing: { after: 40 },
+            children: [
+              new TextRun({ text: `${entry.title || 'Skills'}: `, bold: true }),
+              new TextRun(entry.subtitle ?? ''),
+            ],
+          }),
       );
   }
 
-  return section.entries.flatMap((entry) => entryToDocx(entry, resume, docx));
+  return section.entries.flatMap((entry) =>
+    entry.visible === false ? [] : entryToDocx(entry, resume, docx, usableWidth),
+  );
 }
 
-function entryToDocx(entry: Entry, resume: Resume, docx: DocxModule) {
-  const { Paragraph, TextRun } = docx;
-  const date = formatDateRange(entry.startDate, entry.endDate, entry.current, resume.styles.dateFormat);
-  const header = [entry.title, entry.subtitle, entry.location, date].filter(Boolean).join(' | ');
-  const paragraphs = header
-    ? [new Paragraph({ children: [new TextRun({ text: header, bold: true })] })]
-    : [];
+function entryToDocx(entry: Entry, resume: Resume, docx: DocxModule, usableWidth: number) {
+  const { AlignmentType, Paragraph, TabStopType, TextRun } = docx;
+  const date = formatDateRange(
+    entry.startDate,
+    entry.endDate,
+    entry.current,
+    resume.styles.dateFormat,
+  );
+
+  // Header line: bold {title} {subtitle} on the left, plain {date} flush
+  // right via a tab stop at the right margin. This matches the on-screen
+  // 3-column layout and keeps the date from running off the page.
+  const title = entry.title?.trim();
+  const subtitle = entry.subtitle?.trim();
+  const location = entry.location?.trim();
+
+  const headerRuns: import('docx').TextRun[] = [];
+  if (title) headerRuns.push(new TextRun({ text: title, bold: true }));
+  if (title && subtitle) headerRuns.push(new TextRun({ text: ' · ' }));
+  if (subtitle) headerRuns.push(new TextRun({ text: subtitle, italics: true }));
+  if ((title || subtitle) && location) headerRuns.push(new TextRun({ text: `; ${location}` }));
+  if (!title && !subtitle && location) headerRuns.push(new TextRun({ text: location }));
+
+  const paragraphs: import('docx').Paragraph[] = [];
+
+  if (headerRuns.length > 0 || date) {
+    if (date) {
+      headerRuns.push(new TextRun({ text: '\t' }));
+      headerRuns.push(new TextRun({ text: date }));
+    }
+    paragraphs.push(
+      new Paragraph({
+        tabStops: [{ type: TabStopType.RIGHT, position: usableWidth }],
+        spacing: { after: 40 },
+        alignment: AlignmentType.LEFT,
+        children: headerRuns,
+      }),
+    );
+  }
 
   for (const [key, value] of Object.entries(entry.customFields ?? {})) {
-    if (!value.trim()) continue;
-    paragraphs.push(new Paragraph(`${labelFromKey(key)}: ${value}`));
+    const trimmed = value.trim();
+    if (!trimmed) continue;
+    // The "kind" key is internal metadata for the study-abroad toggle — never
+    // render it as a label/value line in the export.
+    if (key === 'kind') continue;
+    paragraphs.push(
+      new Paragraph({
+        spacing: { after: 20 },
+        children: [
+          new TextRun({ text: `${labelFromKey(key)}: `, bold: true }),
+          new TextRun(trimmed),
+        ],
+      }),
+    );
   }
 
   for (const bullet of entry.bullets ?? []) {
     if (!bullet.visible || !stripHtml(bullet.content)) continue;
-    paragraphs.push(new Paragraph({ text: stripHtml(bullet.content), bullet: { level: 0 } }));
+    paragraphs.push(
+      new Paragraph({
+        spacing: { after: 20 },
+        numbering: { reference: 'resume-bullets', level: 0 },
+        children: [new TextRun(stripHtml(bullet.content))],
+      }),
+    );
   }
 
   return paragraphs;

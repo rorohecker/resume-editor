@@ -2,6 +2,7 @@ import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Bullet, ContactField, Entry, Resume, RuleStyle, Section } from '@/types';
 import { formatDateRange } from '@/utils/dateFormat';
+import { useStore } from '@/store';
 
 const PT_TO_PX = 96 / 72;
 
@@ -212,7 +213,7 @@ const SectionBlock = memo(function SectionBlockInner({ section, resume }: { sect
         color: o.bodyColor ?? undefined,
       }}
     >
-      <SectionHeader title={section.title} resume={resume} overrides={o} />
+      <SectionHeader title={section.title} resume={resume} overrides={o} sectionId={section.id} />
       <div>{renderSectionContent(section, resume)}</div>
     </section>
   );
@@ -404,7 +405,9 @@ function McCombsEducationRow({
         display: 'grid',
         // Keep the institution/date columns compact so long degree statements
         // like BSE & BBA + honors programs have room to stay on one line.
-        gridTemplateColumns: '1.75in minmax(0, 1fr) 0.7in',
+        // 1.1in for the date column so a full "Aug 2022 - May 2026" range
+        // stays on one line instead of crashing into the page edge.
+        gridTemplateColumns: '1.75in minmax(0, 1fr) 1.1in',
         columnGap: pt(6),
         alignItems: 'baseline',
       }}
@@ -645,26 +648,53 @@ function SectionHeader({
   title,
   resume,
   overrides,
+  sectionId,
 }: {
   title: string;
   resume: Resume;
   overrides: NonNullable<Section['styleOverrides']>;
+  sectionId?: string;
 }) {
   const { styles } = resume;
   const uppercase = overrides.uppercaseTitle ?? true;
+  const focusSection = useStore((s) => s.focusSection);
+  // Clicking a section title in the preview jumps the editor panel to the
+  // matching section's accordion and opens it. The rendered output looks the
+  // same — the click target lives behind a transparent button so it doesn't
+  // change the resume's visual styling at all.
+  const onJump = sectionId ? () => focusSection(sectionId) : undefined;
   return (
     <div>
-      <div
-        style={{
-          fontSize: pt(styles.fontSize.sectionHeader),
-          fontWeight: 700,
-          color: overrides.sectionHeaderColor ?? styles.colors.sectionHeader,
-          textTransform: uppercase ? 'uppercase' : 'none',
-          letterSpacing: 0,
-        }}
-      >
-        {title}
-      </div>
+      {onJump ? (
+        <button
+          type="button"
+          onClick={onJump}
+          title="Click to edit this section"
+          className="-mx-1 block w-full rounded-sm px-1 text-left transition-colors hover:bg-paper-tint"
+          style={{
+            fontSize: pt(styles.fontSize.sectionHeader),
+            fontWeight: 700,
+            color: overrides.sectionHeaderColor ?? styles.colors.sectionHeader,
+            textTransform: uppercase ? 'uppercase' : 'none',
+            letterSpacing: 0,
+            cursor: 'pointer',
+          }}
+        >
+          {title}
+        </button>
+      ) : (
+        <div
+          style={{
+            fontSize: pt(styles.fontSize.sectionHeader),
+            fontWeight: 700,
+            color: overrides.sectionHeaderColor ?? styles.colors.sectionHeader,
+            textTransform: uppercase ? 'uppercase' : 'none',
+            letterSpacing: 0,
+          }}
+        >
+          {title}
+        </div>
+      )}
       {!overrides.hideRule && (
         <SectionRule rule={styles.ruleStyle} color={styles.colors.sectionRule} />
       )}

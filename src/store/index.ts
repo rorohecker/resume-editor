@@ -22,6 +22,10 @@ interface UIState {
   zoom: number;
   mobileTab: 'edit' | 'preview';
   lastSavedAt: number | null;
+  // Section ID the editor should scroll to and expand. Bumped via a counter so
+  // re-requesting the same section still fires the effect.
+  focusedSectionId: string | null;
+  focusedSectionToken: number;
 }
 
 interface ResumeState {
@@ -44,6 +48,7 @@ interface Actions {
   setAnonymized: (on: boolean) => void;
   setZoom: (zoom: number) => void;
   setMobileTab: (tab: 'edit' | 'preview') => void;
+  focusSection: (sectionId: string) => void;
 
   createResumeFromTemplate: (template: TemplateId) => Resume;
   loadResume: (id: string) => Resume | null;
@@ -83,6 +88,8 @@ export const useStore = create<UIState & ResumeState & Actions>((set, get) => ({
   zoom: 1,
   mobileTab: 'edit',
   lastSavedAt: null,
+  focusedSectionId: null,
+  focusedSectionToken: 0,
 
   currentResume: null,
   past: [],
@@ -101,6 +108,14 @@ export const useStore = create<UIState & ResumeState & Actions>((set, get) => ({
   setAnonymized: (anonymized) => set({ anonymized }),
   setZoom: (zoom) => set({ zoom: clamp(zoom, 0.5, 1.5) }),
   setMobileTab: (mobileTab) => set({ mobileTab }),
+  focusSection: (sectionId) =>
+    set((state) => ({
+      focusedSectionId: sectionId,
+      focusedSectionToken: state.focusedSectionToken + 1,
+      // Make sure mobile users land on the editor pane when they tap a
+      // preview header on a narrow screen.
+      mobileTab: 'edit',
+    })),
 
   createResumeFromTemplate: (template) => {
     const resume = factory(template);
