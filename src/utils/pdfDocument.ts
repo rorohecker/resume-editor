@@ -32,16 +32,23 @@ export function createPdfDocumentFor(resume: Resume, pdfModule: PdfModule): Retu
       color: '#666666',
     },
     header: {
-      // Explicit full-width so the Text children inside have a real container
-      // to align against. Without this, react-pdf shrink-wraps the View around
-      // the wider of its children and the shorter (name) appears off-center.
+      // Three independent safety nets so the name + contact line never end
+      // up mis-aligned in @react-pdf's layout:
+      //  - width: 100% so the View doesn't shrink-wrap around its widest child
+      //  - flexDirection: column to make alignItems the cross-axis (horizontal)
+      //  - alignItems: center to flex-center every child horizontally
+      // No extra paddingTop here — that just pushed content down and created
+      // matching empty space at the bottom of the page. The page-level
+      // paddingTop already comes from resume.styles.margins.top.
       width: '100%',
+      flexDirection: 'column',
+      alignItems: resume.template === 'cs-swe' ? 'flex-start' : 'center',
       marginBottom: 8,
     },
     name: {
-      // width:100% + textAlign forces the Text bounding box to span the parent
-      // so textAlign actually shifts the glyphs to center instead of centering
-      // glyphs within a tightly-fitted box (which is a no-op).
+      // width:100% + textAlign as a second guarantee. Together with
+      // alignItems on the parent this gives us two independent centering
+      // mechanisms — whichever react-pdf honors first, the result is the same.
       width: '100%',
       textAlign: resume.template === 'cs-swe' ? 'left' : 'center',
       fontSize: resume.styles.fontSize.name,

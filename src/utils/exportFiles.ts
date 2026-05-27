@@ -30,11 +30,63 @@ export async function exportResume(resume: Resume, format: ExportFormat): Promis
   }
 }
 
+export interface ExportArtifact {
+  blob: Blob;
+  filename: string;
+  mimeType: string;
+}
+
+// Generates the export blob WITHOUT downloading. Used by the ExportModal's
+// preview-and-confirm flow so the user sees exactly what they're about to
+// save before any file lands in their Downloads folder.
+export async function generateExportArtifact(
+  resume: Resume,
+  format: ExportFormat,
+): Promise<ExportArtifact> {
+  const base = fileBaseName(resume);
+  switch (format) {
+    case 'pdf': {
+      const blob = await renderPdfBlob(resume);
+      return { blob, filename: `${base}.pdf`, mimeType: 'application/pdf' };
+    }
+    case 'docx': {
+      const blob = await renderDocxBlob(resume);
+      return {
+        blob,
+        filename: `${base}.docx`,
+        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      };
+    }
+    case 'txt': {
+      const blob = new Blob([resumeToPlainText(resume)], { type: 'text/plain;charset=utf-8' });
+      return { blob, filename: `${base}.txt`, mimeType: 'text/plain;charset=utf-8' };
+    }
+    case 'json': {
+      const blob = new Blob([JSON.stringify(resume, null, 2)], {
+        type: 'application/json;charset=utf-8',
+      });
+      return { blob, filename: `${base}.json`, mimeType: 'application/json;charset=utf-8' };
+    }
+    case 'png': {
+      const blob = await renderPngBlob(resume);
+      return { blob, filename: `${base}.png`, mimeType: 'image/png' };
+    }
+  }
+}
+
+// Trigger an actual download of a pre-generated blob. Used by the
+// preview-confirm flow after the user clicks Confirm.
+export function downloadArtifact(artifact: ExportArtifact): void {
+  downloadBlob(artifact.blob, artifact.filename, artifact.mimeType);
+}
+
 async function exportPdf(resume: Resume): Promise<void> {
+  const blob = await renderPdfBlob(resume);
+  downloadBlob(blob, `${fileBaseName(resume)}.pdf`, 'application/pdf');
+}
+
+async function renderPdfBlob(resume: Resume): Promise<Blob> {
   let blob: Blob | null = null;
-  // Try the Web Worker first. If the worker spawn or render fails for any
-  // reason (DOM-only API in @react-pdf, OffscreenCanvas missing, etc.) the
-  // client throws and we fall back to the main-thread path.
   if (isWorkerAvailable()) {
     try {
       blob = await renderPdfInWorker(resume);
@@ -49,7 +101,7 @@ async function exportPdf(resume: Resume): Promise<void> {
     await yieldToBrowser();
     blob = await pdfModule.pdf(document).toBlob();
   }
-  downloadBlob(blob, `${fileBaseName(resume)}.pdf`, 'application/pdf');
+  return blob;
 }
 
 function yieldToBrowser(): Promise<void> {
@@ -61,6 +113,15 @@ function yieldToBrowser(): Promise<void> {
 }
 
 async function exportDocx(resume: Resume): Promise<void> {
+  const blob = await renderDocxBlob(resume);
+  downloadBlob(
+    blob,
+    `${fileBaseName(resume)}.docx`,
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  );
+}
+
+async function renderDocxBlob(resume: Resume): Promise<Blob> {
   const docx = await import('docx');
   const {
     AlignmentType,
@@ -190,13 +251,19 @@ async function exportDocx(resume: Resume): Promise<void> {
   void HeadingLevel;
   void TabStopPosition;
   void TabStopType;
-  downloadBlob(blob, `${fileBaseName(resume)}.docx`, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+  return blob;
 }
 
 async function exportPng(resume: Resume): Promise<void> {
+  const blob = await renderPngBlob(resume);
+  downloadBlob(blob, `${fileBaseName(resume)}.png`, 'image/png');
+}
+
+async function renderPngBlob(resume: Resume): Promise<Blob> {
   const { toPng } = await import('html-to-image');
   const page = document.querySelector<HTMLElement>('.resume-print-page');
   if (!page) throw new Error('Resume preview is not available.');
+  void resume;
 
   const dataUrl = await toPng(page, {
     pixelRatio: 2,
@@ -213,8 +280,7 @@ async function exportPng(resume: Resume): Promise<void> {
   });
 
   const response = await fetch(dataUrl);
-  const blob = await response.blob();
-  downloadBlob(blob, `${fileBaseName(resume)}.png`, 'image/png');
+  return response.blob();
 }
 
 function sectionToDocx(section: Section, resume: Resume, docx: DocxModule, usableWidth: number) {
