@@ -74,6 +74,11 @@ export function createPdfDocumentFor(inputResume: Resume, pdfModule: PdfModule):
       textTransform: 'uppercase',
       lineHeight: 1,
     },
+    sectionHeaderBlock: {
+      width: '100%',
+      marginBottom: 4,
+      paddingBottom: 1,
+    },
     rule: {
       alignSelf: 'stretch',
       borderTopWidth: ruleWidth(resume),
@@ -196,6 +201,18 @@ function createPdfSection(section: Section, resume: Resume, pdfModule: PdfModule
     color: overrides.sectionHeaderColor ?? styles.sectionTitle.color,
     textTransform: (overrides.uppercaseTitle ?? true ? 'uppercase' : 'none') as 'uppercase' | 'none',
   };
+  const showRule = !overrides.hideRule && resume.styles.ruleStyle.variant !== 'none';
+  const fullRuleStyle =
+    showRule && resume.styles.ruleStyle.variant !== 'partial'
+      ? [
+          styles.sectionHeaderBlock,
+          {
+            borderBottomWidth: ruleWidth(resume),
+            borderBottomColor: resume.styles.colors.sectionRule,
+            borderBottomStyle: 'solid' as const,
+          },
+        ]
+      : styles.sectionHeaderBlock;
 
   return createElement(
     View,
@@ -208,10 +225,10 @@ function createPdfSection(section: Section, resume: Resume, pdfModule: PdfModule
       },
       wrap: true,
     },
-    createElement(View, { wrap: false, style: { width: '100%' } }, [
+    createElement(View, { wrap: false, style: fullRuleStyle }, [
       createElement(Text, { key: 'title', style: titleStyle }, section.title),
-      !overrides.hideRule &&
-        resume.styles.ruleStyle.variant !== 'none' &&
+      showRule &&
+        resume.styles.ruleStyle.variant === 'partial' &&
         createElement(View, { key: 'rule', style: styles.rule }),
     ]),
     ...sectionToPdfContent(section, resume, pdfModule, styles),
@@ -246,7 +263,7 @@ function sectionToPdfContent(section: Section, resume: Resume, pdfModule: PdfMod
   return section.entries.filter(entryHasContent).map((entry, index) =>
     createElement(
       View,
-      { key: entry.id, style: index === 0 ? undefined : entryStyle, wrap: false },
+      { key: entry.id, style: index === 0 ? undefined : entryStyle, wrap: true },
       createPdfEntryRow(entry, section, resume, pdfModule, styles),
       ...(entry.bullets ?? [])
         .filter((bullet) => bullet.visible && stripHtml(bullet.content))
