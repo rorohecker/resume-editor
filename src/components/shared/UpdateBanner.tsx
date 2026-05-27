@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Download, RefreshCcw, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, FileText, RefreshCcw, Replace, X } from 'lucide-react';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import {
   compareVersions,
@@ -8,36 +8,32 @@ import {
   type ReleaseInfo,
 } from '@/utils/updateCheck';
 import { exportAllData } from '@/store/persistence';
+import { isFileSystemAccessSupported, replaceExistingHtmlFile } from '@/utils/fileSync';
+import { toast } from '@/hooks/useToast';
 
-// One banner handles both update paths.
-// Hosted (GitHub Pages): vite-plugin-pwa's useRegisterSW reports when a new
-// service worker is waiting. We surface a reload prompt.
-// Single-file html: we poll the GitHub releases API on load and once an hour
-// and surface a download prompt when the latest tag is newer.
-// Either way the user is nudged to back up their data first because the
-// hosted IDB and the file:// IDB are separate origins, and replacing the
-// single-file html in a different folder starts a fresh database.
+// One banner handles both update paths. The user always gets the release
+// notes in-place before any download happens, plus an in-place replace
+// option (Chrome/Edge) so the new html overwrites the existing file rather
+// than dropping a second copy in Downloads.
 
 export function UpdateBanner() {
   const [release, setRelease] = useState<ReleaseInfo | null>(null);
   const [dismissed, setDismissed] = useState(false);
+  const [showNotes, setShowNotes] = useState(false);
+  const [replacing, setReplacing] = useState(false);
 
-  // Hosted path. When PWA is disabled (single-file build), useRegisterSW is
-  // stubbed by the plugin and reports no updates — safe to import.
   const {
     needRefresh: [needRefresh],
     updateServiceWorker,
   } = useRegisterSW({
     onRegisteredSW(_url, reg) {
       if (!reg) return;
-      // Re-check for updates once an hour in long-running sessions.
       window.setInterval(() => {
         reg.update().catch(() => {});
       }, 60 * 60 * 1000);
     },
   });
 
-  // Single-file path: poll the GitHub releases API.
   useEffect(() => {
     if (!__APP_SINGLE_FILE__) return;
     let cancelled = false;
@@ -75,6 +71,42 @@ export function UpdateBanner() {
     recordBackup();
   };
 
+  const replaceCurrentFile = async () => {
+    if (!release?.htmlAssetUrl) return;
+    setReplacing(true);
+    try {
+      // Fetch first so the user only sees the file picker if the download
+      // actually succeeded. Failure here gets a toast instead of a half-broken
+      // overwrite.
+      const resp = await fetch(release.htmlAssetUrl);
+      if (!resp.ok) {
+        toast('Could not download the new version. Try the Download button.', {
+          tone: 'warn',
+          ttl: 4000,
+        });
+        return;
+      }
+      const buffer = await resp.arrayBuffer();
+      const outcome = await replaceExistingHtmlFile(buffer);
+      if (outcome.ok) {
+        toast(`Replaced ${outcome.filename ?? 'your local file'}. Re-open it to load the new version.`, {
+          tone: 'success',
+          ttl: 5000,
+        });
+        setDismissed(true);
+      } else if (outcome.error) {
+        toast(outcome.error, { tone: 'warn', ttl: 4000 });
+      }
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Replace failed.', {
+        tone: 'danger',
+        ttl: 4000,
+      });
+    } finally {
+      setReplacing(false);
+    }
+  };
+
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex justify-center px-4">
       <div className="pointer-events-auto flex max-w-2xl items-start gap-3 rounded-lg border border-accent/40 bg-paper p-4 shadow-page">
@@ -90,8 +122,30 @@ export function UpdateBanner() {
           <p className="mt-1 text-xs text-ink-muted">
             {kind === 'hosted'
               ? 'Your local data stays in IndexedDB and survives the reload. Back up first if you want extra safety.'
-              : 'Your single-file build is out of date. Download the new file and replace your local copy. Back up your data first — opening the new file from a different folder starts an empty database.'}
+              : 'Preview what is new below, then either replace your existing html file in place (Chrome / Edge) or download a fresh copy. Back up your data first — opening the new file from a different folder starts an empty database.'}
           </p>
+
+          {kind === 'singleFile' && release?.body && (
+            <div className="mt-2 rounded border border-paper-edge bg-paper-tint">
+              <button
+                type="button"
+                onClick={() => setShowNotes((v) => !v)}
+                className="flex w-full items-center gap-1 px-2 py-1 text-left text-[11px] font-medium text-ink-muted hover:text-ink"
+                aria-expanded={showNotes}
+              >
+                {showNotes ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                <FileText size={11} />
+                <span>What is new in {release.name || release.version}</span>
+              </button>
+              {showNotes && (
+                <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap px-3 pb-2 text-[11px] leading-snug text-ink-muted">
+                  {release.body.slice(0, 4000)}
+                  {release.body.length > 4000 ? '\n…' : ''}
+                </pre>
+              )}
+            </div>
+          )}
+
           <div className="mt-3 flex flex-wrap gap-2">
             <button type="button" onClick={downloadBackup} className="btn-secondary text-xs">
               Back up data
@@ -106,16 +160,32 @@ export function UpdateBanner() {
               >
                 Reload to update
               </button>
-            ) : release?.htmlAssetUrl ? (
-              <a
-                href={release.htmlAssetUrl}
-                download={`resume-editor-${release.version}.html`}
-                rel="noopener noreferrer"
-                className="btn-primary text-xs"
-              >
-                Download {release.version}
-              </a>
-            ) : null}
+            ) : (
+              <>
+                {release?.htmlAssetUrl && isFileSystemAccessSupported() && (
+                  <button
+                    type="button"
+                    onClick={replaceCurrentFile}
+                    disabled={replacing}
+                    className="btn-primary text-xs"
+                  >
+                    <Replace size={12} />
+                    {replacing ? 'Replacing…' : 'Replace existing file'}
+                  </button>
+                )}
+                {release?.htmlAssetUrl && (
+                  <a
+                    href={release.htmlAssetUrl}
+                    download={`resume-editor-${release.version}.html`}
+                    rel="noopener noreferrer"
+                    className={isFileSystemAccessSupported() ? 'btn-secondary text-xs' : 'btn-primary text-xs'}
+                  >
+                    <Download size={12} />
+                    {isFileSystemAccessSupported() ? 'Download as new file' : `Download ${release.version}`}
+                  </a>
+                )}
+              </>
+            )}
             {kind === 'singleFile' && release && (
               <a
                 href={release.releaseUrl}
@@ -123,7 +193,7 @@ export function UpdateBanner() {
                 rel="noopener noreferrer"
                 className="btn-ghost text-xs"
               >
-                Release notes
+                Open on GitHub
               </a>
             )}
           </div>

@@ -37,9 +37,62 @@ interface ShowSaveFilePickerOptions {
   types?: { description?: string; accept: Record<string, string[]> }[];
 }
 
+interface ShowOpenFilePickerOptions {
+  multiple?: boolean;
+  types?: { description?: string; accept: Record<string, string[]> }[];
+}
+
 declare global {
   interface Window {
     showSaveFilePicker?: (options?: ShowSaveFilePickerOptions) => Promise<FileSystemFileHandle>;
+    showOpenFilePicker?: (options?: ShowOpenFilePickerOptions) => Promise<FileSystemFileHandle[]>;
+  }
+}
+
+// Pick an existing html file and overwrite it with the given content. Used by
+// the UpdateBanner's "Replace existing file" flow so users can update their
+// single-file resume-editor in place instead of downloading a second copy.
+export async function replaceExistingHtmlFile(content: ArrayBuffer | Blob): Promise<{
+  ok: boolean;
+  filename?: string;
+  error?: string;
+}> {
+  if (!isFileSystemAccessSupported() || !window.showOpenFilePicker) {
+    return {
+      ok: false,
+      error: 'Your browser does not support replacing files in place. Use the Download button instead and overwrite the file yourself (Chrome and Edge support in-place replacement).',
+    };
+  }
+  let handle: FileSystemFileHandle;
+  try {
+    const handles = await window.showOpenFilePicker({
+      types: [
+        {
+          description: 'Resume Editor html',
+          accept: { 'text/html': ['.html', '.htm'] },
+        },
+      ],
+    });
+    handle = handles[0];
+    if (!handle) return { ok: false };
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') return { ok: false };
+    return { ok: false, error: err instanceof Error ? err.message : 'Could not open file picker.' };
+  }
+  const granted = await ensureWritePermission(handle);
+  if (!granted) {
+    return { ok: false, error: 'Write permission was denied for that file.' };
+  }
+  try {
+    const writable = await handle.createWritable();
+    try {
+      await writable.write(content);
+    } finally {
+      await writable.close();
+    }
+    return { ok: true, filename: handle.name };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Write failed.' };
   }
 }
 

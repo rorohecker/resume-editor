@@ -32,6 +32,9 @@ export interface ReleaseInfo {
   version: string;
   htmlAssetUrl: string | null;
   releaseUrl: string;
+  name: string | null;
+  body: string | null;
+  publishedAt: string | null;
 }
 
 export async function fetchLatestRelease(): Promise<ReleaseInfo | null> {
@@ -43,7 +46,10 @@ export async function fetchLatestRelease(): Promise<ReleaseInfo | null> {
     if (!resp.ok) return null;
     const data = (await resp.json()) as {
       tag_name?: string;
+      name?: string;
+      body?: string;
       html_url?: string;
+      published_at?: string;
       assets?: { name?: string; browser_download_url?: string }[];
     };
     if (!data.tag_name) return null;
@@ -52,6 +58,9 @@ export async function fetchLatestRelease(): Promise<ReleaseInfo | null> {
       version: data.tag_name,
       htmlAssetUrl: htmlAsset?.browser_download_url ?? null,
       releaseUrl: data.html_url ?? `https://github.com/${__APP_REPO__}/releases/latest`,
+      name: data.name ?? null,
+      body: data.body ?? null,
+      publishedAt: data.published_at ?? null,
     };
   } catch {
     return null;

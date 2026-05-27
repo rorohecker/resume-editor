@@ -32,13 +32,15 @@ export function createPdfDocumentFor(resume: Resume, pdfModule: PdfModule): Retu
       color: '#666666',
     },
     header: {
-      textAlign: resume.template === 'cs-swe' ? 'left' : 'center',
+      // textAlign on View doesn't propagate to child Texts in react-pdf, so
+      // each child sets its own alignment below.
       marginBottom: 8,
     },
     name: {
       fontSize: resume.styles.fontSize.name,
       fontWeight: 700,
       color: resume.styles.colors.name,
+      textAlign: resume.template === 'cs-swe' ? 'left' : 'center',
     },
     contactLine: {
       marginTop: 4,
