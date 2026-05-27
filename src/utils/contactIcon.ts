@@ -53,6 +53,27 @@ export function placeholderForContactType(type: ContactFieldType): string {
   }
 }
 
+// Strip the noisy protocol/www prefix and trailing slash from URL-shaped
+// contact values for cleaner display on the resume. The underlying value
+// stored on the resume stays untouched — only the rendered text changes.
+// Links still resolve to the full URL via hrefFor() / hrefFromRaw().
+export function displayContactValue(type: ContactFieldType, value: string): string {
+  const trimmed = value.trim();
+  if (type === 'email' || type === 'phone' || type === 'location' || type === 'custom') {
+    return trimmed;
+  }
+  if (type === 'twitter') {
+    // Show @handle whether the user typed "@handle", "handle", or "twitter.com/handle".
+    const m = trimmed.match(/(?:twitter\.com\/|x\.com\/|@)?([A-Za-z0-9_]+)/);
+    return m ? `@${m[1]}` : trimmed;
+  }
+  // linkedin / github / website / anything URL-shaped
+  return trimmed
+    .replace(/^https?:\/\//i, '')
+    .replace(/^www\./i, '')
+    .replace(/\/$/, '');
+}
+
 export function defaultLabelForContactType(type: ContactFieldType): string {
   switch (type) {
     case 'email':

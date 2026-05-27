@@ -1,5 +1,6 @@
 import type { Bullet, Entry, Resume, Section } from '@/types';
 import { formatDateRange } from './dateFormat';
+import { displayContactValue } from './contactIcon';
 
 export interface ResumeBulletRef {
   sectionId: string;
@@ -15,7 +16,7 @@ export function resumeToPlainText(resume: Resume): string {
   const contacts = resume.header.contactFields
     .filter((field) => field.visible && field.value.trim())
     .sort((a, b) => a.order - b.order)
-    .map((field) => field.value.trim());
+    .map((field) => displayContactValue(field.type, field.value.trim()));
 
   if (resume.header.name.trim()) lines.push(resume.header.name.trim());
   if (contacts.length > 0) lines.push(contacts.join(' | '));

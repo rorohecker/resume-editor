@@ -2,6 +2,7 @@ import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Bullet, ContactField, Entry, Resume, RuleStyle, Section } from '@/types';
 import { formatDateRange } from '@/utils/dateFormat';
+import { displayContactValue } from '@/utils/contactIcon';
 import { useStore } from '@/store';
 
 const PT_TO_PX = 96 / 72;
@@ -143,12 +144,14 @@ function ContactLine({
   return (
     <span>
       {fields.map((field, index) => {
-        const display = field.value || (
+        const trimmed = field.value.trim();
+        const displayText = trimmed ? displayContactValue(field.type, trimmed) : '';
+        const display = displayText || (
           <span className="italic opacity-40">{contactPlaceholder(field.type, t)}</span>
         );
-        const linked = field.value && isLinkable(field.type) ? (
+        const linked = trimmed && isLinkable(field.type) ? (
           <a href={hrefFor(field)} style={{ color: accent, textDecoration: 'none' }}>
-            {field.value}
+            {displayText}
           </a>
         ) : (
           display

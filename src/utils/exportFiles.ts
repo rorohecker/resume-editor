@@ -4,6 +4,7 @@ import { resumeToPlainText, stripHtml } from './resumeText';
 import { ensureFontRegistered } from './pdfFonts';
 import { createPdfDocumentFor } from './pdfDocument';
 import { isWorkerAvailable, renderPdfInWorker } from './pdfWorkerClient';
+import { displayContactValue } from './contactIcon';
 
 export type ExportFormat = 'pdf' | 'docx' | 'txt' | 'png' | 'json';
 
@@ -106,7 +107,7 @@ async function exportDocx(resume: Resume): Promise<void> {
   const contacts = resume.header.contactFields
     .filter((field) => field.visible && field.value.trim())
     .sort((a, b) => a.order - b.order)
-    .map((field) => field.value.trim());
+    .map((field) => displayContactValue(field.type, field.value.trim()));
   if (contacts.length > 0) {
     children.push(
       new Paragraph({

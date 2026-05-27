@@ -1,8 +1,9 @@
 import { createElement } from 'react';
-import type { Entry, Resume, Section } from '@/types';
+import type { ContactFieldType, Entry, Resume, Section } from '@/types';
 import { formatDateRange } from './dateFormat';
 import { pdfFamilyKey } from './pdfFonts';
 import { stripHtml } from './resumeText';
+import { displayContactValue } from './contactIcon';
 
 type PdfModule = typeof import('@react-pdf/renderer');
 type PdfStyles = ReturnType<PdfModule['StyleSheet']['create']>;
@@ -138,6 +139,7 @@ function createPdfHeader(resume: Resume, { Text, View, Link }: PdfModule, styles
   const contactChildren: ReturnType<typeof createElement>[] = [];
   contacts.forEach((field, index) => {
     const value = field.value.trim();
+    const display = displayContactValue(field.type as ContactFieldType, value);
     if (index > 0) {
       contactChildren.push(createElement(Text, { key: `${field.id}-sep` }, separator));
     }
@@ -146,9 +148,9 @@ function createPdfHeader(resume: Resume, { Text, View, Link }: PdfModule, styles
         ? createElement(
             Link,
             { key: field.id, src: hrefFor(field.type, value), style: styles.link },
-            value,
+            display,
           )
-        : createElement(Text, { key: field.id }, value),
+        : createElement(Text, { key: field.id }, display),
     );
   });
 
