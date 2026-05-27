@@ -8,25 +8,31 @@ import {
   type ReleaseInfo,
 } from '@/utils/updateCheck';
 import { exportAllData } from '@/store/persistence';
-import { isFileSystemAccessSupported, replaceExistingHtmlFile } from '@/utils/fileSync';
+import { copyHtmlOverExistingFile, isFileSystemAccessSupported } from '@/utils/fileSync';
 import { toast } from '@/hooks/useToast';
 
 // One banner handles both deployment modes.
-// Hosted (GitHub Pages with a service worker): vite-plugin-pwa fires
-//   `needRefresh` when a new SW is waiting. We surface a reload prompt AND we
-//   also fetch the matching release notes from the GitHub API so the user can
-//   preview what they're about to install.
-// Single-file html (no service worker): we poll the GitHub releases API and
-//   surface a Replace-in-place button (Chrome / Edge via the File System
-//   Access API) plus a fall-back Download link.
+//
+// Hosted (GitHub Pages with a service worker)
+//   useRegisterSW reports `needRefresh` when a new SW is waiting. We also try
+//   to fetch the matching release notes from the GitHub API so the user can
+//   preview what they're about to install before reloading.
+//
+// Single-file html (no service worker, often opened from file://)
+//   We poll the GitHub releases API and surface a Download link (always
+//   reliable — browser handles the navigation) plus an optional Replace flow
+//   for Chromium browsers. The Replace flow uses two File System Access
+//   pickers to do a pure file-to-file copy and never goes through fetch(), so
+//   it side-steps the CORS issue that bites file:// origins trying to fetch
+//   GitHub asset URLs.
 
 export function UpdateBanner() {
   const [release, setRelease] = useState<ReleaseInfo | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
   const [replacing, setReplacing] = useState(false);
+  const [showReplaceHelp, setShowReplaceHelp] = useState(false);
 
-  // Hosted SW update detection.
   const {
     needRefresh: [needRefresh],
     updateServiceWorker,
@@ -46,10 +52,7 @@ export function UpdateBanner() {
     const check = async () => {
       const latest = await fetchLatestRelease();
       if (cancelled || !latest) return;
-      if (
-        compareVersions(latest.version, `v${__APP_VERSION__}`) > 0 &&
-        latest.htmlAssetUrl
-      ) {
+      if (compareVersions(latest.version, `v${__APP_VERSION__}`) > 0 && latest.htmlAssetUrl) {
         setRelease(latest);
       }
     };
@@ -61,9 +64,8 @@ export function UpdateBanner() {
     };
   }, []);
 
-  // Hosted path: when the SW reports an update is ready, also fetch the
-  // matching release notes so the user can preview them before reloading.
-  // Fails silent if the API is unreachable — the reload button still works.
+  // Hosted path: when the SW reports an update is ready, also pull the
+  // matching release notes so the user gets a preview before reloading.
   useEffect(() => {
     if (__APP_SINGLE_FILE__) return;
     if (!needRefresh) return;
@@ -78,7 +80,11 @@ export function UpdateBanner() {
   }, [needRefresh, release]);
 
   const kind: 'hosted' | 'singleFile' | null =
-    needRefresh && !__APP_SINGLE_FILE__ ? 'hosted' : __APP_SINGLE_FILE__ && release ? 'singleFile' : null;
+    needRefresh && !__APP_SINGLE_FILE__
+      ? 'hosted'
+      : __APP_SINGLE_FILE__ && release
+        ? 'singleFile'
+        : null;
   if (!kind || dismissed) return null;
 
   const downloadBackup = () => {
@@ -96,33 +102,29 @@ export function UpdateBanner() {
     recordBackup();
   };
 
-  const replaceCurrentFile = async () => {
-    if (!release?.htmlAssetUrl) return;
+  // Step 2 of the replace flow. Step 1 is the download link the user
+  // already clicked; this prompts them to pick that downloaded file and
+  // then pick their existing file to overwrite. No fetch() involved.
+  const replaceFromDownloaded = async () => {
+    if (replacing) return;
     setReplacing(true);
     try {
-      const resp = await fetch(release.htmlAssetUrl);
-      if (!resp.ok) {
-        toast('Could not download the new version. Try the Download button.', {
-          tone: 'warn',
-          ttl: 4000,
-        });
-        return;
-      }
-      const buffer = await resp.arrayBuffer();
-      const outcome = await replaceExistingHtmlFile(buffer);
+      const outcome = await copyHtmlOverExistingFile();
       if (outcome.ok) {
-        toast(`Replaced ${outcome.filename ?? 'your local file'}. Re-open it to load the new version.`, {
-          tone: 'success',
-          ttl: 5000,
-        });
+        toast(
+          `Replaced ${outcome.filename ?? 'your existing file'}. Close this tab and re-open the file to load the new version.`,
+          { tone: 'success', ttl: 6000 },
+        );
         setDismissed(true);
+      } else if (outcome.cancelled) {
+        // No-op — the user dismissed one of the pickers.
       } else if (outcome.error) {
-        toast(outcome.error, { tone: 'warn', ttl: 4000 });
+        toast(outcome.error, { tone: 'warn', ttl: 5000 });
       }
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Replace failed.', {
         tone: 'danger',
-        ttl: 4000,
+        ttl: 5000,
       });
     } finally {
       setReplacing(false);
@@ -138,8 +140,8 @@ export function UpdateBanner() {
 
   const summary =
     kind === 'hosted'
-      ? 'Your local IndexedDB data survives the reload. Back up if you want extra safety.'
-      : 'Preview what is new below, then either replace your existing html file in place (Chrome / Edge) or download a fresh copy. Back up your data first — opening the new file from a different folder starts an empty database.';
+      ? 'Your local IndexedDB data survives the reload. Back up first if you want extra safety.'
+      : 'Download the new html file. To keep updating the same copy on disk, Chrome and Edge users can use Replace existing file after the download finishes.';
 
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex justify-center px-4">
@@ -172,6 +174,17 @@ export function UpdateBanner() {
             </div>
           )}
 
+          {kind === 'singleFile' && showReplaceHelp && (
+            <div className="mt-2 rounded border border-accent/30 bg-accent/5 p-2 text-[11px] text-ink-muted">
+              <div className="font-semibold text-ink">Replace existing file</div>
+              <ol className="mt-1 list-decimal space-y-0.5 pl-4">
+                <li>Make sure you downloaded the new <code>resume-editor-{release?.version}.html</code> first.</li>
+                <li>Click <em>Pick downloaded file</em> below and select the new html you just downloaded.</li>
+                <li>You will get a second picker — select your <strong>existing</strong> resume-editor html (the file you opened in this tab) to overwrite it.</li>
+              </ol>
+            </div>
+          )}
+
           <div className="mt-3 flex flex-wrap gap-2">
             <button type="button" onClick={downloadBackup} className="btn-secondary text-xs">
               Back up data
@@ -189,27 +202,37 @@ export function UpdateBanner() {
               </button>
             ) : (
               <>
-                {release?.htmlAssetUrl && isFileSystemAccessSupported() && (
-                  <button
-                    type="button"
-                    onClick={replaceCurrentFile}
-                    disabled={replacing}
-                    className="btn-primary text-xs"
-                  >
-                    <Replace size={12} />
-                    {replacing ? 'Replacing…' : 'Replace existing file'}
-                  </button>
-                )}
                 {release?.htmlAssetUrl && (
                   <a
                     href={release.htmlAssetUrl}
                     download={`resume-editor-${release.version}.html`}
                     rel="noopener noreferrer"
-                    className={isFileSystemAccessSupported() ? 'btn-secondary text-xs' : 'btn-primary text-xs'}
+                    className="btn-primary text-xs"
                   >
                     <Download size={12} />
-                    {isFileSystemAccessSupported() ? 'Download as new file' : `Download ${release.version}`}
+                    Download {release.version}
                   </a>
+                )}
+                {isFileSystemAccessSupported() && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!showReplaceHelp) {
+                        setShowReplaceHelp(true);
+                        return;
+                      }
+                      void replaceFromDownloaded();
+                    }}
+                    disabled={replacing}
+                    className="btn-secondary text-xs"
+                  >
+                    <Replace size={12} />
+                    {replacing
+                      ? 'Replacing…'
+                      : showReplaceHelp
+                        ? 'Pick downloaded file'
+                        : 'Replace existing file…'}
+                  </button>
                 )}
               </>
             )}

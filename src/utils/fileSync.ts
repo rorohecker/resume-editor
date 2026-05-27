@@ -49,48 +49,70 @@ declare global {
   }
 }
 
-// Pick an existing html file and overwrite it with the given content. Used by
-// the UpdateBanner's "Replace existing file" flow so users can update their
-// single-file resume-editor in place instead of downloading a second copy.
-export async function replaceExistingHtmlFile(content: ArrayBuffer | Blob): Promise<{
+// Pure file-to-file copy via the File System Access API. The user picks the
+// freshly downloaded new html (source) and then their existing html (target);
+// we read the source bytes and write them to the target handle. No network
+// requests — this side-steps the CORS issue that bites fetch() against
+// GitHub release asset URLs from a file:// origin.
+export async function copyHtmlOverExistingFile(): Promise<{
   ok: boolean;
   filename?: string;
+  cancelled?: boolean;
   error?: string;
 }> {
   if (!isFileSystemAccessSupported() || !window.showOpenFilePicker) {
     return {
       ok: false,
-      error: 'Your browser does not support replacing files in place. Use the Download button instead and overwrite the file yourself (Chrome and Edge support in-place replacement).',
+      error: 'In-place replace needs Chrome or Edge. Use the Download button and overwrite the file in your file manager.',
     };
   }
-  let handle: FileSystemFileHandle;
+  let sourceHandle: FileSystemFileHandle;
   try {
     const handles = await window.showOpenFilePicker({
+      multiple: false,
       types: [
-        {
-          description: 'Resume Editor html',
-          accept: { 'text/html': ['.html', '.htm'] },
-        },
+        { description: 'Newly downloaded resume-editor html', accept: { 'text/html': ['.html', '.htm'] } },
       ],
     });
-    handle = handles[0];
-    if (!handle) return { ok: false };
+    sourceHandle = handles[0];
+    if (!sourceHandle) return { ok: false, cancelled: true };
   } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') return { ok: false };
-    return { ok: false, error: err instanceof Error ? err.message : 'Could not open file picker.' };
+    if (err instanceof DOMException && err.name === 'AbortError') return { ok: false, cancelled: true };
+    return { ok: false, error: err instanceof Error ? err.message : 'Could not open the new file.' };
   }
-  const granted = await ensureWritePermission(handle);
+  let content: ArrayBuffer;
+  try {
+    const file = await sourceHandle.getFile();
+    content = await file.arrayBuffer();
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Could not read the new file.' };
+  }
+  let targetHandle: FileSystemFileHandle;
+  try {
+    const handles = await window.showOpenFilePicker({
+      multiple: false,
+      types: [
+        { description: 'Existing resume-editor html to overwrite', accept: { 'text/html': ['.html', '.htm'] } },
+      ],
+    });
+    targetHandle = handles[0];
+    if (!targetHandle) return { ok: false, cancelled: true };
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') return { ok: false, cancelled: true };
+    return { ok: false, error: err instanceof Error ? err.message : 'Could not open the existing file.' };
+  }
+  const granted = await ensureWritePermission(targetHandle);
   if (!granted) {
-    return { ok: false, error: 'Write permission was denied for that file.' };
+    return { ok: false, error: 'Write permission was denied for the existing file.' };
   }
   try {
-    const writable = await handle.createWritable();
+    const writable = await targetHandle.createWritable();
     try {
       await writable.write(content);
     } finally {
       await writable.close();
     }
-    return { ok: true, filename: handle.name };
+    return { ok: true, filename: targetHandle.name };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Write failed.' };
   }
