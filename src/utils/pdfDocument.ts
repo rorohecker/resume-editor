@@ -9,14 +9,21 @@ import { displayContactValue } from './contactIcon';
 type PdfModule = typeof import('@react-pdf/renderer');
 type PdfStyles = ReturnType<PdfModule['StyleSheet']['create']>;
 
+// React PDF renders tighter to the top edge than the browser preview in some
+// viewers. Shift the PDF flow down while keeping the printable height the same
+// by borrowing the same amount from the bottom padding.
+const PDF_VERTICAL_NUDGE_PT = 12;
+
 export function createPdfDocumentFor(inputResume: Resume, pdfModule: PdfModule): ReturnType<typeof createElement> {
   const resume = resumeForPagedExport(inputResume);
   const { Document, Page, StyleSheet, Text } = pdfModule;
+  const topPadding = resume.styles.margins.top * 72 + PDF_VERTICAL_NUDGE_PT;
+  const bottomPadding = Math.max(0, resume.styles.margins.bottom * 72 - PDF_VERTICAL_NUDGE_PT);
   const styles = StyleSheet.create({
     page: {
-      paddingTop: resume.styles.margins.top * 72,
+      paddingTop: topPadding,
       paddingRight: resume.styles.margins.right * 72,
-      paddingBottom: resume.styles.margins.bottom * 72,
+      paddingBottom: bottomPadding,
       paddingLeft: resume.styles.margins.left * 72,
       fontFamily: pdfFamilyKey(resume.styles.font),
       fontSize: resume.styles.fontSize.body,
