@@ -32,17 +32,24 @@ export function createPdfDocumentFor(resume: Resume, pdfModule: PdfModule): Retu
       color: '#666666',
     },
     header: {
-      // textAlign on View doesn't propagate to child Texts in react-pdf, so
-      // each child sets its own alignment below.
+      // Explicit full-width so the Text children inside have a real container
+      // to align against. Without this, react-pdf shrink-wraps the View around
+      // the wider of its children and the shorter (name) appears off-center.
+      width: '100%',
       marginBottom: 8,
     },
     name: {
+      // width:100% + textAlign forces the Text bounding box to span the parent
+      // so textAlign actually shifts the glyphs to center instead of centering
+      // glyphs within a tightly-fitted box (which is a no-op).
+      width: '100%',
+      textAlign: resume.template === 'cs-swe' ? 'left' : 'center',
       fontSize: resume.styles.fontSize.name,
       fontWeight: 700,
       color: resume.styles.colors.name,
-      textAlign: resume.template === 'cs-swe' ? 'left' : 'center',
     },
     contactLine: {
+      width: '100%',
       marginTop: 4,
       fontSize: resume.styles.fontSize.contactLine,
       textAlign: resume.template === 'cs-swe' ? 'left' : 'center',

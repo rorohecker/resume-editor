@@ -11,10 +11,14 @@ import { exportAllData } from '@/store/persistence';
 import { isFileSystemAccessSupported, replaceExistingHtmlFile } from '@/utils/fileSync';
 import { toast } from '@/hooks/useToast';
 
-// One banner handles both update paths. The user always gets the release
-// notes in-place before any download happens, plus an in-place replace
-// option (Chrome/Edge) so the new html overwrites the existing file rather
-// than dropping a second copy in Downloads.
+// One banner handles both deployment modes.
+// Hosted (GitHub Pages with a service worker): vite-plugin-pwa fires
+//   `needRefresh` when a new SW is waiting. We surface a reload prompt AND we
+//   also fetch the matching release notes from the GitHub API so the user can
+//   preview what they're about to install.
+// Single-file html (no service worker): we poll the GitHub releases API and
+//   surface a Replace-in-place button (Chrome / Edge via the File System
+//   Access API) plus a fall-back Download link.
 
 export function UpdateBanner() {
   const [release, setRelease] = useState<ReleaseInfo | null>(null);
@@ -22,6 +26,7 @@ export function UpdateBanner() {
   const [showNotes, setShowNotes] = useState(false);
   const [replacing, setReplacing] = useState(false);
 
+  // Hosted SW update detection.
   const {
     needRefresh: [needRefresh],
     updateServiceWorker,
@@ -34,13 +39,17 @@ export function UpdateBanner() {
     },
   });
 
+  // Single-file path: poll the GitHub releases API.
   useEffect(() => {
     if (!__APP_SINGLE_FILE__) return;
     let cancelled = false;
     const check = async () => {
       const latest = await fetchLatestRelease();
       if (cancelled || !latest) return;
-      if (compareVersions(latest.version, `v${__APP_VERSION__}`) > 0 && latest.htmlAssetUrl) {
+      if (
+        compareVersions(latest.version, `v${__APP_VERSION__}`) > 0 &&
+        latest.htmlAssetUrl
+      ) {
         setRelease(latest);
       }
     };
@@ -52,8 +61,24 @@ export function UpdateBanner() {
     };
   }, []);
 
+  // Hosted path: when the SW reports an update is ready, also fetch the
+  // matching release notes so the user can preview them before reloading.
+  // Fails silent if the API is unreachable — the reload button still works.
+  useEffect(() => {
+    if (__APP_SINGLE_FILE__) return;
+    if (!needRefresh) return;
+    if (release) return;
+    let cancelled = false;
+    void fetchLatestRelease().then((latest) => {
+      if (!cancelled && latest) setRelease(latest);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [needRefresh, release]);
+
   const kind: 'hosted' | 'singleFile' | null =
-    needRefresh && !__APP_SINGLE_FILE__ ? 'hosted' : release ? 'singleFile' : null;
+    needRefresh && !__APP_SINGLE_FILE__ ? 'hosted' : __APP_SINGLE_FILE__ && release ? 'singleFile' : null;
   if (!kind || dismissed) return null;
 
   const downloadBackup = () => {
@@ -75,9 +100,6 @@ export function UpdateBanner() {
     if (!release?.htmlAssetUrl) return;
     setReplacing(true);
     try {
-      // Fetch first so the user only sees the file picker if the download
-      // actually succeeded. Failure here gets a toast instead of a half-broken
-      // overwrite.
       const resp = await fetch(release.htmlAssetUrl);
       if (!resp.ok) {
         toast('Could not download the new version. Try the Download button.', {
@@ -107,6 +129,18 @@ export function UpdateBanner() {
     }
   };
 
+  const headline =
+    kind === 'hosted'
+      ? release
+        ? `Version ${release.name || release.version} is ready`
+        : 'A new version is ready'
+      : `Version ${release?.name || release?.version} is available`;
+
+  const summary =
+    kind === 'hosted'
+      ? 'Your local IndexedDB data survives the reload. Back up if you want extra safety.'
+      : 'Preview what is new below, then either replace your existing html file in place (Chrome / Edge) or download a fresh copy. Back up your data first — opening the new file from a different folder starts an empty database.';
+
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex justify-center px-4">
       <div className="pointer-events-auto flex max-w-2xl items-start gap-3 rounded-lg border border-accent/40 bg-paper p-4 shadow-page">
@@ -114,18 +148,10 @@ export function UpdateBanner() {
           {kind === 'hosted' ? <RefreshCcw size={16} /> : <Download size={16} />}
         </div>
         <div className="min-w-0 flex-1 text-sm">
-          <div className="font-semibold text-ink">
-            {kind === 'hosted'
-              ? 'A new version is ready'
-              : `Version ${release?.version} is available`}
-          </div>
-          <p className="mt-1 text-xs text-ink-muted">
-            {kind === 'hosted'
-              ? 'Your local data stays in IndexedDB and survives the reload. Back up first if you want extra safety.'
-              : 'Preview what is new below, then either replace your existing html file in place (Chrome / Edge) or download a fresh copy. Back up your data first — opening the new file from a different folder starts an empty database.'}
-          </p>
+          <div className="font-semibold text-ink">{headline}</div>
+          <p className="mt-1 text-xs text-ink-muted">{summary}</p>
 
-          {kind === 'singleFile' && release?.body && (
+          {release?.body && (
             <div className="mt-2 rounded border border-paper-edge bg-paper-tint">
               <button
                 type="button"
@@ -138,9 +164,9 @@ export function UpdateBanner() {
                 <span>What is new in {release.name || release.version}</span>
               </button>
               {showNotes && (
-                <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap px-3 pb-2 text-[11px] leading-snug text-ink-muted">
-                  {release.body.slice(0, 4000)}
-                  {release.body.length > 4000 ? '\n…' : ''}
+                <pre className="max-h-60 overflow-y-auto whitespace-pre-wrap px-3 pb-2 text-[11px] leading-snug text-ink-muted">
+                  {release.body.slice(0, 6000)}
+                  {release.body.length > 6000 ? '\n…' : ''}
                 </pre>
               )}
             </div>
@@ -158,6 +184,7 @@ export function UpdateBanner() {
                 }}
                 className="btn-primary text-xs"
               >
+                <RefreshCcw size={12} />
                 Reload to update
               </button>
             ) : (
@@ -186,7 +213,7 @@ export function UpdateBanner() {
                 )}
               </>
             )}
-            {kind === 'singleFile' && release && (
+            {release?.releaseUrl && (
               <a
                 href={release.releaseUrl}
                 target="_blank"
