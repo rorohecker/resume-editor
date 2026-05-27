@@ -229,6 +229,15 @@ export function UpdateBanner() {
                     Download as new file
                   </a>
                 )}
+                <a
+                  href="https://rorohecker.github.io/resume-editor/update.html"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-ghost text-xs"
+                  title="Hosted helper page that overwrites your local file. Works even if this version's Replace button is broken."
+                >
+                  Stuck? Use the hosted updater
+                </a>
               </>
             )}
             {release?.releaseUrl && (

@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Resume Editor — Update local file</title>
+    <meta name="robots" content="noindex" />
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #fafafa;
+        --paper: #ffffff;
+        --edge: #e5e5e5;
+        --ink: #0a0a0a;
+        --muted: #525252;
+        --accent: #1d4ed8;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root { --bg: #18181b; --paper: #27272a; --edge: #3f3f46; --ink: #f4f4f5; --muted: #a1a1aa; --accent: #60a5fa; }
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; min-height: 100%; }
+      body {
+        background: var(--bg);
+        color: var(--ink);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-size: 14px;
+        display: flex; align-items: center; justify-content: center;
+        padding: 24px;
+      }
+      .card {
+        max-width: 560px; width: 100%;
+        background: var(--paper);
+        border: 1px solid var(--edge);
+        border-radius: 12px;
+        padding: 28px;
+        box-shadow: 0 10px 32px rgba(0,0,0,0.08);
+      }
+      h1 { font-size: 18px; margin: 0 0 4px; }
+      p { margin: 0 0 12px; color: var(--muted); line-height: 1.5; }
+      ol { margin: 0 0 16px 20px; padding: 0; color: var(--muted); line-height: 1.7; }
+      code {
+        background: var(--bg); border: 1px solid var(--edge);
+        padding: 1px 5px; border-radius: 4px; font-size: 12px;
+      }
+      .row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+      button, .link {
+        appearance: none; cursor: pointer;
+        padding: 8px 14px; border-radius: 8px;
+        font-size: 13px; font-weight: 500;
+        border: 1px solid var(--edge); background: var(--paper); color: var(--ink);
+        text-decoration: none; display: inline-flex; align-items: center; gap: 6px;
+      }
+      button.primary { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+      button:disabled { opacity: 0.5; cursor: not-allowed; }
+      .status {
+        margin-top: 16px; padding: 10px 12px; border-radius: 8px;
+        font-size: 12px; line-height: 1.5; display: none;
+      }
+      .status.success { display: block; background: rgba(34,197,94,0.12); color: #166534; border: 1px solid rgba(34,197,94,0.4); }
+      .status.error { display: block; background: rgba(239,68,68,0.12); color: #991b1b; border: 1px solid rgba(239,68,68,0.4); }
+      .status.info { display: block; background: rgba(59,130,246,0.12); color: #1e3a8a; border: 1px solid rgba(59,130,246,0.4); }
+      @media (prefers-color-scheme: dark) {
+        .status.success { color: #86efac; }
+        .status.error { color: #fca5a5; }
+        .status.info { color: #93c5fd; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Update your local Resume Editor</h1>
+      <p>
+        This page fetches the latest single-file build from the live site and overwrites a local
+        <code>.html</code> file you select. Use it once to escape an old broken version, after
+        which the in-app Replace button will work for every future update.
+      </p>
+      <ol>
+        <li>Make sure Chrome or Edge is selected (Firefox and Safari don't expose the File System Access API).</li>
+        <li>Click <strong>Update local file</strong> below.</li>
+        <li>Pick the existing <code>resume-editor-*.html</code> on your disk when the picker appears.</li>
+      </ol>
+      <div class="row">
+        <button id="update" class="primary" type="button">Update local file</button>
+        <a class="link" href="single.html" download="resume-editor-latest.html">Download fresh copy</a>
+        <a class="link" href="./" >Back to editor</a>
+      </div>
+      <div id="status" class="status"></div>
+    </div>
+
+    <script>
+      (function () {
+        var SOURCE_URL = 'https://rorohecker.github.io/resume-editor/single.html';
+        var btn = document.getElementById('update');
+        var status = document.getElementById('status');
+
+        function show(kind, text) {
+          status.className = 'status ' + kind;
+          status.textContent = text;
+        }
+
+        var hasFSA = 'showOpenFilePicker' in window && typeof window.showOpenFilePicker === 'function';
+        if (!hasFSA) {
+          btn.disabled = true;
+          show('info', 'Your browser does not support in-place file replacement. Use the Download fresh copy link and overwrite the file in your file manager.');
+        }
+
+        btn.addEventListener('click', function () {
+          if (!hasFSA) return;
+          btn.disabled = true;
+          show('info', 'Fetching the latest build…');
+          fetch(SOURCE_URL, { cache: 'no-store' })
+            .then(function (resp) {
+              if (!resp.ok) throw new Error('Fetch failed: HTTP ' + resp.status);
+              return resp.arrayBuffer();
+            })
+            .then(function (bytes) {
+              show('info', 'Pick the existing file to overwrite…');
+              return window.showOpenFilePicker({
+                multiple: false,
+                types: [{
+                  description: 'Resume Editor html',
+                  accept: { 'text/html': ['.html', '.htm'] },
+                }],
+              }).then(function (handles) {
+                return { bytes: bytes, handle: handles[0] };
+              });
+            })
+            .then(function (ctx) {
+              if (!ctx.handle) throw new Error('No file selected');
+              var handle = ctx.handle;
+              var perm = handle.queryPermission ? handle.queryPermission({ mode: 'readwrite' }) : Promise.resolve('granted');
+              return Promise.resolve(perm).then(function (state) {
+                if (state === 'granted') return handle;
+                if (!handle.requestPermission) throw new Error('No permission API available');
+                return handle.requestPermission({ mode: 'readwrite' }).then(function (s) {
+                  if (s !== 'granted') throw new Error('Write permission denied');
+                  return handle;
+                });
+              }).then(function (h) {
+                return h.createWritable().then(function (writable) {
+                  return writable.write(ctx.bytes).then(function () { return writable.close(); });
+                }).then(function () {
+                  show('success', 'Replaced ' + h.name + '. Close the file, re-open it in your browser, and you are up to date.');
+                });
+              });
+            })
+            .catch(function (err) {
+              if (err && err.name === 'AbortError') {
+                show('info', 'Cancelled.');
+                btn.disabled = false;
+                return;
+              }
+              show('error', (err && err.message) || 'Update failed.');
+              btn.disabled = false;
+            });
+        });
+      })();
+    </script>
+  </body>
+</html>
