@@ -5,6 +5,7 @@ import { ensureFontRegistered } from './pdfFonts';
 import { createPdfDocumentFor } from './pdfDocument';
 import { isWorkerAvailable, renderPdfInWorker } from './pdfWorkerClient';
 import { displayContactValue } from './contactIcon';
+import { resumeForPagedExport } from './resumeLayout';
 
 export type ExportFormat = 'pdf' | 'docx' | 'txt' | 'png' | 'json';
 
@@ -122,6 +123,7 @@ async function exportDocx(resume: Resume): Promise<void> {
 }
 
 async function renderDocxBlob(resume: Resume): Promise<Blob> {
+  const layoutResume = resumeForPagedExport(resume);
   const docx = await import('docx');
   const {
     AlignmentType,
@@ -141,63 +143,89 @@ async function renderDocxBlob(resume: Resume): Promise<Blob> {
   // so the Word output matches the on-screen layout instead of dumping into
   // Word's default 1in margins.
   const margins = {
-    top: Math.round(resume.styles.margins.top * 1440),
-    right: Math.round(resume.styles.margins.right * 1440),
-    bottom: Math.round(resume.styles.margins.bottom * 1440),
-    left: Math.round(resume.styles.margins.left * 1440),
+    top: Math.round(layoutResume.styles.margins.top * 1440),
+    right: Math.round(layoutResume.styles.margins.right * 1440),
+    bottom: Math.round(layoutResume.styles.margins.bottom * 1440),
+    left: Math.round(layoutResume.styles.margins.left * 1440),
   };
 
+  const pageSize =
+    layoutResume.styles.paperSize === 'a4'
+      ? { width: Math.round(8.27 * 1440), height: Math.round(11.69 * 1440), orientation: PageOrientation.PORTRAIT }
+      : { width: Math.round(8.5 * 1440), height: Math.round(11 * 1440), orientation: PageOrientation.PORTRAIT };
+
   // Page width minus side margins, in twips, used for the right-aligned date tab.
-  const pageWidthTwips = 8.5 * 1440;
+  const pageWidthTwips = pageSize.width;
   const usableWidth = pageWidthTwips - margins.left - margins.right;
+  const docxFont = wordFontFor(layoutResume.styles.font);
+  const headerAfter = twipsFromPt(4);
 
   const children: import('docx').Paragraph[] = [
     new Paragraph({
-      alignment: AlignmentType.CENTER,
-      spacing: { after: 60 },
+      alignment: layoutResume.template === 'cs-swe' ? AlignmentType.LEFT : AlignmentType.CENTER,
+      spacing: { after: 0 },
       children: [
         new TextRun({
-          text: resume.header.name || resume.name,
+          text: layoutResume.header.name || layoutResume.name,
           bold: true,
-          size: Math.round(resume.styles.fontSize.name * 2),
+          size: Math.round(layoutResume.styles.fontSize.name * 2),
         }),
       ],
     }),
   ];
 
-  const contacts = resume.header.contactFields
+  const contacts = layoutResume.header.contactFields
     .filter((field) => field.visible && field.value.trim())
     .sort((a, b) => a.order - b.order)
     .map((field) => displayContactValue(field.type, field.value.trim()));
   if (contacts.length > 0) {
     children.push(
       new Paragraph({
-        alignment: AlignmentType.CENTER,
-        spacing: { after: 160 },
+        alignment: layoutResume.template === 'cs-swe' ? AlignmentType.LEFT : AlignmentType.CENTER,
+        spacing: { before: twipsFromPt(2), after: headerAfter },
         children: [
           new TextRun({
             text: contacts.join(' | '),
-            size: Math.round(resume.styles.fontSize.contactLine * 2),
+            size: Math.round(layoutResume.styles.fontSize.contactLine * 2),
           }),
         ],
       }),
     );
   }
 
-  for (const section of visibleSections(resume)) {
-    const sectionChildren = sectionToDocx(section, resume, docx, usableWidth);
+  for (const section of visibleSections(layoutResume)) {
+    const sectionChildren = sectionToDocx(section, layoutResume, docx, usableWidth);
     if (sectionChildren.length === 0) continue;
+    const hideRule =
+      section.styleOverrides?.hideRule || layoutResume.styles.ruleStyle.variant === 'none';
+    const ruleColor = (layoutResume.styles.colors.sectionRule || '#000000').replace('#', '');
+    const sectionBefore = twipsFromPt(
+      section.styleOverrides?.spaceAbove ?? layoutResume.styles.spacing.section,
+    );
     children.push(
       new Paragraph({
-        spacing: { before: 200, after: 40 },
-        border: {
-          bottom: { color: '000000', space: 1, style: BorderStyle.SINGLE, size: 4 },
-        },
+        spacing: { before: sectionBefore, after: twipsFromPt(2) },
+        border: hideRule
+          ? undefined
+          : {
+              bottom: {
+                color: ruleColor,
+                space: 1,
+                style:
+                  layoutResume.styles.ruleStyle.variant === 'double'
+                    ? BorderStyle.DOUBLE
+                    : BorderStyle.SINGLE,
+                size: docxRuleSize(layoutResume),
+              },
+            },
         children: [
           new TextRun({
-            text: section.title.toUpperCase(),
+            text:
+              section.styleOverrides?.uppercaseTitle === false
+                ? section.title
+                : section.title.toUpperCase(),
             bold: true,
-            size: Math.round(resume.styles.fontSize.sectionHeader * 2),
+            size: Math.round(layoutResume.styles.fontSize.sectionHeader * 2),
           }),
         ],
       }),
@@ -210,8 +238,8 @@ async function renderDocxBlob(resume: Resume): Promise<Blob> {
       default: {
         document: {
           run: {
-            font: 'Calibri',
-            size: Math.round(resume.styles.fontSize.body * 2),
+            font: docxFont,
+            size: Math.round(layoutResume.styles.fontSize.body * 2),
           },
         },
       },
@@ -224,7 +252,7 @@ async function renderDocxBlob(resume: Resume): Promise<Blob> {
             {
               level: 0,
               format: LevelFormat.BULLET,
-              text: '•',
+              text: bulletGlyphForDocx(layoutResume),
               alignment: AlignmentType.LEFT,
               style: {
                 paragraph: { indent: { left: 360, hanging: 240 } },
@@ -239,7 +267,7 @@ async function renderDocxBlob(resume: Resume): Promise<Blob> {
         properties: {
           page: {
             margin: margins,
-            size: { orientation: PageOrientation.PORTRAIT },
+            size: pageSize,
           },
         },
         children,
@@ -370,10 +398,11 @@ function entryToDocx(entry: Entry, resume: Resume, docx: DocxModule, usableWidth
 
   for (const bullet of entry.bullets ?? []) {
     if (!bullet.visible || !stripHtml(bullet.content)) continue;
+    const bulletGlyph = bulletGlyphForDocx(resume);
     paragraphs.push(
       new Paragraph({
         spacing: { after: 20 },
-        numbering: { reference: 'resume-bullets', level: 0 },
+        numbering: bulletGlyph ? { reference: 'resume-bullets', level: 0 } : undefined,
         children: [new TextRun(stripHtml(bullet.content))],
       }),
     );
@@ -429,6 +458,56 @@ function fileBaseName(resume: Resume): string {
   const headerName = resume.header.name.trim();
   const name = headerName || resume.name || 'Resume';
   return `${name.replace(/\s+/g, '_').replace(/[^a-z0-9_-]/gi, '')}_Resume`;
+}
+
+function twipsFromPt(value: number): number {
+  return Math.round(value * 20);
+}
+
+function wordFontFor(font: Resume['styles']['font']): string {
+  switch (font) {
+    case 'EB Garamond':
+      return 'EB Garamond';
+    case 'Georgia':
+      return 'Georgia';
+    case 'Times New Roman':
+      return 'Times New Roman';
+    case 'Lato':
+      return 'Lato';
+    case 'Inter':
+      return 'Inter';
+    case 'Carlito':
+      return 'Carlito';
+    case 'Nimbus Sans':
+      return 'Nimbus Sans';
+    case 'Latin Modern Roman':
+      return 'Latin Modern Roman';
+  }
+}
+
+function docxRuleSize(resume: Resume): number {
+  const weight =
+    resume.styles.ruleStyle.variant === 'thick'
+      ? Math.max(resume.styles.ruleStyle.weight, 1.5)
+      : resume.styles.ruleStyle.weight;
+  return Math.max(1, Math.round(weight * 8));
+}
+
+function bulletGlyphForDocx(resume: Resume): string {
+  switch (resume.styles.bulletStyle ?? 'disc') {
+    case 'circle':
+      return '\u25e6';
+    case 'square':
+      return '\u25aa';
+    case 'dash':
+      return '\u2013';
+    case 'arrow':
+      return '\u203a';
+    case 'none':
+      return '';
+    case 'disc':
+      return '\u2022';
+  }
 }
 
 function labelFromKey(key: string): string {

@@ -57,9 +57,10 @@ export const LATEST_SINGLE_FILE_URL =
   'https://rorohecker.github.io/resume-editor/single.html';
 
 // One-picker in-place update.
-//   1. Fetch the latest single-file html from GitHub Pages (CORS:*).
-//   2. Prompt the user to pick their existing local html.
-//   3. Overwrite it via the File System Access API.
+//   1. Prompt the user to pick their existing local html immediately while the
+//      click's transient user activation is still available.
+//   2. Fetch the latest single-file html from GitHub Pages (CORS:*).
+//   3. Overwrite the picked file via the File System Access API.
 // No second picker, no manual download step.
 export async function replaceLocalFileWithLatest(): Promise<{
   ok: boolean;
@@ -72,27 +73,7 @@ export async function replaceLocalFileWithLatest(): Promise<{
       ok: false,
       error:
         'In-place replace needs Chrome or Edge. Use the Download button and overwrite the file in your file manager.',
-    };
-  }
-
-  let bytes: ArrayBuffer;
-  try {
-    const resp = await fetch(LATEST_SINGLE_FILE_URL, { cache: 'no-store' });
-    if (!resp.ok) {
-      return {
-        ok: false,
-        error: `Could not fetch the new build (HTTP ${resp.status}). Try the Download button.`,
       };
-    }
-    bytes = await resp.arrayBuffer();
-  } catch (err) {
-    return {
-      ok: false,
-      error:
-        err instanceof Error
-          ? `Network error fetching the new build: ${err.message}. Try the Download button.`
-          : 'Network error fetching the new build.',
-    };
   }
 
   let targetHandle: FileSystemFileHandle;
@@ -120,6 +101,26 @@ export async function replaceLocalFileWithLatest(): Promise<{
   const granted = await ensureWritePermission(targetHandle);
   if (!granted) {
     return { ok: false, error: 'Write permission was denied for the existing file.' };
+  }
+
+  let bytes: ArrayBuffer;
+  try {
+    const resp = await fetch(LATEST_SINGLE_FILE_URL, { cache: 'no-store' });
+    if (!resp.ok) {
+      return {
+        ok: false,
+        error: `Could not fetch the new build (HTTP ${resp.status}). Try the Download button.`,
+      };
+    }
+    bytes = await resp.arrayBuffer();
+  } catch (err) {
+    return {
+      ok: false,
+      error:
+        err instanceof Error
+          ? `Network error fetching the new build: ${err.message}. Try the Download button.`
+          : 'Network error fetching the new build.',
+    };
   }
 
   try {

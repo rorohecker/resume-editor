@@ -2,13 +2,15 @@ import { createElement } from 'react';
 import type { ContactFieldType, Entry, Resume, Section } from '@/types';
 import { formatDateRange } from './dateFormat';
 import { pdfFamilyKey } from './pdfFonts';
+import { resumeForPagedExport } from './resumeLayout';
 import { stripHtml } from './resumeText';
 import { displayContactValue } from './contactIcon';
 
 type PdfModule = typeof import('@react-pdf/renderer');
 type PdfStyles = ReturnType<PdfModule['StyleSheet']['create']>;
 
-export function createPdfDocumentFor(resume: Resume, pdfModule: PdfModule): ReturnType<typeof createElement> {
+export function createPdfDocumentFor(inputResume: Resume, pdfModule: PdfModule): ReturnType<typeof createElement> {
+  const resume = resumeForPagedExport(inputResume);
   const { Document, Page, StyleSheet, Text } = pdfModule;
   const styles = StyleSheet.create({
     page: {
@@ -62,6 +64,7 @@ export function createPdfDocumentFor(resume: Resume, pdfModule: PdfModule): Retu
       textAlign: resume.template === 'cs-swe' ? 'left' : 'center',
     },
     section: {
+      width: '100%',
       marginTop: resume.styles.spacing.section,
     },
     sectionTitle: {
@@ -69,8 +72,10 @@ export function createPdfDocumentFor(resume: Resume, pdfModule: PdfModule): Retu
       fontWeight: 700,
       color: resume.styles.colors.sectionHeader,
       textTransform: 'uppercase',
+      lineHeight: 1,
     },
     rule: {
+      alignSelf: 'stretch',
       borderTopWidth: ruleWidth(resume),
       borderTopColor: resume.styles.colors.sectionRule,
       borderTopStyle: resume.styles.ruleStyle.variant === 'none' ? undefined : 'solid',
@@ -203,7 +208,7 @@ function createPdfSection(section: Section, resume: Resume, pdfModule: PdfModule
       },
       wrap: true,
     },
-    createElement(View, { wrap: false }, [
+    createElement(View, { wrap: false, style: { width: '100%' } }, [
       createElement(Text, { key: 'title', style: titleStyle }, section.title),
       !overrides.hideRule &&
         resume.styles.ruleStyle.variant !== 'none' &&

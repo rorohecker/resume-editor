@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { Bullet, ContactField, Entry, Resume, RuleStyle, Section } from '@/types';
 import { formatDateRange } from '@/utils/dateFormat';
 import { displayContactValue } from '@/utils/contactIcon';
+import { resumeForPagedExport } from '@/utils/resumeLayout';
 import { useStore } from '@/store';
 
 const PT_TO_PX = 96 / 72;
@@ -18,7 +19,7 @@ function inch(n: number): string {
 const PAGE_HEIGHT_IN: Record<'letter' | 'a4', number> = { letter: 11, a4: 11.69 };
 
 export function PreviewRenderer({ resume }: { resume: Resume }) {
-  const displayResume = resume.styles.onePageMode ? compactResume(resume) : resume;
+  const displayResume = resumeForPagedExport(resume);
   const { styles, header, sections } = displayResume;
   const visibleSections = sections
     .filter((section) => section.visible && sectionHasContent(section))
@@ -887,23 +888,3 @@ function cssFontStack(font: Resume['styles']['font']): string {
   }
 }
 
-function compactResume(resume: Resume): Resume {
-  return {
-    ...resume,
-    styles: {
-      ...resume.styles,
-      fontSize: {
-        name: resume.styles.fontSize.name * 0.96,
-        sectionHeader: resume.styles.fontSize.sectionHeader * 0.95,
-        entryTitle: resume.styles.fontSize.entryTitle * 0.95,
-        body: resume.styles.fontSize.body * 0.95,
-        contactLine: resume.styles.fontSize.contactLine * 0.95,
-      },
-      spacing: {
-        section: Math.max(0, resume.styles.spacing.section * 0.75),
-        entry: Math.max(0, resume.styles.spacing.entry * 0.75),
-        bullet: Math.max(1, resume.styles.spacing.bullet * 0.96),
-      },
-    },
-  };
-}
