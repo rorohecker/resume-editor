@@ -8,7 +8,11 @@ import {
   type ReleaseInfo,
 } from '@/utils/updateCheck';
 import { exportAllData } from '@/store/persistence';
-import { copyHtmlOverExistingFile, isFileSystemAccessSupported } from '@/utils/fileSync';
+import {
+  isFileSystemAccessSupported,
+  LATEST_SINGLE_FILE_URL,
+  replaceLocalFileWithLatest,
+} from '@/utils/fileSync';
 import { toast } from '@/hooks/useToast';
 
 // One banner handles both deployment modes.
@@ -31,7 +35,6 @@ export function UpdateBanner() {
   const [dismissed, setDismissed] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
   const [replacing, setReplacing] = useState(false);
-  const [showReplaceHelp, setShowReplaceHelp] = useState(false);
 
   const {
     needRefresh: [needRefresh],
@@ -102,14 +105,14 @@ export function UpdateBanner() {
     recordBackup();
   };
 
-  // Step 2 of the replace flow. Step 1 is the download link the user
-  // already clicked; this prompts them to pick that downloaded file and
-  // then pick their existing file to overwrite. No fetch() involved.
-  const replaceFromDownloaded = async () => {
+  // Single-picker replace: fetch the always-latest single-file html from
+  // GitHub Pages (CORS:* enabled), then ask the user once to pick their
+  // local file to overwrite. No manual download, no second picker.
+  const replaceLocal = async () => {
     if (replacing) return;
     setReplacing(true);
     try {
-      const outcome = await copyHtmlOverExistingFile();
+      const outcome = await replaceLocalFileWithLatest();
       if (outcome.ok) {
         toast(
           `Replaced ${outcome.filename ?? 'your existing file'}. Close this tab and re-open the file to load the new version.`,
@@ -117,7 +120,7 @@ export function UpdateBanner() {
         );
         setDismissed(true);
       } else if (outcome.cancelled) {
-        // No-op — the user dismissed one of the pickers.
+        // No-op — the user dismissed the picker.
       } else if (outcome.error) {
         toast(outcome.error, { tone: 'warn', ttl: 5000 });
       }
@@ -141,7 +144,7 @@ export function UpdateBanner() {
   const summary =
     kind === 'hosted'
       ? 'Your local IndexedDB data survives the reload. Back up first if you want extra safety.'
-      : 'Download the new html file. To keep updating the same copy on disk, Chrome and Edge users can use Replace existing file after the download finishes.';
+      : 'Update in place (Chrome / Edge) or download a fresh copy. The Replace button fetches the latest build from the live site and overwrites the file you pick.';
 
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex justify-center px-4">
@@ -174,17 +177,6 @@ export function UpdateBanner() {
             </div>
           )}
 
-          {kind === 'singleFile' && showReplaceHelp && (
-            <div className="mt-2 rounded border border-accent/30 bg-accent/5 p-2 text-[11px] text-ink-muted">
-              <div className="font-semibold text-ink">Replace existing file</div>
-              <ol className="mt-1 list-decimal space-y-0.5 pl-4">
-                <li>Make sure you downloaded the new <code>resume-editor-{release?.version}.html</code> first.</li>
-                <li>Click <em>Pick downloaded file</em> below and select the new html you just downloaded.</li>
-                <li>You will get a second picker — select your <strong>existing</strong> resume-editor html (the file you opened in this tab) to overwrite it.</li>
-              </ol>
-            </div>
-          )}
-
           <div className="mt-3 flex flex-wrap gap-2">
             <button type="button" onClick={downloadBackup} className="btn-secondary text-xs">
               Back up data
@@ -202,37 +194,40 @@ export function UpdateBanner() {
               </button>
             ) : (
               <>
-                {release?.htmlAssetUrl && (
+                {isFileSystemAccessSupported() ? (
+                  <button
+                    type="button"
+                    onClick={() => void replaceLocal()}
+                    disabled={replacing}
+                    className="btn-primary text-xs"
+                    title={`Fetches the latest build from ${LATEST_SINGLE_FILE_URL} and overwrites the local file you pick.`}
+                  >
+                    <Replace size={12} />
+                    {replacing ? 'Replacing…' : 'Replace this file in place'}
+                  </button>
+                ) : (
+                  release?.htmlAssetUrl && (
+                    <a
+                      href={release.htmlAssetUrl}
+                      download={`resume-editor-${release.version}.html`}
+                      rel="noopener noreferrer"
+                      className="btn-primary text-xs"
+                    >
+                      <Download size={12} />
+                      Download {release.version}
+                    </a>
+                  )
+                )}
+                {isFileSystemAccessSupported() && release?.htmlAssetUrl && (
                   <a
                     href={release.htmlAssetUrl}
                     download={`resume-editor-${release.version}.html`}
                     rel="noopener noreferrer"
-                    className="btn-primary text-xs"
-                  >
-                    <Download size={12} />
-                    Download {release.version}
-                  </a>
-                )}
-                {isFileSystemAccessSupported() && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!showReplaceHelp) {
-                        setShowReplaceHelp(true);
-                        return;
-                      }
-                      void replaceFromDownloaded();
-                    }}
-                    disabled={replacing}
                     className="btn-secondary text-xs"
                   >
-                    <Replace size={12} />
-                    {replacing
-                      ? 'Replacing…'
-                      : showReplaceHelp
-                        ? 'Pick downloaded file'
-                        : 'Replace existing file…'}
-                  </button>
+                    <Download size={12} />
+                    Download as new file
+                  </a>
                 )}
               </>
             )}

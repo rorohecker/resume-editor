@@ -49,12 +49,19 @@ declare global {
   }
 }
 
-// Pure file-to-file copy via the File System Access API. The user picks the
-// freshly downloaded new html (source) and then their existing html (target);
-// we read the source bytes and write them to the target handle. No network
-// requests — this side-steps the CORS issue that bites fetch() against
-// GitHub release asset URLs from a file:// origin.
-export async function copyHtmlOverExistingFile(): Promise<{
+// Canonical URL for the always-latest single-file build. The deploy workflow
+// copies dist-single/index.html here every push, so a single fetch returns
+// the current production html. GitHub Pages serves with Access-Control-Allow-
+// Origin: *, which works from file:// origins too.
+export const LATEST_SINGLE_FILE_URL =
+  'https://rorohecker.github.io/resume-editor/single.html';
+
+// One-picker in-place update.
+//   1. Fetch the latest single-file html from GitHub Pages (CORS:*).
+//   2. Prompt the user to pick their existing local html.
+//   3. Overwrite it via the File System Access API.
+// No second picker, no manual download step.
+export async function replaceLocalFileWithLatest(): Promise<{
   ok: boolean;
   filename?: string;
   cancelled?: boolean;
@@ -63,52 +70,62 @@ export async function copyHtmlOverExistingFile(): Promise<{
   if (!isFileSystemAccessSupported() || !window.showOpenFilePicker) {
     return {
       ok: false,
-      error: 'In-place replace needs Chrome or Edge. Use the Download button and overwrite the file in your file manager.',
+      error:
+        'In-place replace needs Chrome or Edge. Use the Download button and overwrite the file in your file manager.',
     };
   }
-  let sourceHandle: FileSystemFileHandle;
+
+  let bytes: ArrayBuffer;
   try {
-    const handles = await window.showOpenFilePicker({
-      multiple: false,
-      types: [
-        { description: 'Newly downloaded resume-editor html', accept: { 'text/html': ['.html', '.htm'] } },
-      ],
-    });
-    sourceHandle = handles[0];
-    if (!sourceHandle) return { ok: false, cancelled: true };
+    const resp = await fetch(LATEST_SINGLE_FILE_URL, { cache: 'no-store' });
+    if (!resp.ok) {
+      return {
+        ok: false,
+        error: `Could not fetch the new build (HTTP ${resp.status}). Try the Download button.`,
+      };
+    }
+    bytes = await resp.arrayBuffer();
   } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') return { ok: false, cancelled: true };
-    return { ok: false, error: err instanceof Error ? err.message : 'Could not open the new file.' };
+    return {
+      ok: false,
+      error:
+        err instanceof Error
+          ? `Network error fetching the new build: ${err.message}. Try the Download button.`
+          : 'Network error fetching the new build.',
+    };
   }
-  let content: ArrayBuffer;
-  try {
-    const file = await sourceHandle.getFile();
-    content = await file.arrayBuffer();
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : 'Could not read the new file.' };
-  }
+
   let targetHandle: FileSystemFileHandle;
   try {
     const handles = await window.showOpenFilePicker({
       multiple: false,
       types: [
-        { description: 'Existing resume-editor html to overwrite', accept: { 'text/html': ['.html', '.htm'] } },
+        {
+          description: 'Existing resume-editor html to overwrite',
+          accept: { 'text/html': ['.html', '.htm'] },
+        },
       ],
     });
     targetHandle = handles[0];
     if (!targetHandle) return { ok: false, cancelled: true };
   } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') return { ok: false, cancelled: true };
-    return { ok: false, error: err instanceof Error ? err.message : 'Could not open the existing file.' };
+    if (err instanceof DOMException && err.name === 'AbortError')
+      return { ok: false, cancelled: true };
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Could not open the existing file.',
+    };
   }
+
   const granted = await ensureWritePermission(targetHandle);
   if (!granted) {
     return { ok: false, error: 'Write permission was denied for the existing file.' };
   }
+
   try {
     const writable = await targetHandle.createWritable();
     try {
-      await writable.write(content);
+      await writable.write(bytes);
     } finally {
       await writable.close();
     }

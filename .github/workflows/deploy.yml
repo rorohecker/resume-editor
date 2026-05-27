@@ -24,12 +24,20 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - name: Build
+      - name: Build hosted PWA
         env:
           # GitHub Pages serves from a repo subpath. Tell Vite about it so
           # asset URLs resolve under /resume-editor/.
           APP_BASE: /resume-editor/
         run: npm run build
+      - name: Build single-file html
+        run: npm run build:single
+      - name: Stage single-file html beside the PWA
+        # Copy the self-contained html into dist/ so it's served from the
+        # same origin as the PWA. This is what powers the in-app Replace flow:
+        # the single-file build running from file:// can fetch this URL with
+        # CORS:* and then write the bytes to the user-picked local file.
+        run: cp dist-single/index.html dist/single.html
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
