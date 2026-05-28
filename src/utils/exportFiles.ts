@@ -307,26 +307,13 @@ async function exportPng(resume: Resume): Promise<void> {
 }
 
 async function renderPngBlob(resume: Resume): Promise<Blob> {
-  const { toPng } = await import('html-to-image');
-  const page = document.querySelector<HTMLElement>('.resume-print-page');
-  if (!page) throw new Error('Resume preview is not available.');
-  void resume;
-
-  const dataUrl = await toPng(page, {
-    pixelRatio: 2,
-    cacheBust: true,
-    backgroundColor: '#ffffff',
-    width: page.offsetWidth,
-    height: Math.max(page.scrollHeight, page.offsetHeight),
-    style: {
-      transform: 'none',
-      transformOrigin: 'top left',
-      margin: '0',
-      boxShadow: 'none',
-    },
-  });
-
-  const response = await fetch(dataUrl);
+  // Use the same offscreen render path as the PDF exporter. The previous
+  // implementation queried the live preview DOM ('.resume-print-page'), which
+  // fails when the export modal hides the preview behind it, on narrow
+  // viewports where the preview pane is mobile-collapsed, or when the user is
+  // on the Landing page with no preview mounted at all.
+  const image = await renderResumePageImage(resume);
+  const response = await fetch(image.dataUrl);
   return response.blob();
 }
 
