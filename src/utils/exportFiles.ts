@@ -1,9 +1,6 @@
 import type { Entry, Resume, Section } from '@/types';
 import { formatDateRange } from './dateFormat';
 import { resumeToPlainText, stripHtml } from './resumeText';
-import { ensureFontRegistered } from './pdfFonts';
-import { createPdfDocumentFor } from './pdfDocument';
-import { isWorkerAvailable, renderPdfInWorker } from './pdfWorkerClient';
 import { displayContactValue } from './contactIcon';
 import { resumeForPagedExport } from './resumeLayout';
 
@@ -86,23 +83,45 @@ async function exportPdf(resume: Resume): Promise<void> {
   downloadBlob(blob, `${fileBaseName(resume)}.pdf`, 'application/pdf');
 }
 
-async function renderPdfBlob(resume: Resume): Promise<Blob> {
-  let blob: Blob | null = null;
-  if (isWorkerAvailable()) {
-    try {
-      blob = await renderPdfInWorker(resume);
-    } catch (err) {
-      console.warn('PDF worker failed, using main thread:', err);
-    }
-  }
-  if (!blob) {
-    const pdfModule = await import('@react-pdf/renderer');
-    await ensureFontRegistered(resume.styles.font, pdfModule);
-    const document = createPdfDocumentFor(resume, pdfModule);
-    await yieldToBrowser();
-    blob = await pdfModule.pdf(document).toBlob();
-  }
-  return blob;
+export async function renderPdfBlob(resume: Resume): Promise<Blob> {
+  const [{ createElement }, pdfModule, pageImage] = await Promise.all([
+    import('react'),
+    import('@react-pdf/renderer'),
+    renderResumePageImage(resume),
+  ]);
+  const { Document, Image, Page, StyleSheet, pdf } = pdfModule;
+  const page = pdfPageSize(resume);
+  const fitted = fitImageToPage(pageImage, page);
+  const styles = StyleSheet.create({
+    page: {
+      backgroundColor: '#ffffff',
+      position: 'relative',
+    },
+    image: {
+      position: 'absolute',
+      left: fitted.left,
+      top: 0,
+      width: fitted.width,
+      height: fitted.height,
+    },
+  });
+
+  const document = createElement(
+    Document,
+    { title: resume.header.name || resume.name },
+    createElement(
+      Page,
+      {
+        size: resume.styles.paperSize === 'a4' ? 'A4' : 'LETTER',
+        style: styles.page,
+        wrap: false,
+      },
+      createElement(Image, { src: pageImage.dataUrl, style: styles.image }),
+    ),
+  );
+
+  await yieldToBrowser();
+  return pdf(document).toBlob();
 }
 
 function yieldToBrowser(): Promise<void> {
@@ -311,6 +330,128 @@ async function renderPngBlob(resume: Resume): Promise<Blob> {
   return response.blob();
 }
 
+interface PagePixels {
+  width: number;
+  height: number;
+}
+
+interface PagePoints {
+  width: number;
+  height: number;
+}
+
+interface PageImage extends PagePixels {
+  dataUrl: string;
+}
+
+function previewPagePixels(resume: Resume): PagePixels {
+  return resume.styles.paperSize === 'a4'
+    ? { width: Math.round(8.27 * 96), height: Math.round(11.69 * 96) }
+    : { width: Math.round(8.5 * 96), height: Math.round(11 * 96) };
+}
+
+function pdfPageSize(resume: Resume): PagePoints {
+  return resume.styles.paperSize === 'a4'
+    ? { width: 595.28, height: 841.89 }
+    : { width: 612, height: 792 };
+}
+
+function fitImageToPage(image: PagePixels, page: PagePoints): PagePoints & { left: number } {
+  const scale = Math.min(page.width / image.width, page.height / image.height);
+  const width = image.width * scale;
+  const height = image.height * scale;
+  return {
+    width,
+    height,
+    left: (page.width - width) / 2,
+  };
+}
+
+async function renderResumePageImage(resume: Resume): Promise<PageImage> {
+  const [{ createElement }, { createRoot }, { flushSync }, { toPng }, { PreviewRenderer }] =
+    await Promise.all([
+      import('react'),
+      import('react-dom/client'),
+      import('react-dom'),
+      import('html-to-image'),
+      import('@/components/preview/PreviewRenderer'),
+    ]);
+
+  const page = previewPagePixels(resume);
+  const host = document.createElement('div');
+  const pageEl = document.createElement('div');
+  const root = createRoot(pageEl);
+
+  Object.assign(host.style, {
+    position: 'fixed',
+    left: '-10000px',
+    top: '0',
+    width: `${page.width}px`,
+    background: '#ffffff',
+    pointerEvents: 'none',
+    zIndex: '-1',
+  });
+  pageEl.className = 'resume-print-page';
+  Object.assign(pageEl.style, {
+    width: `${page.width}px`,
+    minHeight: `${page.height}px`,
+    background: '#ffffff',
+    color: '#000000',
+    boxShadow: 'none',
+    transform: 'none',
+  });
+
+  host.appendChild(pageEl);
+  document.body.appendChild(host);
+
+  try {
+    flushSync(() => {
+      root.render(
+        createElement(PreviewRenderer, {
+          resume,
+          showPageBreaks: false,
+          interactive: false,
+        }),
+      );
+    });
+    await waitForFonts();
+    await nextFrame();
+    await nextFrame();
+
+    const height = Math.max(page.height, pageEl.scrollHeight, pageEl.offsetHeight);
+    const dataUrl = await toPng(pageEl, {
+      pixelRatio: 2,
+      cacheBust: true,
+      backgroundColor: '#ffffff',
+      fontEmbedCSS: '',
+      width: page.width,
+      height,
+      style: {
+        transform: 'none',
+        transformOrigin: 'top left',
+        margin: '0',
+        boxShadow: 'none',
+      },
+    });
+    return { dataUrl, width: page.width, height };
+  } finally {
+    root.unmount();
+    host.remove();
+  }
+}
+
+async function waitForFonts(): Promise<void> {
+  try {
+    await document.fonts.ready;
+  } catch {
+    // Font readiness is best effort; html-to-image will still render fallback fonts.
+  }
+}
+
+function nextFrame(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+}
+
 function sectionToDocx(section: Section, resume: Resume, docx: DocxModule, usableWidth: number) {
   const { Paragraph, TextRun } = docx;
 
@@ -442,16 +583,36 @@ function entryHasContent(entry: Entry): boolean {
   );
 }
 
+// Triggers a download of a Blob (or string/buffer wrapped in a Blob) by
+// creating an object URL, programmatically clicking an anchor, and revoking
+// the URL on a delay. The previous version revoked synchronously after
+// click() which raced the browser's download fetch and dropped the file
+// silently in Chrome and Firefox.
 function downloadBlob(content: BlobPart | Blob, fileName: string, type: string): void {
+  if (typeof document === 'undefined') return;
   const blob = content instanceof Blob ? content : new Blob([content], { type });
+
+  // IE11 / legacy Edge path. Modern browsers ignore this.
+  const nav = navigator as unknown as { msSaveBlob?: (b: Blob, name: string) => boolean };
+  if (typeof nav.msSaveBlob === 'function') {
+    nav.msSaveBlob(blob, fileName);
+    return;
+  }
+
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
   link.download = fileName;
+  link.rel = 'noopener';
+  link.style.display = 'none';
   document.body.appendChild(link);
   link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
+  // Defer cleanup so the browser can actually start the download. Synchronous
+  // revoke + remove sometimes cancels the download mid-flight.
+  window.setTimeout(() => {
+    link.remove();
+    URL.revokeObjectURL(url);
+  }, 4000);
 }
 
 function fileBaseName(resume: Resume): string {

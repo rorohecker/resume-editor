@@ -671,7 +671,7 @@ export default {
     preparing: 'Preparing…',
     renderingPreview: 'Rendering preview…',
     pdf: 'PDF',
-    pdfNote: 'Embedded fonts and clickable links',
+    pdfNote: 'Exact visual PDF rendered from the preview',
     docx: 'DOCX',
     docxNote: 'Editable Word document with structured sections',
     txt: 'Plain Text',

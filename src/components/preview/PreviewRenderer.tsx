@@ -18,7 +18,15 @@ function inch(n: number): string {
 
 const PAGE_HEIGHT_IN: Record<'letter' | 'a4', number> = { letter: 11, a4: 11.69 };
 
-export function PreviewRenderer({ resume }: { resume: Resume }) {
+export function PreviewRenderer({
+  resume,
+  showPageBreaks = true,
+  interactive = true,
+}: {
+  resume: Resume;
+  showPageBreaks?: boolean;
+  interactive?: boolean;
+}) {
   const displayResume = resumeForPagedExport(resume);
   const { styles, header, sections } = displayResume;
   const visibleSections = sections
@@ -44,7 +52,9 @@ export function PreviewRenderer({ resume }: { resume: Resume }) {
         lineHeight: styles.spacing.bullet,
       }}
     >
-      <PageBreakOverlay usableHeightPx={usableHeightPx} marginTopPx={styles.margins.top * 96} />
+      {showPageBreaks && (
+        <PageBreakOverlay usableHeightPx={usableHeightPx} marginTopPx={styles.margins.top * 96} />
+      )}
 
       <Header header={header} resume={displayResume} />
 
@@ -52,7 +62,12 @@ export function PreviewRenderer({ resume }: { resume: Resume }) {
         <EmptyResumeHint />
       ) : (
         visibleSections.map((section) => (
-          <SectionBlock key={section.id} section={section} resume={displayResume} />
+          <SectionBlock
+            key={section.id}
+            section={section}
+            resume={displayResume}
+            interactive={interactive}
+          />
         ))
       )}
     </div>
@@ -189,7 +204,15 @@ function contactPlaceholder(fieldType: ContactField['type'], t: ReturnType<typeo
   }
 }
 
-const SectionBlock = memo(function SectionBlockInner({ section, resume }: { section: Section; resume: Resume }) {
+const SectionBlock = memo(function SectionBlockInner({
+  section,
+  resume,
+  interactive,
+}: {
+  section: Section;
+  resume: Resume;
+  interactive: boolean;
+}) {
   // Manual page-break section: renders a visible dashed divider in the on-
   // screen preview and triggers a hard page break in print / PDF export.
   if (section.type === 'page-break') {
@@ -217,7 +240,13 @@ const SectionBlock = memo(function SectionBlockInner({ section, resume }: { sect
         color: o.bodyColor ?? undefined,
       }}
     >
-      <SectionHeader title={section.title} resume={resume} overrides={o} sectionId={section.id} />
+      <SectionHeader
+        title={section.title}
+        resume={resume}
+        overrides={o}
+        sectionId={section.id}
+        interactive={interactive}
+      />
       <div>{renderSectionContent(section, resume)}</div>
     </section>
   );
@@ -653,11 +682,13 @@ function SectionHeader({
   resume,
   overrides,
   sectionId,
+  interactive,
 }: {
   title: string;
   resume: Resume;
   overrides: NonNullable<Section['styleOverrides']>;
   sectionId?: string;
+  interactive: boolean;
 }) {
   const { styles } = resume;
   const uppercase = overrides.uppercaseTitle ?? true;
@@ -666,7 +697,7 @@ function SectionHeader({
   // matching section's accordion and opens it. The rendered output looks the
   // same — the click target lives behind a transparent button so it doesn't
   // change the resume's visual styling at all.
-  const onJump = sectionId ? () => focusSection(sectionId) : undefined;
+  const onJump = interactive && sectionId ? () => focusSection(sectionId) : undefined;
   return (
     <div>
       {onJump ? (

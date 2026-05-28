@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ArrowLeft,
   Braces,
+  Download,
   FileCode2,
   FileText,
   FileType,
@@ -19,6 +20,15 @@ import {
 import { Modal } from '@/components/shared/Modal';
 import { toast } from '@/hooks/useToast';
 
+// Export modal flow:
+//   1. ChooserPane — user picks a format. We generate the artifact in memory.
+//   2. PreviewPane — user sees the actual file content (pdf / png / text /
+//      json) or a summary (docx). Confirm and download triggers the actual
+//      save; Back returns to the chooser.
+//
+// State is kept simple: no useMemo, no derived state. The artifact blob lives
+// in component state and we hand it to downloadArtifact() on confirm.
+
 const FORMAT_IDS: { id: ExportFormat; icon: LucideIcon }[] = [
   { id: 'pdf', icon: FileText },
   { id: 'docx', icon: FileType },
@@ -30,9 +40,8 @@ const FORMAT_IDS: { id: ExportFormat; icon: LucideIcon }[] = [
 interface Preview {
   format: ExportFormat;
   artifact: ExportArtifact;
-  // Object URL for binary formats (pdf / png / docx) and text body for text formats.
-  url: string | null;
-  text: string | null;
+  url: string | null; // For binary previews (pdf / png).
+  text: string | null; // For text previews (txt / json).
 }
 
 function formatBytes(n: number): string {
@@ -47,23 +56,31 @@ export function ExportModal() {
   const setOpen = useStore((s) => s.setExportOpen);
   const resume = useStore((s) => s.currentResume);
   const [busy, setBusy] = useState<ExportFormat | null>(null);
+  const [downloading, setDownloading] = useState(false);
   const [preview, setPreview] = useState<Preview | null>(null);
-  // Tracks every object URL we've created so we can revoke on unmount / close.
   const urlsRef = useRef<string[]>([]);
 
-  // Cleanup all blob URLs whenever the modal closes or the preview switches.
+  const clearUrls = () => {
+    for (const url of urlsRef.current) {
+      try {
+        URL.revokeObjectURL(url);
+      } catch {
+        // ignore
+      }
+    }
+    urlsRef.current = [];
+  };
+
   useEffect(() => {
     if (!open) {
-      for (const url of urlsRef.current) URL.revokeObjectURL(url);
-      urlsRef.current = [];
+      clearUrls();
       setPreview(null);
       setBusy(null);
+      setDownloading(false);
     }
   }, [open]);
 
-  useEffect(() => () => {
-    for (const url of urlsRef.current) URL.revokeObjectURL(url);
-  }, []);
+  useEffect(() => () => clearUrls(), []);
 
   const close = () => {
     setOpen(false);
@@ -84,10 +101,9 @@ export function ExportModal() {
       }
       setPreview({ format, artifact, url, text });
     } catch (err) {
-      toast(err instanceof Error ? err.message : t('exportModal.failed'), {
-        tone: 'danger',
-        ttl: 5000,
-      });
+      const message = err instanceof Error ? err.message : 'Could not generate the export.';
+      console.error('[ExportModal] generate failed:', err);
+      toast(`Preview failed: ${message}`, { tone: 'danger', ttl: 6000 });
     } finally {
       setBusy(null);
     }
@@ -95,52 +111,29 @@ export function ExportModal() {
 
   const confirmDownload = () => {
     if (!preview) return;
-    downloadArtifact(preview.artifact);
-    toast(t('exportModal.downloaded', { format: preview.format.toUpperCase() }), {
-      tone: 'success',
-    });
-    close();
+    setDownloading(true);
+    try {
+      downloadArtifact(preview.artifact);
+      toast(`Downloading ${preview.artifact.filename}`, { tone: 'success', ttl: 2500 });
+      // Don't auto-close — let the user see the success state and dismiss
+      // themselves. Auto-closing also raced the download in some browsers
+      // because the modal unmount cleared the urls ref synchronously.
+      window.setTimeout(() => {
+        setDownloading(false);
+        close();
+      }, 800);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Download failed.';
+      console.error('[ExportModal] download failed:', err);
+      toast(message, { tone: 'danger', ttl: 6000 });
+      setDownloading(false);
+    }
   };
 
   const backToChooser = () => {
+    clearUrls();
     setPreview(null);
   };
-
-  const headerActions = useMemo(() => {
-    if (preview) {
-      return (
-        <div className="flex items-center justify-between gap-2">
-          <button type="button" onClick={backToChooser} className="btn-ghost text-xs">
-            <ArrowLeft size={12} />
-            Choose another format
-          </button>
-          <div className="flex gap-2">
-            <button type="button" onClick={close} className="btn-secondary text-xs">
-              {t('exportModal.cancel')}
-            </button>
-            <button type="button" onClick={confirmDownload} className="btn-primary text-xs">
-              Confirm and download
-            </button>
-          </div>
-        </div>
-      );
-    }
-    return (
-      <div className="flex items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={() => window.print()}
-          className="btn-ghost text-xs"
-        >
-          {t('exportModal.printPreview')}
-        </button>
-        <button type="button" onClick={close} className="btn-secondary">
-          {t('exportModal.cancel')}
-        </button>
-      </div>
-    );
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [preview]);
 
   return (
     <Modal
@@ -148,7 +141,53 @@ export function ExportModal() {
       onClose={close}
       title={preview ? `Preview: ${preview.artifact.filename}` : t('exportModal.title')}
       maxWidth="xl"
-      footer={headerActions}
+      footer={
+        preview ? (
+          <div className="flex items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={backToChooser}
+              disabled={downloading}
+              className="btn-ghost text-xs"
+            >
+              <ArrowLeft size={12} />
+              Choose another format
+            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={close}
+                disabled={downloading}
+                className="btn-secondary text-xs"
+              >
+                {t('exportModal.cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={confirmDownload}
+                disabled={downloading}
+                className="btn-primary text-xs"
+              >
+                <Download size={12} />
+                {downloading ? 'Downloading…' : 'Confirm and download'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="btn-ghost text-xs"
+            >
+              {t('exportModal.printPreview')}
+            </button>
+            <button type="button" onClick={close} className="btn-secondary">
+              {t('exportModal.cancel')}
+            </button>
+          </div>
+        )
+      }
     >
       {preview ? (
         <PreviewPane preview={preview} />
@@ -221,13 +260,13 @@ function PreviewPane({ preview }: { preview: Preview }) {
         <span>
           <strong className="text-ink">{artifact.filename}</strong> · {format.toUpperCase()} · {sizeLabel}
         </span>
-        <span className="text-ink-subtle">Nothing is downloaded until you click Confirm.</span>
+        <span className="text-ink-subtle">Nothing saves until you click Confirm.</span>
       </div>
       <div className="overflow-hidden rounded-md border border-paper-edge bg-paper-tint">
         {format === 'pdf' && url && (
           <iframe
             title="PDF preview"
-            src={`${url}#toolbar=0&navpanes=0`}
+            src={url}
             className="h-[60vh] w-full bg-white"
           />
         )}
@@ -239,17 +278,16 @@ function PreviewPane({ preview }: { preview: Preview }) {
         {format === 'docx' && (
           <div className="space-y-3 p-4 text-sm text-ink-muted">
             <p>
-              Word documents can't preview natively in the browser, but here's exactly what will save:
+              Word documents can't preview natively in the browser, but here is exactly what will save:
             </p>
             <ul className="ml-4 list-disc space-y-1 text-xs">
               <li><strong>{artifact.filename}</strong></li>
               <li>{sizeLabel}</li>
               <li>Margins, fonts, and bullet numbering match the resume's appearance settings.</li>
-              <li>Dates are tab-aligned to the right edge.</li>
+              <li>Dates are tab-aligned to the right edge of the page.</li>
             </ul>
             <p className="text-xs text-ink-subtle">
-              Tip: open the same resume's PDF preview from this menu to verify the layout — Word will
-              match it within the constraints of the .docx format.
+              Open the PDF preview from this same menu to verify the visual layout before saving.
             </p>
           </div>
         )}

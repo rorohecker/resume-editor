@@ -1,48 +1,31 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Resume } from '@/types';
-
-const PDFViewerLazy = lazy(async () => {
-  const mod = await import('@react-pdf/renderer');
-  return {
-    default: ({ resume, document }: { resume: Resume; document: React.ReactElement }) => {
-      void resume;
-      const Viewer = mod.PDFViewer;
-      return (
-        <Viewer style={{ width: '100%', height: '100%', border: 'none', backgroundColor: '#fff' }}>
-          {document}
-        </Viewer>
-      );
-    },
-  };
-});
+import { renderPdfBlob } from '@/utils/exportFiles';
 
 export function PdfPreview({ resume }: { resume: Resume }) {
   const { t } = useTranslation();
-  const [doc, setDoc] = useState<React.ReactElement | null>(null);
+  const [url, setUrl] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const resumeKey = `${resume.id}:${resume.updatedAt}:${resume.styles.font}`;
 
   useEffect(() => {
     let cancelled = false;
+    let nextUrl: string | null = null;
     (async () => {
       setErr(null);
-      setDoc(null);
+      setUrl(null);
       try {
-        const [{ createPdfDocumentFor }, { ensureFontRegistered }, pdfMod] = await Promise.all([
-          import('@/utils/pdfDocument'),
-          import('@/utils/pdfFonts'),
-          import('@react-pdf/renderer'),
-        ]);
-        await ensureFontRegistered(resume.styles.font, pdfMod);
-        const document = createPdfDocumentFor(resume, pdfMod);
-        if (!cancelled) setDoc(document as React.ReactElement);
+        const blob = await renderPdfBlob(resume);
+        nextUrl = URL.createObjectURL(blob);
+        if (!cancelled) setUrl(nextUrl);
       } catch (error) {
         if (!cancelled) setErr(error instanceof Error ? error.message : t('preview.pdfFailed'));
       }
     })();
     return () => {
       cancelled = true;
+      if (nextUrl) URL.revokeObjectURL(nextUrl);
     };
   }, [resumeKey, t]);
 
@@ -53,7 +36,7 @@ export function PdfPreview({ resume }: { resume: Resume }) {
       </div>
     );
   }
-  if (!doc) {
+  if (!url) {
     return (
       <div className="flex h-full items-center justify-center p-4 text-sm text-ink-subtle">
         {t('preview.renderingPdf')}
@@ -61,14 +44,10 @@ export function PdfPreview({ resume }: { resume: Resume }) {
     );
   }
   return (
-    <Suspense
-      fallback={
-        <div className="flex h-full items-center justify-center p-4 text-sm text-ink-subtle">
-          {t('preview.loadingViewer')}
-        </div>
-      }
-    >
-      <PDFViewerLazy resume={resume} document={doc} />
-    </Suspense>
+    <iframe
+      title="PDF preview"
+      src={`${url}#toolbar=0&navpanes=0`}
+      className="h-full w-full border-0 bg-white"
+    />
   );
 }
