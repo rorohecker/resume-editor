@@ -84,52 +84,8 @@ async function exportPdf(resume: Resume): Promise<void> {
 }
 
 export async function renderPdfBlob(resume: Resume): Promise<Blob> {
-  const [{ createElement }, pdfModule, pageImage] = await Promise.all([
-    import('react'),
-    import('@react-pdf/renderer'),
-    renderResumePageImage(resume),
-  ]);
-  const { Document, Image, Page, StyleSheet, pdf } = pdfModule;
-  const page = pdfPageSize(resume);
-  const fitted = fitImageToPage(pageImage, page);
-  const styles = StyleSheet.create({
-    page: {
-      backgroundColor: '#ffffff',
-      position: 'relative',
-    },
-    image: {
-      position: 'absolute',
-      left: fitted.left,
-      top: 0,
-      width: fitted.width,
-      height: fitted.height,
-    },
-  });
-
-  const document = createElement(
-    Document,
-    { title: resume.header.name || resume.name },
-    createElement(
-      Page,
-      {
-        size: resume.styles.paperSize === 'a4' ? 'A4' : 'LETTER',
-        style: styles.page,
-        wrap: false,
-      },
-      createElement(Image, { src: pageImage.dataUrl, style: styles.image }),
-    ),
-  );
-
-  await yieldToBrowser();
-  return pdf(document).toBlob();
-}
-
-function yieldToBrowser(): Promise<void> {
-  return new Promise((resolve) => {
-    const w = window as Window & { requestIdleCallback?: (cb: () => void) => void };
-    if (typeof w.requestIdleCallback === 'function') w.requestIdleCallback(() => resolve());
-    else setTimeout(resolve, 0);
-  });
+  const { renderResumePdfBlob } = await import('./pdfExport');
+  return renderResumePdfBlob(resume);
 }
 
 async function exportDocx(resume: Resume): Promise<void> {
@@ -322,11 +278,6 @@ interface PagePixels {
   height: number;
 }
 
-interface PagePoints {
-  width: number;
-  height: number;
-}
-
 interface PageImage extends PagePixels {
   dataUrl: string;
 }
@@ -335,23 +286,6 @@ function previewPagePixels(resume: Resume): PagePixels {
   return resume.styles.paperSize === 'a4'
     ? { width: Math.round(8.27 * 96), height: Math.round(11.69 * 96) }
     : { width: Math.round(8.5 * 96), height: Math.round(11 * 96) };
-}
-
-function pdfPageSize(resume: Resume): PagePoints {
-  return resume.styles.paperSize === 'a4'
-    ? { width: 595.28, height: 841.89 }
-    : { width: 612, height: 792 };
-}
-
-function fitImageToPage(image: PagePixels, page: PagePoints): PagePoints & { left: number } {
-  const scale = Math.min(page.width / image.width, page.height / image.height);
-  const width = image.width * scale;
-  const height = image.height * scale;
-  return {
-    width,
-    height,
-    left: (page.width - width) / 2,
-  };
 }
 
 async function renderResumePageImage(resume: Resume): Promise<PageImage> {
