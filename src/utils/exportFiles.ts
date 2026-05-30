@@ -1,3 +1,6 @@
+import { createElement } from 'react';
+import { createRoot } from 'react-dom/client';
+import { flushSync } from 'react-dom';
 import type { Entry, Resume, Section } from '@/types';
 import { formatDateRange } from './dateFormat';
 import { resumeToPlainText, stripHtml } from './resumeText';
@@ -7,26 +10,6 @@ import { resumeForPagedExport } from './resumeLayout';
 export type ExportFormat = 'pdf' | 'docx' | 'txt' | 'png' | 'json';
 
 type DocxModule = typeof import('docx');
-
-export async function exportResume(resume: Resume, format: ExportFormat): Promise<void> {
-  switch (format) {
-    case 'pdf':
-      await exportPdf(resume);
-      return;
-    case 'docx':
-      await exportDocx(resume);
-      return;
-    case 'txt':
-      downloadBlob(resumeToPlainText(resume), `${fileBaseName(resume)}.txt`, 'text/plain;charset=utf-8');
-      return;
-    case 'json':
-      downloadBlob(JSON.stringify(resume, null, 2), `${fileBaseName(resume)}.json`, 'application/json;charset=utf-8');
-      return;
-    case 'png':
-      await exportPng(resume);
-      return;
-  }
-}
 
 export interface ExportArtifact {
   blob: Blob;
@@ -78,23 +61,9 @@ export function downloadArtifact(artifact: ExportArtifact): void {
   downloadBlob(artifact.blob, artifact.filename, artifact.mimeType);
 }
 
-async function exportPdf(resume: Resume): Promise<void> {
-  const blob = await renderPdfBlob(resume);
-  downloadBlob(blob, `${fileBaseName(resume)}.pdf`, 'application/pdf');
-}
-
 export async function renderPdfBlob(resume: Resume): Promise<Blob> {
   const { renderResumePdfBlob } = await import('./pdfExport');
   return renderResumePdfBlob(resume);
-}
-
-async function exportDocx(resume: Resume): Promise<void> {
-  const blob = await renderDocxBlob(resume);
-  downloadBlob(
-    blob,
-    `${fileBaseName(resume)}.docx`,
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  );
 }
 
 async function renderDocxBlob(resume: Resume): Promise<Blob> {
@@ -257,11 +226,6 @@ async function renderDocxBlob(resume: Resume): Promise<Blob> {
   return blob;
 }
 
-async function exportPng(resume: Resume): Promise<void> {
-  const blob = await renderPngBlob(resume);
-  downloadBlob(blob, `${fileBaseName(resume)}.png`, 'image/png');
-}
-
 async function renderPngBlob(resume: Resume): Promise<Blob> {
   // Use the same offscreen render path as the PDF exporter. The previous
   // implementation queried the live preview DOM ('.resume-print-page'), which
@@ -271,6 +235,80 @@ async function renderPngBlob(resume: Resume): Promise<Blob> {
   const image = await renderResumePageImage(resume);
   const response = await fetch(image.dataUrl);
   return response.blob();
+}
+
+// A PNG data URL of the resume rendered exactly like the on-screen preview.
+// Used by the export modal to show a visual preview for formats the browser
+// can't preview natively (notably DOCX). Returns a data URL so it renders from
+// file:// without any blob/iframe restrictions.
+export async function renderResumePreviewDataUrl(resume: Resume): Promise<string> {
+  const image = await renderResumePageImage(resume);
+  return image.dataUrl;
+}
+
+// Render a generated PDF blob into one PNG data URL per page using pdfjs. The
+// export modal uses this instead of an <iframe src="blob:…">, because Chromium
+// refuses to render blob-URL PDFs inside an iframe when the page is served from
+// file:// — which left the PDF preview a blank white box for anyone running the
+// single-file build. Data-URL <img> tags have no such restriction.
+export async function renderPdfBlobToImages(
+  blob: Blob,
+  options: { scale?: number; maxPages?: number } = {},
+): Promise<string[]> {
+  const scale = options.scale ?? 1.5;
+  const maxPages = options.maxPages ?? 6;
+  const pdfjs = await import('pdfjs-dist');
+  await configurePreviewPdfWorker(pdfjs);
+
+  const data = new Uint8Array(await blob.arrayBuffer());
+  let doc;
+  try {
+    doc = await pdfjs.getDocument({ data }).promise;
+  } catch (err) {
+    if (err instanceof Error && /worker/i.test(err.message)) {
+      doc = await pdfjs.getDocument({
+        data,
+        disableWorker: true,
+      } as Parameters<typeof pdfjs.getDocument>[0]).promise;
+    } else {
+      throw err;
+    }
+  }
+
+  const images: string[] = [];
+  const pageCount = Math.min(doc.numPages, maxPages);
+  for (let pageNum = 1; pageNum <= pageCount; pageNum++) {
+    const page = await doc.getPage(pageNum);
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) continue;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({
+      canvasContext: ctx,
+      viewport,
+      canvas,
+    } as Parameters<typeof page.render>[0]).promise;
+    images.push(canvas.toDataURL('image/png'));
+    page.cleanup();
+  }
+  await doc.destroy();
+  return images;
+}
+
+let previewPdfWorkerConfigured = false;
+async function configurePreviewPdfWorker(pdfjs: typeof import('pdfjs-dist')): Promise<void> {
+  if (previewPdfWorkerConfigured) return;
+  try {
+    const workerUrl = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default;
+    pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+  } catch {
+    pdfjs.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+  }
+  previewPdfWorkerConfigured = true;
 }
 
 interface PagePixels {
@@ -289,14 +327,19 @@ function previewPagePixels(resume: Resume): PagePixels {
 }
 
 async function renderResumePageImage(resume: Resume): Promise<PageImage> {
-  const [{ createElement }, { createRoot }, { flushSync }, { toPng }, { PreviewRenderer }] =
-    await Promise.all([
-      import('react'),
-      import('react-dom/client'),
-      import('react-dom'),
-      import('html-to-image'),
-      import('@/components/preview/PreviewRenderer'),
-    ]);
+  // React core (createElement / createRoot / flushSync) is imported statically
+  // at the top of this module. A previous version pulled them in via
+  // `await import('react-dom/client')`, but in the chunked production build that
+  // subpath lands in a CJS-interop chunk that doesn't expose `createRoot` on the
+  // namespace, so PNG export threw "createRoot is not a function" when hosted
+  // (it only worked in the single-file build, which inlines everything). These
+  // modules are already in the bundle, so static imports add no weight.
+  // html-to-image and the preview renderer stay lazy — they're only needed when
+  // someone actually exports an image.
+  const [{ toPng }, { PreviewRenderer }] = await Promise.all([
+    import('html-to-image'),
+    import('@/components/preview/PreviewRenderer'),
+  ]);
 
   const page = previewPagePixels(resume);
   const host = document.createElement('div');

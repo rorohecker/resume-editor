@@ -14,6 +14,8 @@ import { useStore } from '@/store';
 import {
   downloadArtifact,
   generateExportArtifact,
+  renderPdfBlobToImages,
+  renderResumePreviewDataUrl,
   type ExportArtifact,
   type ExportFormat,
 } from '@/utils/exportFiles';
@@ -40,8 +42,10 @@ const FORMAT_IDS: { id: ExportFormat; icon: LucideIcon }[] = [
 interface Preview {
   format: ExportFormat;
   artifact: ExportArtifact;
-  url: string | null; // For binary previews (pdf / png).
+  url: string | null; // For binary previews (png) and the pdf iframe fallback.
   text: string | null; // For text previews (txt / json).
+  images: string[] | null; // Rendered page images (pdf via pdfjs, docx approximation).
+  approximate: boolean; // True when the image is a layout approximation (docx).
 }
 
 function formatBytes(n: number): string {
@@ -93,13 +97,40 @@ export function ExportModal() {
       const artifact = await generateExportArtifact(resume, format);
       let url: string | null = null;
       let text: string | null = null;
+      let images: string[] | null = null;
+      let approximate = false;
+
       if (format === 'txt' || format === 'json') {
         text = await artifact.blob.text();
-      } else {
+      } else if (format === 'png') {
         url = URL.createObjectURL(artifact.blob);
         urlsRef.current.push(url);
+      } else if (format === 'pdf') {
+        // Render the PDF to page images so the preview works under file://,
+        // where browsers refuse to render blob-URL PDFs inside an iframe.
+        // Keep a blob URL as a graceful fallback if pdfjs can't render.
+        url = URL.createObjectURL(artifact.blob);
+        urlsRef.current.push(url);
+        try {
+          images = await renderPdfBlobToImages(artifact.blob);
+          if (images.length === 0) images = null;
+        } catch (renderErr) {
+          console.warn('[ExportModal] PDF image preview failed, using iframe fallback:', renderErr);
+          images = null;
+        }
+      } else if (format === 'docx') {
+        // Word can't render in-browser; show a faithful image of the resume's
+        // on-screen layout as a visual approximation instead of a blank box.
+        try {
+          images = [await renderResumePreviewDataUrl(resume)];
+          approximate = true;
+        } catch (renderErr) {
+          console.warn('[ExportModal] DOCX preview image failed:', renderErr);
+          images = null;
+        }
       }
-      setPreview({ format, artifact, url, text });
+
+      setPreview({ format, artifact, url, text, images, approximate });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Could not generate the export.';
       console.error('[ExportModal] generate failed:', err);
@@ -251,7 +282,7 @@ function ChooserPane({
 }
 
 function PreviewPane({ preview }: { preview: Preview }) {
-  const { format, artifact, url, text } = preview;
+  const { format, artifact, url, text, images, approximate } = preview;
   const sizeLabel = formatBytes(artifact.blob.size);
 
   return (
@@ -262,39 +293,42 @@ function PreviewPane({ preview }: { preview: Preview }) {
         </span>
         <span className="text-ink-subtle">Nothing saves until you click Confirm.</span>
       </div>
+      {format === 'docx' && approximate && (
+        <p className="rounded-md bg-paper-tint px-3 py-2 text-xs text-ink-subtle">
+          Visual approximation of the Word document. Margins, fonts, bullets, and right-aligned dates
+          carry over; Word may reflow line breaks slightly.
+        </p>
+      )}
       <div className="overflow-hidden rounded-md border border-paper-edge bg-paper-tint">
-        {format === 'pdf' && url && (
-          <iframe
-            title="PDF preview"
-            src={url}
-            className="h-[60vh] w-full bg-white"
-          />
-        )}
-        {format === 'png' && url && (
+        {/* Image-based previews (pdf via pdfjs, docx approximation). Data-URL
+            images render everywhere, including file://, unlike blob iframes. */}
+        {images && images.length > 0 ? (
+          <div className="max-h-[60vh] space-y-3 overflow-auto bg-paper-tint p-4">
+            {images.map((src, i) => (
+              <img
+                key={i}
+                src={src}
+                alt={`${format.toUpperCase()} preview page ${i + 1}`}
+                className="mx-auto block max-w-full shadow-sm ring-1 ring-paper-edge"
+              />
+            ))}
+          </div>
+        ) : format === 'pdf' && url ? (
+          // Fallback when pdfjs can't rasterize: try the native viewer.
+          <iframe title="PDF preview" src={url} className="h-[60vh] w-full bg-white" />
+        ) : format === 'png' && url ? (
           <div className="max-h-[60vh] overflow-auto bg-white p-4">
             <img src={url} alt="PNG preview" className="mx-auto block" />
           </div>
-        )}
-        {format === 'docx' && (
-          <div className="space-y-3 p-4 text-sm text-ink-muted">
-            <p>
-              Word documents can't preview natively in the browser, but here is exactly what will save:
-            </p>
-            <ul className="ml-4 list-disc space-y-1 text-xs">
-              <li><strong>{artifact.filename}</strong></li>
-              <li>{sizeLabel}</li>
-              <li>Margins, fonts, and bullet numbering match the resume's appearance settings.</li>
-              <li>Dates are tab-aligned to the right edge of the page.</li>
-            </ul>
-            <p className="text-xs text-ink-subtle">
-              Open the PDF preview from this same menu to verify the visual layout before saving.
-            </p>
-          </div>
-        )}
-        {(format === 'txt' || format === 'json') && text !== null && (
+        ) : (format === 'txt' || format === 'json') && text !== null ? (
           <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap bg-white p-4 text-[11px] leading-snug text-ink">
             {text}
           </pre>
+        ) : (
+          <div className="p-4 text-sm text-ink-muted">
+            Preview unavailable, but <strong className="text-ink">{artifact.filename}</strong> ({sizeLabel}) is
+            ready to download.
+          </div>
         )}
       </div>
     </div>
