@@ -2,6 +2,7 @@ import { Document, Link, Page, StyleSheet, Text, View, pdf } from '@react-pdf/re
 import type { Bullet, ContactField, Entry, Resume, RuleStyle, Section } from '@/types';
 import { displayContactValue } from './contactIcon';
 import { formatDateRange } from './dateFormat';
+import { ensurePdfFontsRegistered, pdfFontFamily } from './pdfFonts';
 import { resumeForPagedExport } from './resumeLayout';
 import { stripHtml } from './resumeText';
 import {
@@ -32,6 +33,7 @@ const BULLET_GLYPH: Record<string, string> = {
 };
 
 export async function renderResumePdfBlob(resume: Resume): Promise<Blob> {
+  ensurePdfFontsRegistered();
   const document = <ResumePdfDocument resume={resumeForPagedExport(resume)} />;
   return pdf(document).toBlob();
 }
@@ -734,17 +736,3 @@ function hrefFromRaw(value: string): string {
   return `https://${trimmed}`;
 }
 
-function pdfFontFamily(font: Resume['styles']['font']): string {
-  switch (font) {
-    case 'EB Garamond':
-    case 'Georgia':
-    case 'Times New Roman':
-    case 'Latin Modern Roman':
-      return 'Times-Roman';
-    case 'Lato':
-    case 'Inter':
-    case 'Carlito':
-    case 'Nimbus Sans':
-      return 'Helvetica';
-  }
-}
