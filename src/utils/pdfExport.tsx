@@ -4,6 +4,16 @@ import { displayContactValue } from './contactIcon';
 import { formatDateRange } from './dateFormat';
 import { resumeForPagedExport } from './resumeLayout';
 import { stripHtml } from './resumeText';
+import {
+  labelFromKey,
+  mccombsSwapBold,
+  sectionHasBullets,
+  studyAbroadLine,
+  subtitleForPreview,
+  tertiaryForPreview,
+  titleForPreview,
+  visibleCustomFieldRows,
+} from './resumeComposition';
 
 const IN = 72;
 
@@ -461,26 +471,7 @@ function CustomFieldLines({
   section: Section;
   pdfStyles: ReturnType<typeof createPdfStyles>;
 }) {
-  const hidden = new Set([
-    'kind',
-    'major',
-    'secondMajor',
-    'minor',
-    'certificate',
-    'track',
-    'additionalCoursework',
-    'studyAbroad',
-    'honors',
-    'coursework',
-    'language',
-    'gpa',
-    'venue',
-    'year',
-    'githubUrl',
-  ]);
-  const rows = Object.entries(entry.customFields ?? {}).filter(
-    ([key, value]) => value.trim() && !hidden.has(key) && section.type !== 'education',
-  );
+  const rows = visibleCustomFieldRows(entry, section);
   if (rows.length === 0) return null;
 
   return (
@@ -488,7 +479,7 @@ function CustomFieldLines({
       {rows.map(([key, value]) => (
         <Text key={key}>
           <Text style={pdfStyles.bold}>{labelFromKey(key)}: </Text>
-          {value.trim()}
+          {value}
         </Text>
       ))}
     </View>
@@ -528,7 +519,12 @@ function BulletList({
 function createPdfStyles(resume: Resume) {
   const { styles } = resume;
   const fontFamily = pdfFontFamily(styles.font);
-  const bodyLineHeight = styles.fontSize.body * styles.spacing.bullet;
+  // @react-pdf treats `lineHeight` as a UNITLESS multiple of the font size
+  // (exactly like CSS `line-height: 1.2`). The previous code multiplied the
+  // font size into it (e.g. `fontSize.body * spacing.bullet`), producing a
+  // ~12-25x line height that pushed every line onto its own page. `spacing.bullet`
+  // is already the multiplier we want (clamped 1.0-1.5), so use it directly.
+  const bodyLineHeight = styles.spacing.bullet;
 
   return StyleSheet.create({
     page: {
@@ -556,12 +552,12 @@ function createPdfStyles(resume: Resume) {
       fontFamily,
       fontSize: styles.fontSize.name,
       fontWeight: 700,
-      lineHeight: styles.fontSize.name * 1.05,
+      lineHeight: 1.05,
     },
     contactLine: {
       color: styles.colors.body,
       fontSize: styles.fontSize.contactLine,
-      lineHeight: styles.fontSize.contactLine * 1.2,
+      lineHeight: 1.2,
       marginTop: 4,
     },
     link: {
@@ -575,7 +571,7 @@ function createPdfStyles(resume: Resume) {
       fontFamily,
       fontSize: styles.fontSize.sectionHeader,
       fontWeight: 700,
-      lineHeight: styles.fontSize.sectionHeader * 1.1,
+      lineHeight: 1.1,
     },
     paragraph: {
       fontSize: styles.fontSize.body,
@@ -601,7 +597,7 @@ function createPdfStyles(resume: Resume) {
     },
     entryTitle: {
       fontSize: styles.fontSize.entryTitle,
-      lineHeight: styles.fontSize.entryTitle * 1.15,
+      lineHeight: 1.15,
     },
     date: {
       color: styles.colors.body,
@@ -717,72 +713,6 @@ function entryHasContent(entry: Entry): boolean {
   );
 }
 
-function mccombsSwapBold(type: Section['type']): boolean {
-  return type === 'experience' || type === 'leadership' || type === 'research';
-}
-
-function sectionHasBullets(section: Section): boolean {
-  return (
-    section.type === 'experience' ||
-    section.type === 'projects' ||
-    section.type === 'leadership' ||
-    section.type === 'research' ||
-    (section.type === 'custom' && section.layout === 'entry-based')
-  );
-}
-
-function titleForPreview(entry: Entry, section: Section): string {
-  if (section.type === 'education') {
-    const majors = [entry.customFields?.major, entry.customFields?.secondMajor]
-      .map((major) => major?.trim())
-      .filter(Boolean);
-    const minor = entry.customFields?.minor?.trim();
-    const parts = [entry.title?.trim() || ''].filter(Boolean);
-    if (majors.length > 0) parts.push(majors.join(' & '));
-    if (minor) parts.push(`Minor in ${minor}`);
-    return parts.join(', ');
-  }
-  return entry.title ?? '';
-}
-
-function subtitleForPreview(entry: Entry, section: Section): string {
-  if (section.type === 'publications') {
-    return [entry.subtitle, entry.customFields?.venue].filter(Boolean).join(' - ');
-  }
-  return entry.subtitle ?? '';
-}
-
-function tertiaryForPreview(entry: Entry, section: Section): string {
-  if (section.type === 'education') {
-    return [
-      entry.location,
-      entry.customFields?.gpa ? `GPA: ${entry.customFields.gpa}` : '',
-      entry.customFields?.coursework ? `Coursework: ${entry.customFields.coursework}` : '',
-      entry.customFields?.studyAbroad ? `Study abroad: ${entry.customFields.studyAbroad}` : '',
-      entry.customFields?.honors ? `Honors: ${entry.customFields.honors}` : '',
-    ]
-      .filter(Boolean)
-      .join(' | ');
-  }
-  if (section.type === 'study-abroad') return '';
-  return entry.location ?? '';
-}
-
-function studyAbroadLine(entry: Entry): string {
-  const customFields = entry.customFields ?? {};
-  const program = entry.title?.trim();
-  const location = entry.location?.trim();
-  const header = program && location ? `${program} in ${location}` : program || location || '';
-  return [
-    header,
-    customFields.gpa?.trim() ? `GPA: ${customFields.gpa.trim()}` : '',
-    customFields.language?.trim() ? customFields.language.trim() : '',
-    customFields.coursework?.trim() ? `Courses: ${customFields.coursework.trim()}` : '',
-  ]
-    .filter(Boolean)
-    .join(' | ');
-}
-
 function separatorText(separator: Resume['header']['separatorStyle']): string {
   if (separator === 'dot') return '.';
   if (separator === 'dash') return '-';
@@ -817,15 +747,4 @@ function pdfFontFamily(font: Resume['styles']['font']): string {
     case 'Nimbus Sans':
       return 'Helvetica';
   }
-}
-
-function labelFromKey(key: string): string {
-  const labels: Record<string, string> = {
-    doiUrl: 'DOI / URL',
-    githubUrl: 'GitHub URL',
-    gpa: 'GPA',
-    url: 'URL',
-  };
-  if (labels[key]) return labels[key];
-  return key.replace(/([A-Z])/g, ' $1').replace(/^./, (letter) => letter.toUpperCase());
 }

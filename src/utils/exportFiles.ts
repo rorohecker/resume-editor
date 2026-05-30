@@ -6,6 +6,14 @@ import { formatDateRange } from './dateFormat';
 import { resumeToPlainText, stripHtml } from './resumeText';
 import { displayContactValue } from './contactIcon';
 import { resumeForPagedExport } from './resumeLayout';
+import {
+  labelFromKey,
+  studyAbroadLine,
+  subtitleForPreview,
+  tertiaryForPreview,
+  titleForPreview,
+  visibleCustomFieldRows,
+} from './resumeComposition';
 
 export type ExportFormat = 'pdf' | 'docx' | 'txt' | 'png' | 'json';
 
@@ -440,62 +448,72 @@ function sectionToDocx(section: Section, resume: Resume, docx: DocxModule, usabl
   }
 
   return section.entries.flatMap((entry) =>
-    entry.visible === false ? [] : entryToDocx(entry, resume, docx, usableWidth),
+    entry.visible === false ? [] : entryToDocx(entry, section, resume, docx, usableWidth),
   );
 }
 
-function entryToDocx(entry: Entry, resume: Resume, docx: DocxModule, usableWidth: number) {
+function entryToDocx(entry: Entry, section: Section, resume: Resume, docx: DocxModule, usableWidth: number) {
   const { AlignmentType, Paragraph, TabStopType, TextRun } = docx;
-  const date = formatDateRange(
-    entry.startDate,
-    entry.endDate,
-    entry.current,
-    resume.styles.dateFormat,
-  );
 
-  // Header line: bold {title} {subtitle} on the left, plain {date} flush
-  // right via a tab stop at the right margin. This matches the on-screen
-  // 3-column layout and keeps the date from running off the page.
-  const title = entry.title?.trim();
-  const subtitle = entry.subtitle?.trim();
-  const location = entry.location?.trim();
+  const isStudyAbroad =
+    section.type === 'study-abroad' || entry.customFields?.kind === 'study-abroad';
 
-  const headerRuns: import('docx').TextRun[] = [];
-  if (title) headerRuns.push(new TextRun({ text: title, bold: true }));
-  if (title && subtitle) headerRuns.push(new TextRun({ text: ' · ' }));
-  if (subtitle) headerRuns.push(new TextRun({ text: subtitle, italics: true }));
-  if ((title || subtitle) && location) headerRuns.push(new TextRun({ text: `; ${location}` }));
-  if (!title && !subtitle && location) headerRuns.push(new TextRun({ text: location }));
+  // Publications carry their year in a custom field rather than endDate.
+  const dateEnd = section.type === 'publications' ? entry.endDate || entry.customFields?.year : entry.endDate;
+  const date = formatDateRange(entry.startDate, dateEnd, entry.current, resume.styles.dateFormat);
+
+  // Compose the same headline lines the PDF/preview use so the Word output
+  // reads identically: a bold title (with the date flush right via a right tab
+  // stop), then the subtitle, then a tertiary line (location / GPA / honors).
+  const title = isStudyAbroad ? studyAbroadLine(entry) : titleForPreview(entry, section);
+  const subtitle = isStudyAbroad ? entry.subtitle?.trim() ?? '' : subtitleForPreview(entry, section);
+  const tertiary = isStudyAbroad ? '' : tertiaryForPreview(entry, section);
+  const italicSubtitle = section.type === 'projects';
 
   const paragraphs: import('docx').Paragraph[] = [];
 
-  if (headerRuns.length > 0 || date) {
+  if (title || date) {
+    const headerRuns: import('docx').TextRun[] = [];
+    if (title) headerRuns.push(new TextRun({ text: title, bold: true }));
     if (date) {
-      headerRuns.push(new TextRun({ text: '\t' }));
+      if (title) headerRuns.push(new TextRun({ text: '\t' }));
       headerRuns.push(new TextRun({ text: date }));
     }
     paragraphs.push(
       new Paragraph({
         tabStops: [{ type: TabStopType.RIGHT, position: usableWidth }],
-        spacing: { after: 40 },
+        spacing: { after: subtitle || tertiary ? 0 : 40 },
         alignment: AlignmentType.LEFT,
         children: headerRuns,
       }),
     );
   }
 
-  for (const [key, value] of Object.entries(entry.customFields ?? {})) {
-    const trimmed = value.trim();
-    if (!trimmed) continue;
-    // The "kind" key is internal metadata for the study-abroad toggle — never
-    // render it as a label/value line in the export.
-    if (key === 'kind') continue;
+  if (subtitle) {
+    paragraphs.push(
+      new Paragraph({
+        spacing: { after: tertiary ? 0 : 40 },
+        children: [new TextRun({ text: subtitle, italics: italicSubtitle })],
+      }),
+    );
+  }
+
+  if (tertiary) {
+    paragraphs.push(
+      new Paragraph({
+        spacing: { after: 40 },
+        children: [new TextRun({ text: tertiary })],
+      }),
+    );
+  }
+
+  for (const [key, value] of visibleCustomFieldRows(entry, section)) {
     paragraphs.push(
       new Paragraph({
         spacing: { after: 20 },
         children: [
           new TextRun({ text: `${labelFromKey(key)}: `, bold: true }),
-          new TextRun(trimmed),
+          new TextRun(value),
         ],
       }),
     );
@@ -633,15 +651,4 @@ function bulletGlyphForDocx(resume: Resume): string {
     case 'disc':
       return '\u2022';
   }
-}
-
-function labelFromKey(key: string): string {
-  const labels: Record<string, string> = {
-    doiUrl: 'DOI / URL',
-    githubUrl: 'GitHub URL',
-    gpa: 'GPA',
-    url: 'URL',
-  };
-  if (labels[key]) return labels[key];
-  return key.replace(/([A-Z])/g, ' $1').replace(/^./, (letter) => letter.toUpperCase());
 }
