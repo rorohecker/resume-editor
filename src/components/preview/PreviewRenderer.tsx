@@ -436,13 +436,13 @@ function McCombsEducationRow({
     <div
       style={{
         display: 'grid',
-        // Keep the institution/date columns compact so long degree statements
-        // like BSE & BBA + honors programs have room to stay on one line. The
-        // date column is sized to its content (max-content) rather than a fixed
-        // width: a long "Aug 2022 - May 2026" range still gets the room it needs
-        // (the date never wraps), while a short "May 2028" hands the leftover
-        // width back to the degree column so trailing words don't wrap.
-        gridTemplateColumns: '1.75in minmax(0, 1fr) max-content',
+        // Two columns only: institution on the left, everything else on the
+        // right. The date is NOT its own column — it floats to the top-right of
+        // the content area so the degree lines can flow across the full width
+        // (including the space beneath the date). A rigid date column used to
+        // strand trailing words like "Honors" on their own line even though
+        // there was empty room to the right.
+        gridTemplateColumns: '1.75in minmax(0, 1fr)',
         columnGap: pt(6),
         alignItems: 'baseline',
       }}
@@ -451,20 +451,20 @@ function McCombsEducationRow({
         {entry.subtitle?.trim() || ''}
       </div>
       <div style={{ minWidth: 0 }}>
+        {date && (
+          <span style={{ float: 'right', marginLeft: pt(6), whiteSpace: 'nowrap' }}>{date}</span>
+        )}
         {lines.map((line, i) => (
           <div key={i} style={studyAbroadKind ? { whiteSpace: 'nowrap' } : undefined}>
             {line}
           </div>
         ))}
+        {!studyAbroadKind && coursework && (
+          <div style={{ marginTop: pt(2) }}>
+            <span style={{ fontWeight: 700 }}>Coursework:</span> {coursework}
+          </div>
+        )}
       </div>
-      {date && (
-        <div style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>{date}</div>
-      )}
-      {!studyAbroadKind && coursework && (
-        <div style={{ gridColumn: '1 / -1', marginTop: pt(2) }}>
-          <span style={{ fontWeight: 700 }}>Coursework:</span> {coursework}
-        </div>
-      )}
     </div>
   );
 }
@@ -509,9 +509,9 @@ function McCombsInlineHeader({
       }}
     >
       {company && <span style={{ fontWeight: 700 }}>{company}</span>}
-      {company && role && <span> - </span>}
+      {company && role && <span>, </span>}
       {role && <span style={{ fontStyle: 'italic' }}>{role}</span>}
-      {(company || role) && location && <span>; {location}</span>}
+      {(company || role) && location && <span>, {location}</span>}
       {!company && !role && location && <span>{location}</span>}
       {section.type === 'projects' && entry.customFields?.githubUrl && (
         <div>

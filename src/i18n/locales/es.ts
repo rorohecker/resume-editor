@@ -496,6 +496,15 @@ export default {
     print: 'Imprimir / Guardar PDF',
     madeWith: 'Hecho con Resume Editor',
   },
+  stickyNotes: {
+    toggle: 'Notas adhesivas',
+    add: 'Agregar nota',
+    delete: 'Eliminar nota',
+    color: 'Cambiar color',
+    placeholder: 'Escribe una nota…',
+    noteLabel: 'Nota adhesiva',
+    empty: 'Aún no hay notas: agrega una con el botón +.',
+  },
   cover: {
     title: 'Borrador de carta de presentación',
     jobOptional: 'Descripción del puesto (opcional)',

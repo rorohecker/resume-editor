@@ -19,6 +19,7 @@ interface UIState {
   variantOpen: boolean;
   shareOpen: boolean;
   shortcutsOpen: boolean;
+  stickyNotesOpen: boolean;
   pdfPreviewMode: boolean;
   anonymized: boolean;
   zoom: number;
@@ -48,6 +49,7 @@ interface Actions {
   setVariantOpen: (open: boolean) => void;
   setShareOpen: (open: boolean) => void;
   setShortcutsOpen: (open: boolean) => void;
+  setStickyNotesOpen: (open: boolean) => void;
   setPdfPreviewMode: (on: boolean) => void;
   setAnonymized: (on: boolean) => void;
   setZoom: (zoom: number) => void;
@@ -93,6 +95,7 @@ export const useStore = create<UIState & ResumeState & Actions>((set, get) => ({
   variantOpen: false,
   shareOpen: false,
   shortcutsOpen: false,
+  stickyNotesOpen: false,
   pdfPreviewMode: false,
   anonymized: false,
   zoom: 1,
@@ -116,6 +119,7 @@ export const useStore = create<UIState & ResumeState & Actions>((set, get) => ({
   setVariantOpen: (variantOpen) => set({ variantOpen }),
   setShareOpen: (shareOpen) => set({ shareOpen }),
   setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),
+  setStickyNotesOpen: (stickyNotesOpen) => set({ stickyNotesOpen }),
   setPdfPreviewMode: (pdfPreviewMode) => set({ pdfPreviewMode }),
   setAnonymized: (anonymized) => set({ anonymized }),
   setZoom: (zoom) => set({ zoom: clamp(zoom, 0.5, 1.5) }),

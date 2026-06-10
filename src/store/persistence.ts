@@ -2,6 +2,7 @@ import { get as idbGet, set as idbSet, del as idbDel, keys as idbKeys } from 'id
 import type { Resume, VersionSnapshot } from '@/types';
 import { normalizeResume } from '@/types/schema';
 import { makeId } from '@/utils/id';
+import { deleteStickyNotes } from '@/utils/stickyNotes';
 
 // Persistence strategy: IndexedDB is the source of truth, with a synchronous
 // in-memory write-through cache. Reads always hit the cache (instant, sync).
@@ -193,6 +194,7 @@ export function deleteResume(id: string): void {
   cache.snapshots.delete(id);
   queueDelete(RESUME_PREFIX + id);
   queueDelete(SNAPSHOTS_PREFIX + id);
+  deleteStickyNotes(id);
   broadcast({ type: 'resume:delete', id });
 }
 

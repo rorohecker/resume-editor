@@ -27,6 +27,7 @@ import { BlockLibraryDrawer } from '@/components/library/BlockLibraryDrawer';
 import { GenerateVariantModal } from '@/components/library/GenerateVariantModal';
 import { ShareModal } from '@/components/editor/ShareModal';
 import { ShortcutsModal } from '@/components/editor/ShortcutsModal';
+import { StickyNotes } from '@/components/editor/StickyNotes';
 
 export function EditorPage() {
   const { t } = useTranslation();
@@ -214,6 +215,7 @@ export function EditorPage() {
       <GenerateVariantModal />
       <ShareModal />
       <ShortcutsModal />
+      <StickyNotes resumeId={resume.id} />
       <FloatingAIButton />
       <ToastViewport />
       <OnboardingTour />

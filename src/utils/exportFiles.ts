@@ -504,7 +504,7 @@ function entryToDocx(entry: Entry, section: Section, resume: Resume, docx: DocxM
     : inlineHeader
       ? ''
       : subtitleForPreview(entry, section);
-  // Inline headers already carry the location (McCombs "; City") and projects
+  // Inline headers already carry the location (McCombs ", City") and projects
   // don't show a location line, so the tertiary (location) would be a duplicate.
   const tertiary = isStudyAbroad || inlineHeader ? '' : tertiaryForPreview(entry, section);
 
@@ -562,7 +562,7 @@ function entryToDocx(entry: Entry, section: Section, resume: Resume, docx: DocxM
 }
 
 // Build the bold/italic headline runs for an entry, mirroring the PDF/preview
-// per-template composition (e.g. McCombs "Company - Role; Location", projects
+// per-template composition (e.g. McCombs "Company, Role, Location", projects
 // "Title - Tech stack") so Word doesn't stack what the preview shows inline.
 function headlineRuns(
   entry: Entry,
@@ -588,10 +588,13 @@ function headlineRuns(
     const secondary = (isProject ? entry.subtitle : entry.title)?.trim();
     const location = entry.location?.trim();
     if (primary) runs.push(new TextRun({ text: primary, bold: true }));
-    if (primary && secondary) runs.push(new TextRun({ text: ' - ' }));
+    // Experience/leadership/research use comma delimiters (ATS parsers read
+    // commas as field separators far more reliably than dashes/semicolons);
+    // projects keep the " - " between title and tech stack.
+    if (primary && secondary) runs.push(new TextRun({ text: isProject ? ' - ' : ', ' }));
     if (secondary) runs.push(new TextRun({ text: secondary, italics: true }));
     if (!isProject) {
-      if ((primary || secondary) && location) runs.push(new TextRun({ text: `; ${location}` }));
+      if ((primary || secondary) && location) runs.push(new TextRun({ text: `, ${location}` }));
       else if (!primary && !secondary && location) runs.push(new TextRun({ text: location }));
     }
     return runs;

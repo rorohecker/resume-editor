@@ -492,6 +492,15 @@ export default {
     print: 'Print / Save PDF',
     madeWith: 'Made with Resume Editor',
   },
+  stickyNotes: {
+    toggle: 'Sticky notes',
+    add: 'Add sticky note',
+    delete: 'Delete note',
+    color: 'Change color',
+    placeholder: 'Type a note…',
+    noteLabel: 'Sticky note',
+    empty: 'No notes yet — add one with the + button.',
+  },
   cover: {
     title: 'Cover Letter Draft',
     jobOptional: 'Job description (optional)',

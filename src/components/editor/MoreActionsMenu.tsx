@@ -14,6 +14,7 @@ import {
   MoreHorizontal,
   Printer,
   Share2,
+  StickyNote,
   Wand2,
   type LucideIcon,
 } from 'lucide-react';
@@ -34,6 +35,8 @@ export function MoreActionsMenu() {
   const setVariantOpen = useStore((s) => s.setVariantOpen);
   const setShareOpen = useStore((s) => s.setShareOpen);
   const setShortcutsOpen = useStore((s) => s.setShortcutsOpen);
+  const stickyNotesOpen = useStore((s) => s.stickyNotesOpen);
+  const setStickyNotesOpen = useStore((s) => s.setStickyNotesOpen);
   const pdfPreviewMode = useStore((s) => s.pdfPreviewMode);
   const setPdfPreviewMode = useStore((s) => s.setPdfPreviewMode);
   const anonymized = useStore((s) => s.anonymized);
@@ -134,6 +137,15 @@ export function MoreActionsMenu() {
       label: t('editor.copyPlainText', { defaultValue: 'Copy as plain text' }),
       icon: ClipboardCopy,
       onClick: () => void copyPlainText(),
+    },
+    {
+      label: t('stickyNotes.toggle', { defaultValue: 'Sticky notes' }),
+      icon: StickyNote,
+      active: stickyNotesOpen,
+      onClick: () => {
+        setOpen(false);
+        setStickyNotesOpen(!stickyNotesOpen);
+      },
     },
     {
       label: t('shortcuts.title', { defaultValue: 'Keyboard shortcuts' }),

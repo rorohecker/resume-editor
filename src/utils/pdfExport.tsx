@@ -317,24 +317,38 @@ function McCombsEducationRow({
     if (customFields.honors?.trim()) lines.push(customFields.honors.trim());
   }
 
+  const [firstLine, ...restLines] = lines;
   return (
     <View style={pdfStyles.mccombsEducationGrid}>
       <Text style={[pdfStyles.entryTitle, pdfStyles.bold, pdfStyles.mccombsSchool]}>
         {entry.subtitle?.trim() || ''}
       </Text>
       <View style={pdfStyles.mccombsDegree}>
-        {lines.map((line) => (
+        {/* First line shares its row with the right-aligned date; every line
+            after it spans the full width (reclaiming the area under the date)
+            so trailing items like the honors line don't get stranded. */}
+        <View style={pdfStyles.mccombsDegreeFirstRow}>
+          <Text
+            style={[
+              studyAbroadKind ? pdfStyles.noWrapLine : pdfStyles.bodyText,
+              pdfStyles.mccombsDegreeFirstText,
+            ]}
+          >
+            {firstLine ?? ''}
+          </Text>
+          {date && <Text style={pdfStyles.mccombsDate}>{date}</Text>}
+        </View>
+        {restLines.map((line) => (
           <Text key={line} style={studyAbroadKind ? pdfStyles.noWrapLine : pdfStyles.bodyText}>
             {line}
           </Text>
         ))}
+        {!studyAbroadKind && coursework && (
+          <Text style={pdfStyles.fullWidthDetail}>
+            <Text style={pdfStyles.bold}>Coursework:</Text> {coursework}
+          </Text>
+        )}
       </View>
-      {date && <Text style={pdfStyles.mccombsDate}>{date}</Text>}
-      {!studyAbroadKind && coursework && (
-        <Text style={pdfStyles.fullWidthDetail}>
-          <Text style={pdfStyles.bold}>Coursework:</Text> {coursework}
-        </Text>
-      )}
     </View>
   );
 }
@@ -373,9 +387,9 @@ function McCombsInlineHeader({
     <View>
       <Text style={pdfStyles.entryTitle}>
         {company && <Text style={pdfStyles.bold}>{company}</Text>}
-        {company && role && <Text> - </Text>}
+        {company && role && <Text>, </Text>}
         {role && <Text style={pdfStyles.italic}>{role}</Text>}
-        {(company || role) && location && <Text>; {location}</Text>}
+        {(company || role) && location && <Text>, {location}</Text>}
         {!company && !role && location && <Text>{location}</Text>}
       </Text>
       {section.type === 'projects' && entry.customFields?.githubUrl && (
@@ -651,7 +665,6 @@ function createPdfStyles(resume: Resume) {
     mccombsEducationGrid: {
       alignItems: 'flex-start',
       flexDirection: 'row',
-      flexWrap: 'wrap',
     },
     mccombsSchool: {
       flexShrink: 0,
@@ -664,13 +677,24 @@ function createPdfStyles(resume: Resume) {
       paddingHorizontal: 6,
       width: 0,
     },
+    // First degree line + date share a row; the date is flush-right and the
+    // degree text takes the rest. Subsequent lines render full width below.
+    mccombsDegreeFirstRow: {
+      alignItems: 'flex-start',
+      flexDirection: 'row',
+      width: '100%',
+    },
+    mccombsDegreeFirstText: {
+      flexGrow: 1,
+      flexShrink: 1,
+      minWidth: 0,
+      width: 0,
+    },
     mccombsDate: {
       flexShrink: 0,
       fontSize: styles.fontSize.body,
       lineHeight: bodyLineHeight,
       textAlign: 'right',
-      // Size to the date's own content (not a fixed 80pt) so a short date hands
-      // the leftover width back to the degree column instead of forcing a wrap.
       marginLeft: 6,
     },
     fullWidthDetail: {
