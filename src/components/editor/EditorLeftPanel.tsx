@@ -1570,6 +1570,12 @@ function BulletEditor({
     ]);
   };
 
+  // Reassign sequential order indices after a drag so the new arrangement
+  // persists (bullets are sorted by `order` on render and in every export).
+  const reorderBullets = (next: Bullet[]) => {
+    onChange(next.map((bullet, order) => ({ ...bullet, order })));
+  };
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
@@ -1590,78 +1596,81 @@ function BulletEditor({
         </InlineWarning>
       )}
 
-      {ordered.map((bullet) => {
-        const analysis = analyzeSingleBullet(bullet.content);
-        const len = plainTextLen(bullet.content);
-        const tooLong = len > 200;
-        const wrapsLikely = len > 100;
-        return (
-          <div key={bullet.id}>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                className="icon-btn mt-1 h-7 w-7"
-                onClick={() => updateBullet(bullet.id, { visible: !bullet.visible })}
-                title={bullet.visible ? t('editor.hide') : t('editor.show')}
-                aria-label={bullet.visible ? t('editor.hideBullet') : t('editor.showBullet')}
-                aria-pressed={bullet.visible}
-              >
-                {bullet.visible ? <Eye size={14} /> : <EyeOff size={14} />}
-              </button>
-              <RichBulletEditor
-                content={bullet.content}
-                onChange={(html) => updateBullet(bullet.id, { content: html })}
-                onEnterSplit={canAdd ? addBullet : undefined}
-                placeholder={t('editor.bulletPlaceholder')}
-              />
-              <button
-                type="button"
-                className="icon-btn mt-1 h-7 w-7"
-                onClick={() => removeBullet(bullet.id)}
-                title={t('common.remove')}
-                aria-label={t('editor.removeBullet')}
-              >
-                <Trash2 size={14} />
-              </button>
-            </div>
-            {analysis.content.trim() && (
-              <div className="ml-9 mt-1 flex flex-wrap items-center gap-1.5 text-[10px]">
-                <BulletBadge ok={analysis.startsWithAction}>
-                  {analysis.startsWithAction ? t('editor.actionVerbOk') : t('editor.actionVerbMissing')}
-                </BulletBadge>
-                <BulletBadge ok={analysis.hasMetric}>
-                  {analysis.hasMetric ? t('editor.metricOk') : t('editor.metricMissing')}
-                </BulletBadge>
-                <BulletBadge ok={!wrapsLikely}>
-                  {wrapsLikely
-                    ? t('editor.bulletWraps', { defaultValue: 'Likely wraps · {{count}} chars', count: len })
-                    : t('editor.bulletFitsOneLine', { defaultValue: 'Fits one line · {{count}} chars', count: len })}
-                </BulletBadge>
-                {tooLong && (
-                  <BulletBadge ok={false}>
-                    {t('editor.charCount', { count: len, max: 200 })}
-                  </BulletBadge>
-                )}
-                {wrapsLikely && (
-                  <button
-                    type="button"
-                    className="rounded-full bg-paper-tint px-2 py-0.5 text-[10px] font-medium text-ink hover:bg-paper-edge"
-                    onClick={() => {
-                      const shorter = shortenBullet(bullet.content);
-                      if (shorter && shorter !== analysis.content.trim()) {
-                        updateBullet(bullet.id, { content: shorter });
-                      }
-                    }}
-                    title={t('editor.shortenHint', { defaultValue: 'Drop fillers and abbreviate common phrases to fit one line' })}
-                  >
-                    {t('editor.shortenBullet', { defaultValue: 'Shorten' })}
-                  </button>
-                )}
+      <SortableList items={ordered} onReorder={reorderBullets} className="space-y-2">
+        {(bullet, handle) => {
+          const analysis = analyzeSingleBullet(bullet.content);
+          const len = plainTextLen(bullet.content);
+          const tooLong = len > 200;
+          const wrapsLikely = len > 100;
+          return (
+            <div>
+              <div className="flex gap-2">
+                <span className="mt-1 shrink-0">{handle}</span>
+                <button
+                  type="button"
+                  className="icon-btn mt-1 h-7 w-7 shrink-0"
+                  onClick={() => updateBullet(bullet.id, { visible: !bullet.visible })}
+                  title={bullet.visible ? t('editor.hide') : t('editor.show')}
+                  aria-label={bullet.visible ? t('editor.hideBullet') : t('editor.showBullet')}
+                  aria-pressed={bullet.visible}
+                >
+                  {bullet.visible ? <Eye size={14} /> : <EyeOff size={14} />}
+                </button>
+                <RichBulletEditor
+                  content={bullet.content}
+                  onChange={(html) => updateBullet(bullet.id, { content: html })}
+                  onEnterSplit={canAdd ? addBullet : undefined}
+                  placeholder={t('editor.bulletPlaceholder')}
+                />
+                <button
+                  type="button"
+                  className="icon-btn mt-1 h-7 w-7 shrink-0"
+                  onClick={() => removeBullet(bullet.id)}
+                  title={t('common.remove')}
+                  aria-label={t('editor.removeBullet')}
+                >
+                  <Trash2 size={14} />
+                </button>
               </div>
-            )}
-          </div>
-        );
-      })}
+              {analysis.content.trim() && (
+                <div className="ml-[68px] mt-1 flex flex-wrap items-center gap-1.5 text-[10px]">
+                  <BulletBadge ok={analysis.startsWithAction}>
+                    {analysis.startsWithAction ? t('editor.actionVerbOk') : t('editor.actionVerbMissing')}
+                  </BulletBadge>
+                  <BulletBadge ok={analysis.hasMetric}>
+                    {analysis.hasMetric ? t('editor.metricOk') : t('editor.metricMissing')}
+                  </BulletBadge>
+                  <BulletBadge ok={!wrapsLikely}>
+                    {wrapsLikely
+                      ? t('editor.bulletWraps', { defaultValue: 'Likely wraps · {{count}} chars', count: len })
+                      : t('editor.bulletFitsOneLine', { defaultValue: 'Fits one line · {{count}} chars', count: len })}
+                  </BulletBadge>
+                  {tooLong && (
+                    <BulletBadge ok={false}>
+                      {t('editor.charCount', { count: len, max: 200 })}
+                    </BulletBadge>
+                  )}
+                  {wrapsLikely && (
+                    <button
+                      type="button"
+                      className="rounded-full bg-paper-tint px-2 py-0.5 text-[10px] font-medium text-ink hover:bg-paper-edge"
+                      onClick={() => {
+                        const shorter = shortenBullet(bullet.content);
+                        if (shorter && shorter !== analysis.content.trim()) {
+                          updateBullet(bullet.id, { content: shorter });
+                        }
+                      }}
+                      title={t('editor.shortenHint', { defaultValue: 'Drop fillers and abbreviate common phrases to fit one line' })}
+                    >
+                      {t('editor.shortenBullet', { defaultValue: 'Shorten' })}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        }}
+      </SortableList>
     </div>
   );
 }
