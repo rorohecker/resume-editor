@@ -25,7 +25,7 @@ export function PdfPreview({ resume }: { resume: Resume }) {
         // browsers won't render a blob-URL PDF inside an iframe.
         try {
           const rendered = await renderPdfBlobToImages(blob, { scale: 2, maxPages: 10 });
-          if (!cancelled && rendered.length > 0) setImages(rendered);
+          if (!cancelled && rendered.images.length > 0) setImages(rendered.images);
         } catch {
           // Fall back to the iframe below.
         }

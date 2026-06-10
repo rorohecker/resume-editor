@@ -28,7 +28,7 @@ import {
   type AiProvider,
   type AiSettings,
 } from '@/utils/aiByok';
-import { clearAppLocalData } from '@/utils/localData';
+import { wipeAllLocalData } from '@/utils/localData';
 import { collectBullets, replaceBulletContent } from '@/utils/resumeText';
 import { Drawer } from '@/components/shared/Modal';
 import { toast } from '@/hooks/useToast';
@@ -689,8 +689,9 @@ export function AIDrawer() {
                             )
                           )
                             return;
-                          clearAppLocalData();
-                          window.location.href = '/';
+                          void wipeAllLocalData().finally(() => {
+                            window.location.reload();
+                          });
                         }}
                       >
                         {t('ai.wipeData')}

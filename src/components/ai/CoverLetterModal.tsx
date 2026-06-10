@@ -37,46 +37,50 @@ export function CoverLetterModal() {
   const downloadText = async (format: 'pdf' | 'docx' | 'txt') => {
     if (!letter || !resume) return;
     const base = `${(resume.header.name || resume.name).replace(/\s+/g, '_').replace(/[^a-z0-9_-]/gi, '')}_CoverLetter`;
-    if (format === 'txt') {
-      downloadBlob(new Blob([letter], { type: 'text/plain;charset=utf-8' }), `${base}.txt`);
-      toast(t('cover.downloaded', { format: 'TXT' }), { tone: 'success' });
-      return;
-    }
-    if (format === 'docx') {
-      const docx = await import('docx');
-      const { Document, Packer, Paragraph } = docx;
-      const doc = new Document({
-        sections: [
-          {
-            properties: {},
-            children: letter.split('\n').map((line) => new Paragraph(line)),
-          },
-        ],
+    try {
+      if (format === 'txt') {
+        downloadBlob(new Blob([letter], { type: 'text/plain;charset=utf-8' }), `${base}.txt`);
+        toast(t('cover.downloaded', { format: 'TXT' }), { tone: 'success' });
+        return;
+      }
+      if (format === 'docx') {
+        const docx = await import('docx');
+        const { Document, Packer, Paragraph } = docx;
+        const doc = new Document({
+          sections: [
+            {
+              properties: {},
+              children: letter.split('\n').map((line) => new Paragraph(line)),
+            },
+          ],
+        });
+        const blob = await Packer.toBlob(doc);
+        downloadBlob(blob, `${base}.docx`);
+        toast(t('cover.downloaded', { format: 'DOCX' }), { tone: 'success' });
+        return;
+      }
+      const pdfModule = await import('@react-pdf/renderer');
+      const { Document, Page, Text, StyleSheet, pdf } = pdfModule;
+      const styles = StyleSheet.create({
+        page: { padding: 64, fontSize: 11, lineHeight: 1.45 },
+        paragraph: { marginBottom: 8 },
       });
-      const blob = await Packer.toBlob(doc);
-      downloadBlob(blob, `${base}.docx`);
-      toast(t('cover.downloaded', { format: 'DOCX' }), { tone: 'success' });
-      return;
+      const blob = await pdf(
+        <Document title={t('cover.pdfTitle', { name: resume.header.name || resume.name })}>
+          <Page size="LETTER" style={styles.page}>
+            {letter.split('\n').map((line, idx) => (
+              <Text key={idx} style={styles.paragraph}>
+                {line || ' '}
+              </Text>
+            ))}
+          </Page>
+        </Document>,
+      ).toBlob();
+      downloadBlob(blob, `${base}.pdf`);
+      toast(t('cover.downloaded', { format: 'PDF' }), { tone: 'success' });
+    } catch (err) {
+      toast(err instanceof Error ? err.message : t('cover.generationFailed'), { tone: 'danger' });
     }
-    const pdfModule = await import('@react-pdf/renderer');
-    const { Document, Page, Text, StyleSheet, pdf } = pdfModule;
-    const styles = StyleSheet.create({
-      page: { padding: 64, fontSize: 11, lineHeight: 1.45 },
-      paragraph: { marginBottom: 8 },
-    });
-    const blob = await pdf(
-      <Document title={t('cover.pdfTitle', { name: resume.header.name || resume.name })}>
-        <Page size="LETTER" style={styles.page}>
-          {letter.split('\n').map((line, idx) => (
-            <Text key={idx} style={styles.paragraph}>
-              {line || ' '}
-            </Text>
-          ))}
-        </Page>
-      </Document>,
-    ).toBlob();
-    downloadBlob(blob, `${base}.pdf`);
-    toast(t('cover.downloaded', { format: 'PDF' }), { tone: 'success' });
   };
 
   return (
@@ -177,8 +181,14 @@ function downloadBlob(blob: Blob, fileName: string) {
   const link = document.createElement('a');
   link.href = url;
   link.download = fileName;
+  link.rel = 'noopener';
+  link.style.display = 'none';
   document.body.appendChild(link);
   link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
+  // Defer cleanup so the browser can start the download before the object URL
+  // is revoked; revoking synchronously cancels the download in some browsers.
+  window.setTimeout(() => {
+    link.remove();
+    URL.revokeObjectURL(url);
+  }, 4000);
 }

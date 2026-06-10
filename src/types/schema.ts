@@ -1,6 +1,7 @@
 import type {
   ApplicationStatus,
   Bullet,
+  BulletGlyph,
   ContactField,
   ContactFieldType,
   DateFormat,
@@ -60,6 +61,7 @@ const FONTS: FontFamily[] = [
 const DATE_FORMATS: DateFormat[] = ['month-year', 'numeric', 'season-year', 'year-only'];
 const RULE_VARIANTS: RuleVariant[] = ['full', 'partial', 'none', 'double', 'thick'];
 const RULE_WEIGHTS: RuleWeight[] = [0.5, 1, 1.5];
+const BULLET_GLYPHS: BulletGlyph[] = ['disc', 'circle', 'square', 'dash', 'arrow', 'none'];
 const APPLICATION_STATUSES: ApplicationStatus[] = [
   'drafting',
   'applied',
@@ -272,6 +274,7 @@ function normalizeStyles(input: unknown): Resume['styles'] {
     paperSize: enumValue(styles.paperSize, ['letter', 'a4'], 'letter'),
     onePageMode: booleanValue(styles.onePageMode, false),
     pageNumbers: booleanValue(styles.pageNumbers, false),
+    bulletStyle: enumValue(styles.bulletStyle, BULLET_GLYPHS, 'disc'),
   };
 }
 

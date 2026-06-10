@@ -3,6 +3,7 @@ import { AlertTriangle, FileText, Loader2, Pencil, RefreshCw, Sparkles, Upload }
 import { useTranslation } from 'react-i18next';
 import type { Resume } from '@/types';
 import {
+  looksLikeJson,
   parseResumeJson,
   parseResumeText,
   type ConfidenceFlag,
@@ -60,6 +61,19 @@ export function ImportResumeModal({
   const parseText = (raw: string, sourceName?: string, hints?: ImportParseResult['hints']) => {
     setWarning('');
     const json = parseResumeJson(raw);
+    // When the input clearly looks like JSON (a resume export) but couldn't be
+    // parsed into a valid resume, surface a real error instead of silently
+    // shoving malformed JSON through the plain-text heuristics, which produces
+    // a nonsense resume the user then has to delete.
+    if (!json && looksLikeJson(raw)) {
+      setResult(null);
+      setStatus('');
+      setWarning(t('importer.invalidJson', {
+        defaultValue:
+          'This looks like a JSON resume export, but it is invalid or not in the expected format. Check the file and try again.',
+      }));
+      return;
+    }
     const parsed = json ?? parseResumeText(raw, sourceName, hints);
     setResult(parsed);
     setStatus(t('importer.reviewBeforeOpen'));

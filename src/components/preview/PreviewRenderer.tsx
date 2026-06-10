@@ -437,10 +437,12 @@ function McCombsEducationRow({
       style={{
         display: 'grid',
         // Keep the institution/date columns compact so long degree statements
-        // like BSE & BBA + honors programs have room to stay on one line.
-        // 1.1in for the date column so a full "Aug 2022 - May 2026" range
-        // stays on one line instead of crashing into the page edge.
-        gridTemplateColumns: '1.75in minmax(0, 1fr) 1.1in',
+        // like BSE & BBA + honors programs have room to stay on one line. The
+        // date column is sized to its content (max-content) rather than a fixed
+        // width: a long "Aug 2022 - May 2026" range still gets the room it needs
+        // (the date never wraps), while a short "May 2028" hands the leftover
+        // width back to the degree column so trailing words don't wrap.
+        gridTemplateColumns: '1.75in minmax(0, 1fr) max-content',
         columnGap: pt(6),
         alignItems: 'baseline',
       }}

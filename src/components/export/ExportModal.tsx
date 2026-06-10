@@ -46,6 +46,7 @@ interface Preview {
   text: string | null; // For text previews (txt / json).
   images: string[] | null; // Rendered page images (pdf via pdfjs, docx approximation).
   approximate: boolean; // True when the image is a layout approximation (docx).
+  totalPages: number | null; // Total pages in the source PDF, when known.
 }
 
 function formatBytes(n: number): string {
@@ -99,6 +100,7 @@ export function ExportModal() {
       let text: string | null = null;
       let images: string[] | null = null;
       let approximate = false;
+      let totalPages: number | null = null;
 
       if (format === 'txt' || format === 'json') {
         text = await artifact.blob.text();
@@ -112,8 +114,9 @@ export function ExportModal() {
         url = URL.createObjectURL(artifact.blob);
         urlsRef.current.push(url);
         try {
-          images = await renderPdfBlobToImages(artifact.blob);
-          if (images.length === 0) images = null;
+          const rendered = await renderPdfBlobToImages(artifact.blob, { maxPages: 10 });
+          images = rendered.images.length > 0 ? rendered.images : null;
+          totalPages = rendered.totalPages;
         } catch (renderErr) {
           console.warn('[ExportModal] PDF image preview failed, using iframe fallback:', renderErr);
           images = null;
@@ -130,7 +133,7 @@ export function ExportModal() {
         }
       }
 
-      setPreview({ format, artifact, url, text, images, approximate });
+      setPreview({ format, artifact, url, text, images, approximate, totalPages });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Could not generate the export.';
       console.error('[ExportModal] generate failed:', err);
@@ -282,8 +285,10 @@ function ChooserPane({
 }
 
 function PreviewPane({ preview }: { preview: Preview }) {
-  const { format, artifact, url, text, images, approximate } = preview;
+  const { format, artifact, url, text, images, approximate, totalPages } = preview;
   const sizeLabel = formatBytes(artifact.blob.size);
+  const truncated =
+    format === 'pdf' && images != null && totalPages != null && totalPages > images.length;
 
   return (
     <div className="flex flex-col gap-3 px-5 py-4">
@@ -297,6 +302,11 @@ function PreviewPane({ preview }: { preview: Preview }) {
         <p className="rounded-md bg-paper-tint px-3 py-2 text-xs text-ink-subtle">
           Visual approximation of the Word document. Margins, fonts, bullets, and right-aligned dates
           carry over; Word may reflow line breaks slightly.
+        </p>
+      )}
+      {truncated && images && (
+        <p className="rounded-md bg-paper-tint px-3 py-2 text-xs text-ink-subtle">
+          Showing the first {images.length} of {totalPages} pages. The downloaded file includes all pages.
         </p>
       )}
       <div className="overflow-hidden rounded-md border border-paper-edge bg-paper-tint">
@@ -321,7 +331,7 @@ function PreviewPane({ preview }: { preview: Preview }) {
             <img src={url} alt="PNG preview" className="mx-auto block" />
           </div>
         ) : (format === 'txt' || format === 'json') && text !== null ? (
-          <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap bg-white p-4 text-[11px] leading-snug text-ink">
+          <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap bg-paper p-4 text-[11px] leading-snug text-ink">
             {text}
           </pre>
         ) : (

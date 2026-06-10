@@ -136,17 +136,43 @@ export function promptForAtsKeywords(resume: Resume, jobDescription: string): st
   ].join('\n\n');
 }
 
+// Hard cap so a hung provider request can't freeze the UI forever.
+const AI_REQUEST_TIMEOUT_MS = 60_000;
+
+async function fetchWithTimeout(input: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), AI_REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('AI request timed out. Check your connection or try a smaller request.');
+    }
+    throw error instanceof Error
+      ? error
+      : new Error('Network error reaching the AI provider.');
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function callByokAi(settings: AiSettings, prompt: string, maxTokens: number): Promise<string> {
   if (!settings.apiKey.trim()) throw new Error('Add an API key in AI settings first.');
+  // Check limits up front, but only count the call once it actually succeeds so
+  // failed/aborted requests don't burn the user's daily/minute quota.
   enforceUsageLimit(settings);
 
-  if (settings.provider === 'anthropic') return callAnthropic(settings, prompt, maxTokens);
-  if (settings.provider === 'openai') return callOpenAi(settings, prompt, maxTokens);
-  return callGemini(settings, prompt, maxTokens);
+  let result: string;
+  if (settings.provider === 'anthropic') result = await callAnthropic(settings, prompt, maxTokens);
+  else if (settings.provider === 'openai') result = await callOpenAi(settings, prompt, maxTokens);
+  else result = await callGemini(settings, prompt, maxTokens);
+
+  recordUsage();
+  return result;
 }
 
 async function callAnthropic(settings: AiSettings, prompt: string, maxTokens: number): Promise<string> {
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
+  const response = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -166,7 +192,7 @@ async function callAnthropic(settings: AiSettings, prompt: string, maxTokens: nu
 }
 
 async function callOpenAi(settings: AiSettings, prompt: string, maxTokens: number): Promise<string> {
-  const response = await fetch('https://api.openai.com/v1/responses', {
+  const response = await fetchWithTimeout('https://api.openai.com/v1/responses', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -191,7 +217,7 @@ async function callOpenAi(settings: AiSettings, prompt: string, maxTokens: numbe
 
 async function callGemini(settings: AiSettings, prompt: string, maxTokens: number): Promise<string> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(settings.model)}:generateContent`;
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -208,26 +234,32 @@ async function callGemini(settings: AiSettings, prompt: string, maxTokens: numbe
 }
 
 function enforceUsageLimit(settings: AiSettings): void {
-  const now = Date.now();
   const today = new Date().toISOString().slice(0, 10);
-  const minuteWindow = Math.floor(now / 60_000);
+  const minuteWindow = Math.floor(Date.now() / 60_000);
+  const record = loadUsage();
+  const dailyCalls = record.day === today ? record.dailyCalls : 0;
+  const minuteCalls = record.minuteWindow === minuteWindow ? record.minuteCalls : 0;
+
+  if (dailyCalls >= settings.dailyLimit) {
+    throw new Error(`Daily BYOK call limit reached (${settings.dailyLimit}). Raise the limit in settings if you want to continue.`);
+  }
+  if (minuteCalls >= settings.minuteLimit) {
+    throw new Error(`Per-minute BYOK call limit reached (${settings.minuteLimit}). Wait a minute or raise the limit in settings.`);
+  }
+}
+
+// Counts one successful call against the daily/minute windows. Called only
+// after the provider responds so timeouts/errors don't consume quota.
+function recordUsage(): void {
+  const today = new Date().toISOString().slice(0, 10);
+  const minuteWindow = Math.floor(Date.now() / 60_000);
   const record = loadUsage();
   const next: AiUsageRecord = {
     day: today,
-    dailyCalls: record.day === today ? record.dailyCalls : 0,
+    dailyCalls: (record.day === today ? record.dailyCalls : 0) + 1,
     minuteWindow,
-    minuteCalls: record.minuteWindow === minuteWindow ? record.minuteCalls : 0,
+    minuteCalls: (record.minuteWindow === minuteWindow ? record.minuteCalls : 0) + 1,
   };
-
-  if (next.dailyCalls >= settings.dailyLimit) {
-    throw new Error(`Daily BYOK call limit reached (${settings.dailyLimit}). Raise the limit in settings if you want to continue.`);
-  }
-  if (next.minuteCalls >= settings.minuteLimit) {
-    throw new Error(`Per-minute BYOK call limit reached (${settings.minuteLimit}). Wait a minute or raise the limit in settings.`);
-  }
-
-  next.dailyCalls += 1;
-  next.minuteCalls += 1;
   localStorage.setItem(USAGE_KEY, JSON.stringify(next));
 }
 

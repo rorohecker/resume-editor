@@ -25,6 +25,8 @@ import { ToastViewport } from '@/components/shared/ToastViewport';
 import { OnboardingTour } from '@/components/shared/OnboardingTour';
 import { BlockLibraryDrawer } from '@/components/library/BlockLibraryDrawer';
 import { GenerateVariantModal } from '@/components/library/GenerateVariantModal';
+import { ShareModal } from '@/components/editor/ShareModal';
+import { ShortcutsModal } from '@/components/editor/ShortcutsModal';
 
 export function EditorPage() {
   const { t } = useTranslation();
@@ -83,9 +85,13 @@ export function EditorPage() {
     let lastIncoming = '';
     return onRemoteUpdate((message) => {
       if (message.type === 'resume:save' && message.resume.id === resumeId) {
-        // Only update if the incoming payload is newer than what we have.
+        // Only update if the incoming payload is newer than what we have —
+        // compared against BOTH the last incoming message and our own working
+        // copy. Without the local-copy check, a save from another tab could
+        // clobber unsaved edits we're actively making here.
         const incomingTs = message.resume.updatedAt;
-        if (incomingTs <= lastIncoming) return;
+        const localTs = useStore.getState().currentResume?.updatedAt ?? '';
+        if (incomingTs <= lastIncoming || incomingTs <= localTs) return;
         lastIncoming = incomingTs;
         setCurrentResume(message.resume);
         toast(t('editor.syncedFromOtherTab'), { tone: 'info', ttl: 1800 });
@@ -113,12 +119,21 @@ export function EditorPage() {
         ((event.key.toLowerCase() === 'z' && event.shiftKey) ||
           event.key.toLowerCase() === 'y');
       const isPrint = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'p';
+      const isExport = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'e';
+      const isHelp = !event.ctrlKey && !event.metaKey && event.key === '?';
+      const { setExportOpen, setShortcutsOpen } = useStore.getState();
       if (isSave) {
         event.preventDefault();
         saveNow();
+      } else if (isExport) {
+        event.preventDefault();
+        setExportOpen(true);
       } else if (isPrint) {
         event.preventDefault();
         window.print();
+      } else if (!isTextEditing && isHelp) {
+        event.preventDefault();
+        setShortcutsOpen(true);
       } else if (!isTextEditing && isUndo) {
         event.preventDefault();
         undoResume();
@@ -197,6 +212,8 @@ export function EditorPage() {
       <BulkEditMount />
       <BlockLibraryDrawer />
       <GenerateVariantModal />
+      <ShareModal />
+      <ShortcutsModal />
       <FloatingAIButton />
       <ToastViewport />
       <OnboardingTour />

@@ -10,6 +10,10 @@ const EditorPage = lazy(() =>
   import('./pages/Editor').then((m) => ({ default: m.EditorPage })),
 );
 
+const ResumeViewPage = lazy(() =>
+  import('./pages/ResumeView').then((m) => ({ default: m.ResumeViewPage })),
+);
+
 export const router = createHashRouter([
   {
     path: '/',
@@ -31,6 +35,22 @@ export const router = createHashRouter([
           }
         >
           <EditorPage />
+        </Suspense>
+      </AppErrorBoundary>
+    ),
+  },
+  {
+    path: '/view',
+    element: (
+      <AppErrorBoundary>
+        <Suspense
+          fallback={
+            <div className="flex h-full items-center justify-center text-sm text-ink-subtle">
+              Loading…
+            </div>
+          }
+        >
+          <ResumeViewPage />
         </Suspense>
       </AppErrorBoundary>
     ),

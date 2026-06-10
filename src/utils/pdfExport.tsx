@@ -669,7 +669,9 @@ function createPdfStyles(resume: Resume) {
       fontSize: styles.fontSize.body,
       lineHeight: bodyLineHeight,
       textAlign: 'right',
-      width: 80,
+      // Size to the date's own content (not a fixed 80pt) so a short date hands
+      // the leftover width back to the degree column instead of forcing a wrap.
+      marginLeft: 6,
     },
     fullWidthDetail: {
       fontSize: styles.fontSize.body,

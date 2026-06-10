@@ -22,6 +22,17 @@ void i18n
     },
   });
 
+// Keep <html lang> in sync with the active locale so screen readers, browser
+// translation prompts, and hyphenation use the right language. i18next doesn't
+// touch the DOM attribute on its own.
+function syncDocumentLang(lng: string): void {
+  if (typeof document !== 'undefined') {
+    document.documentElement.lang = (lng || 'en').split('-')[0];
+  }
+}
+syncDocumentLang(i18n.language);
+i18n.on('languageChanged', syncDocumentLang);
+
 export default i18n;
 
 export const SUPPORTED_LOCALES = [

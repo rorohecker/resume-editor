@@ -164,6 +164,13 @@ export function parseResumeJson(raw: string): ImportParseResult | null {
   }
 }
 
+// Heuristic: does this text look like it was meant to be a JSON resume export
+// (so a failed parse should be reported, not silently treated as prose)?
+export function looksLikeJson(raw: string): boolean {
+  const trimmed = raw.trim();
+  return trimmed.startsWith('{') && trimmed.endsWith('}') && /"sections"|"header"|"styles"/.test(trimmed);
+}
+
 export function normalizeResumeText(raw: string): string {
   return raw
     .replace(/\r/g, '\n')

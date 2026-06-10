@@ -12,7 +12,18 @@ export interface ExtractionResult {
   warnings?: string[];
 }
 
+// Guardrails so a pathological upload can't hang the tab or exhaust memory.
+const MAX_FILE_BYTES = 25 * 1024 * 1024; // 25 MB
+const MAX_OCR_PAGES = 10;
+
 export async function extractFromFile(file: File): Promise<ExtractionResult> {
+  if (file.size > MAX_FILE_BYTES) {
+    throw new Error(
+      `That file is ${(file.size / (1024 * 1024)).toFixed(1)} MB. Please upload a file under ${Math.round(
+        MAX_FILE_BYTES / (1024 * 1024),
+      )} MB.`,
+    );
+  }
   const ext = (file.name.split('.').pop() ?? '').toLowerCase();
   const mime = file.type;
 
@@ -173,7 +184,16 @@ async function ocrPdfPages(
     let totalConfidence = 0;
     let pagesScanned = 0;
 
-    for (let pageNo = 1; pageNo <= pdf.numPages; pageNo += 1) {
+    // OCR is expensive (~1-3s/page). Cap it so a huge scanned PDF doesn't lock
+    // up the tab for minutes; warn the user that later pages were skipped.
+    const pagesToScan = Math.min(pdf.numPages, MAX_OCR_PAGES);
+    if (pdf.numPages > MAX_OCR_PAGES) {
+      warnings.push(
+        `This PDF has ${pdf.numPages} pages; only the first ${MAX_OCR_PAGES} were scanned via OCR.`,
+      );
+    }
+
+    for (let pageNo = 1; pageNo <= pagesToScan; pageNo += 1) {
       const page = (await pdf.getPage(pageNo)) as {
         getViewport: (opts: { scale: number }) => { width: number; height: number };
         render: (opts: { canvasContext: CanvasRenderingContext2D; viewport: unknown; canvas: HTMLCanvasElement }) => { promise: Promise<void> };

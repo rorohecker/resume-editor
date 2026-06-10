@@ -17,6 +17,8 @@ interface UIState {
   bulkEditOpen: boolean;
   libraryOpen: boolean;
   variantOpen: boolean;
+  shareOpen: boolean;
+  shortcutsOpen: boolean;
   pdfPreviewMode: boolean;
   anonymized: boolean;
   zoom: number;
@@ -44,6 +46,8 @@ interface Actions {
   setBulkEditOpen: (open: boolean) => void;
   setLibraryOpen: (open: boolean) => void;
   setVariantOpen: (open: boolean) => void;
+  setShareOpen: (open: boolean) => void;
+  setShortcutsOpen: (open: boolean) => void;
   setPdfPreviewMode: (on: boolean) => void;
   setAnonymized: (on: boolean) => void;
   setZoom: (zoom: number) => void;
@@ -67,6 +71,10 @@ const HISTORY_BATCH_MS = 600;
 let lastHistoryKey: string | null = null;
 let lastHistoryAt = 0;
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
+// The resume a pending debounced save is holding. Tracked separately so we can
+// flush it to storage immediately (on page unload, or before switching to a
+// different resume) instead of dropping the last edits.
+let pendingResume: Resume | null = null;
 const saveListeners = new Set<(time: number) => void>();
 
 function fireSavedListeners(ts: number): void {
@@ -83,6 +91,8 @@ export const useStore = create<UIState & ResumeState & Actions>((set, get) => ({
   bulkEditOpen: false,
   libraryOpen: false,
   variantOpen: false,
+  shareOpen: false,
+  shortcutsOpen: false,
   pdfPreviewMode: false,
   anonymized: false,
   zoom: 1,
@@ -104,6 +114,8 @@ export const useStore = create<UIState & ResumeState & Actions>((set, get) => ({
   setBulkEditOpen: (bulkEditOpen) => set({ bulkEditOpen }),
   setLibraryOpen: (libraryOpen) => set({ libraryOpen }),
   setVariantOpen: (variantOpen) => set({ variantOpen }),
+  setShareOpen: (shareOpen) => set({ shareOpen }),
+  setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),
   setPdfPreviewMode: (pdfPreviewMode) => set({ pdfPreviewMode }),
   setAnonymized: (anonymized) => set({ anonymized }),
   setZoom: (zoom) => set({ zoom: clamp(zoom, 0.5, 1.5) }),
@@ -118,6 +130,8 @@ export const useStore = create<UIState & ResumeState & Actions>((set, get) => ({
     })),
 
   createResumeFromTemplate: (template) => {
+    // Persist any pending edits to the resume we're leaving before switching.
+    flushPendingSave();
     const resume = factory(template);
     saveResumeFast(resume);
     set({ currentResume: resume, past: [], future: [], lastSavedAt: Date.now() });
@@ -125,14 +139,26 @@ export const useStore = create<UIState & ResumeState & Actions>((set, get) => ({
   },
 
   loadResume: (id) => {
+    flushPendingSave();
     const resume = loadFromStorage(id);
     if (resume) set({ currentResume: resume, past: [], future: [], lastSavedAt: Date.now() });
     return resume;
   },
 
   setCurrentResume: (currentResume) => {
-    set({ currentResume, past: [], future: [] });
-    if (currentResume) scheduleSave(currentResume);
+    const prev = get().currentResume;
+    // Switching to a different resume: flush the outgoing one and reset history.
+    // Same resume (e.g. a cross-tab refresh of the doc we're already editing):
+    // keep the undo/redo stacks intact so a background sync doesn't nuke the
+    // user's ability to undo their own work.
+    const sameDoc = Boolean(prev && currentResume && prev.id === currentResume.id);
+    if (!sameDoc) flushPendingSave();
+    set(
+      sameDoc
+        ? { currentResume }
+        : { currentResume, past: [], future: [] },
+    );
+    if (currentResume && !sameDoc) scheduleSave(currentResume);
   },
 
   updateCurrentResume: (updater, options) => {
@@ -209,6 +235,7 @@ export const useStore = create<UIState & ResumeState & Actions>((set, get) => ({
       clearTimeout(saveTimer);
       saveTimer = null;
     }
+    pendingResume = null;
     saveResumeFast(current);
     const ts = Date.now();
     set({ lastSavedAt: ts });
@@ -236,13 +263,40 @@ function clamp(n: number, min: number, max: number): number {
 
 function scheduleSave(resume: Resume) {
   if (saveTimer) clearTimeout(saveTimer);
+  pendingResume = resume;
   saveTimer = setTimeout(() => {
     saveResumeFast(resume);
+    pendingResume = null;
     const ts = Date.now();
     useStore.setState({ lastSavedAt: ts });
     fireSavedListeners(ts);
     saveTimer = null;
   }, 1500);
+}
+
+// Writes any debounced-but-not-yet-saved resume to storage right now. Safe to
+// call when nothing is pending. Used before switching resumes and on unload.
+export function flushPendingSave(): void {
+  if (!saveTimer || !pendingResume) return;
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  const resume = pendingResume;
+  pendingResume = null;
+  saveResumeFast(resume);
+  const ts = Date.now();
+  useStore.setState({ lastSavedAt: ts });
+  fireSavedListeners(ts);
+}
+
+// Persist in-flight edits if the tab is being closed/refreshed/hidden so the
+// 1.5s debounce window can't silently eat the user's most recent changes.
+if (typeof window !== 'undefined') {
+  const flush = () => flushPendingSave();
+  window.addEventListener('beforeunload', flush);
+  window.addEventListener('pagehide', flush);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flush();
+  });
 }
 
 // Stack-based subscription so multiple components can listen (the toast hint

@@ -97,27 +97,34 @@ export async function enrichWithBYOK(
                 ? 'text-block'
                 : 'entry-based',
             entries: Array.isArray(section.entries)
-              ? section.entries.map((entry, eIdx: number) => ({
-                  id: existingOrNewId(base.resume.sections[sIdx]?.entries[eIdx]?.id),
-                  title: entry.title ?? '',
-                  subtitle: entry.subtitle ?? '',
-                  location: entry.location ?? '',
-                  startDate: entry.startDate ?? '',
-                  endDate: entry.endDate ?? '',
-                  current: Boolean(entry.current),
-                  url: entry.url ?? '',
-                  bullets: Array.isArray(entry.bullets)
-                    ? entry.bullets
-                      .filter((content): content is string => typeof content === 'string')
-                      .map((content: string, bIdx: number) => ({
-                        id: existingOrNewId(base.resume.sections[sIdx]?.entries[eIdx]?.bullets?.[bIdx]?.id),
-                        content,
-                        visible: true,
-                        order: bIdx,
-                      }))
-                    : [],
-                  customFields: {},
-                }))
+              ? section.entries.map((entry, eIdx: number) => {
+                  const baseEntry = base.resume.sections[sIdx]?.entries[eIdx];
+                  return {
+                    id: existingOrNewId(baseEntry?.id),
+                    title: entry.title ?? '',
+                    subtitle: entry.subtitle ?? '',
+                    location: entry.location ?? '',
+                    startDate: entry.startDate ?? '',
+                    endDate: entry.endDate ?? '',
+                    current: Boolean(entry.current),
+                    url: entry.url ?? '',
+                    bullets: Array.isArray(entry.bullets)
+                      ? entry.bullets
+                        .filter((content): content is string => typeof content === 'string')
+                        .map((content: string, bIdx: number) => ({
+                          id: existingOrNewId(baseEntry?.bullets?.[bIdx]?.id),
+                          content,
+                          visible: true,
+                          order: bIdx,
+                        }))
+                      : [],
+                    // The model isn't asked to echo custom fields, so keep
+                    // whatever the preliminary parse captured (study-abroad
+                    // markers, GPA, etc.) instead of dropping them.
+                    customFields: baseEntry?.customFields ?? {},
+                    tags: baseEntry?.tags,
+                  };
+                })
               : [],
             };
           })

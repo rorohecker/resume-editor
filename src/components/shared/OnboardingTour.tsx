@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 
@@ -15,6 +15,7 @@ export function OnboardingTour() {
   const [show, setShow] = useState(false);
   const [index, setIndex] = useState(0);
   const [targetRect, setTargetRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     try {
@@ -50,13 +51,6 @@ export function OnboardingTour() {
     };
   }, [show, index]);
 
-  if (!show) return null;
-  const titles = t('tour.titles', { returnObjects: true }) as string[];
-  const bodies = t('tour.bodies', { returnObjects: true }) as string[];
-  const title = titles[index] ?? '';
-  const body = bodies[index] ?? '';
-  const isLast = index === TOTAL_STEPS - 1;
-
   const dismiss = () => {
     try {
       localStorage.setItem(FLAG, '1');
@@ -66,6 +60,52 @@ export function OnboardingTour() {
     setShow(false);
   };
 
+  // Keyboard: Escape dismisses; Tab is trapped inside the dialog so focus can't
+  // wander into the (inert) app behind the modal.
+  useEffect(() => {
+    if (!show) return;
+    const dialog = dialogRef.current;
+    const focusable = dialog?.querySelector<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    );
+    focusable?.focus();
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        dismiss();
+        return;
+      }
+      if (event.key !== 'Tab' || !dialog) return;
+      const items = Array.from(
+        dialog.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => !el.hasAttribute('disabled'));
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      if (event.shiftKey && (active === first || !dialog.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => document.removeEventListener('keydown', onKeyDown, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [show, index]);
+
+  if (!show) return null;
+  const titles = t('tour.titles', { returnObjects: true }) as string[];
+  const bodies = t('tour.bodies', { returnObjects: true }) as string[];
+  const title = titles[index] ?? '';
+  const body = bodies[index] ?? '';
+  const isLast = index === TOTAL_STEPS - 1;
+
   // Spotlight: a single dark backdrop with a soft inset shadow around the
   // target rectangle. Falls back to a flat overlay when no target is found.
   const hasTarget = !!targetRect;
@@ -73,7 +113,12 @@ export function OnboardingTour() {
   const radius = 12;
 
   return (
-    <div className="fixed inset-0 z-[80]" role="dialog" aria-label="Welcome tour">
+    <div
+      className="fixed inset-0 z-[80]"
+      role="dialog"
+      aria-modal="true"
+      aria-label={t('tour.ariaLabel', { defaultValue: 'Welcome tour' })}
+    >
       {hasTarget ? (
         <>
           <div
@@ -109,7 +154,10 @@ export function OnboardingTour() {
       )}
 
       <div className="absolute inset-0 flex items-end justify-end p-4 sm:items-center sm:justify-center">
-        <div className="pointer-events-auto relative w-full max-w-md rounded-lg border border-paper-edge bg-paper p-5 shadow-page">
+        <div
+          ref={dialogRef}
+          className="pointer-events-auto relative w-full max-w-md rounded-lg border border-paper-edge bg-paper p-5 shadow-page"
+        >
           <div className="mb-1 flex items-center justify-between text-xs text-ink-subtle">
             <span>{t('tour.step', { n: index + 1, total: TOTAL_STEPS })}</span>
             <button type="button" className="icon-btn h-6 w-6" onClick={dismiss} aria-label={t('tour.dismiss')}>

@@ -2,18 +2,24 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ChevronDown,
+  ClipboardCopy,
   Eye,
   EyeOff,
   FileText,
   GitCompare,
+  Keyboard,
   Layers,
   Library,
   ListChecks,
   MoreHorizontal,
+  Printer,
+  Share2,
   Wand2,
   type LucideIcon,
 } from 'lucide-react';
 import { useStore } from '@/store';
+import { toast } from '@/hooks/useToast';
+import { resumeToPlainText } from '@/utils/resumeText';
 
 // Secondary editor actions. Visible as icon buttons on wide screens; collapsed
 // into this overflow menu when there's not enough horizontal room in the top
@@ -26,6 +32,8 @@ export function MoreActionsMenu() {
   const setBulkEditOpen = useStore((s) => s.setBulkEditOpen);
   const setLibraryOpen = useStore((s) => s.setLibraryOpen);
   const setVariantOpen = useStore((s) => s.setVariantOpen);
+  const setShareOpen = useStore((s) => s.setShareOpen);
+  const setShortcutsOpen = useStore((s) => s.setShortcutsOpen);
   const pdfPreviewMode = useStore((s) => s.pdfPreviewMode);
   const setPdfPreviewMode = useStore((s) => s.setPdfPreviewMode);
   const anonymized = useStore((s) => s.anonymized);
@@ -33,6 +41,31 @@ export function MoreActionsMenu() {
 
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+
+  const printResume = () => {
+    setOpen(false);
+    // Print uses the DOM preview (`.resume-print-page`); the PDF-image preview
+    // mode replaces it, so drop back to the DOM view first.
+    if (pdfPreviewMode) setPdfPreviewMode(false);
+    window.setTimeout(() => window.print(), 200);
+  };
+
+  const copyPlainText = async () => {
+    setOpen(false);
+    const resume = useStore.getState().currentResume;
+    if (!resume) return;
+    try {
+      await navigator.clipboard.writeText(resumeToPlainText(resume));
+      toast(t('editor.copiedPlainText', { defaultValue: 'Resume copied as plain text' }), {
+        tone: 'success',
+        ttl: 1800,
+      });
+    } catch {
+      toast(t('editor.copyFailed', { defaultValue: 'Could not copy to clipboard' }), {
+        tone: 'danger',
+      });
+    }
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -82,6 +115,32 @@ export function MoreActionsMenu() {
       onClick: () => {
         setOpen(false);
         setBulkEditOpen(true);
+      },
+    },
+    {
+      label: t('editor.shareLink', { defaultValue: 'Share read-only link' }),
+      icon: Share2,
+      onClick: () => {
+        setOpen(false);
+        setShareOpen(true);
+      },
+    },
+    {
+      label: t('editor.print', { defaultValue: 'Print resume' }),
+      icon: Printer,
+      onClick: printResume,
+    },
+    {
+      label: t('editor.copyPlainText', { defaultValue: 'Copy as plain text' }),
+      icon: ClipboardCopy,
+      onClick: () => void copyPlainText(),
+    },
+    {
+      label: t('shortcuts.title', { defaultValue: 'Keyboard shortcuts' }),
+      icon: Keyboard,
+      onClick: () => {
+        setOpen(false);
+        setShortcutsOpen(true);
       },
     },
     {

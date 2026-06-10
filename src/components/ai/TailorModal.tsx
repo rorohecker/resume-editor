@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Check, Sparkles, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useStore } from '@/store';
@@ -7,6 +7,7 @@ import { toast } from '@/hooks/useToast';
 import { loadAiSettings } from '@/utils/aiByok';
 import { generateTailoring, type TailorOutcome } from '@/utils/aiTailor';
 import { replaceBulletContent } from '@/utils/resumeText';
+import { matchKeywords } from '@/utils/keywordMatch';
 
 export function TailorModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useTranslation();
@@ -17,6 +18,13 @@ export function TailorModal({ open, onClose }: { open: boolean; onClose: () => v
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<TailorOutcome | null>(null);
   const [accepted, setAccepted] = useState<Set<string>>(new Set());
+
+  // Local, instant ATS keyword match — no AI key required. Recomputed as the
+  // user pastes/edits the job description.
+  const match = useMemo(() => {
+    if (!resume || job.trim().length < 40) return null;
+    return matchKeywords(resume, job);
+  }, [resume, job]);
 
   useEffect(() => {
     if (!open) {
@@ -108,9 +116,10 @@ export function TailorModal({ open, onClose }: { open: boolean; onClose: () => v
         </div>
 
         <div className="space-y-3 overflow-y-auto">
+          {match && <KeywordMatchCard match={match} />}
           {!outcome ? (
-            <div className="flex h-full min-h-72 items-center justify-center rounded-md border border-paper-edge bg-paper-tint p-6 text-center text-sm text-ink-subtle">
-              {t('tailor.awaitingSuggestions')}
+            <div className="flex min-h-40 items-center justify-center rounded-md border border-paper-edge bg-paper-tint p-6 text-center text-sm text-ink-subtle">
+              {match ? t('tailor.awaitingSuggestionsWithMatch', { defaultValue: 'Run AI tailoring above for bullet rewrites, or use the keyword match to guide manual edits.' }) : t('tailor.awaitingSuggestions')}
             </div>
           ) : (
             <>
@@ -193,6 +202,68 @@ export function TailorModal({ open, onClose }: { open: boolean; onClose: () => v
         </div>
       </div>
     </Modal>
+  );
+}
+
+function KeywordMatchCard({ match }: { match: ReturnType<typeof matchKeywords> }) {
+  const { t } = useTranslation();
+  const tone =
+    match.score >= 75 ? 'text-ok' : match.score >= 50 ? 'text-warn' : 'text-danger';
+  const barColor =
+    match.score >= 75 ? 'bg-ok' : match.score >= 50 ? 'bg-warn' : 'bg-danger';
+  return (
+    <section className="rounded-md border border-paper-edge bg-paper p-3 text-xs">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
+          {t('tailor.keywordMatch', { defaultValue: 'Keyword match' })}
+        </span>
+        <span className={`text-sm font-bold ${tone}`}>{match.score}%</span>
+      </div>
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-paper-edge">
+        <div className={`h-full rounded-full ${barColor}`} style={{ width: `${match.score}%` }} />
+      </div>
+      <p className="mt-2 text-[11px] text-ink-subtle">
+        {t('tailor.keywordMatchHint', {
+          defaultValue: 'Found {{matched}} of {{total}} key terms from the job description.',
+          matched: match.matched.length,
+          total: match.total,
+        })}
+      </p>
+      {match.missing.length > 0 && (
+        <div className="mt-2">
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-danger">
+            {t('tailor.keywordMissing', { defaultValue: 'Missing' })}
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {match.missing.slice(0, 18).map((kw) => (
+              <span
+                key={kw}
+                className="rounded-full border border-paper-edge bg-paper-tint px-2 py-0.5 text-ink-muted"
+              >
+                {kw}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      {match.matched.length > 0 && (
+        <div className="mt-2">
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-ok">
+            {t('tailor.keywordFound', { defaultValue: 'Covered' })}
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {match.matched.slice(0, 18).map((kw) => (
+              <span
+                key={kw}
+                className="rounded-full bg-green-50 px-2 py-0.5 text-ok dark:bg-emerald-500/15 dark:text-emerald-300"
+              >
+                {kw}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 

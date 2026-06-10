@@ -8,6 +8,7 @@ import { displayContactValue } from './contactIcon';
 import { resumeForPagedExport } from './resumeLayout';
 import {
   labelFromKey,
+  mccombsSwapBold,
   studyAbroadLine,
   subtitleForPreview,
   tertiaryForPreview,
@@ -112,7 +113,7 @@ async function renderDocxBlob(resume: Resume): Promise<Blob> {
   const docxFont = wordFontFor(layoutResume.styles.font);
   const headerAfter = twipsFromPt(4);
 
-  const children: import('docx').Paragraph[] = [
+  const children: (import('docx').Paragraph | import('docx').Table)[] = [
     new Paragraph({
       alignment: layoutResume.template === 'cs-swe' ? AlignmentType.LEFT : AlignmentType.CENTER,
       spacing: { after: 0 },
@@ -185,6 +186,22 @@ async function renderDocxBlob(resume: Resume): Promise<Blob> {
     );
   }
 
+  // Word merges two tables that touch with nothing between them. Entry headlines
+  // are borderless tables, so an entry with no body lines could butt up against
+  // the next entry's headline. Drop a near-zero-height paragraph between any
+  // adjacent tables to keep them separate without adding visible space.
+  const spacedChildren: (import('docx').Paragraph | import('docx').Table)[] = [];
+  for (let i = 0; i < children.length; i++) {
+    const current = children[i];
+    const previous = spacedChildren[spacedChildren.length - 1];
+    if (previous instanceof docx.Table && current instanceof docx.Table) {
+      spacedChildren.push(
+        new Paragraph({ spacing: { before: 0, after: 0, line: 1, lineRule: docx.LineRuleType.EXACT } }),
+      );
+    }
+    spacedChildren.push(current);
+  }
+
   const doc = new Document({
     styles: {
       default: {
@@ -222,7 +239,7 @@ async function renderDocxBlob(resume: Resume): Promise<Blob> {
             size: pageSize,
           },
         },
-        children,
+        children: spacedChildren,
       },
     ],
   });
@@ -259,10 +276,17 @@ export async function renderResumePreviewDataUrl(resume: Resume): Promise<string
 // refuses to render blob-URL PDFs inside an iframe when the page is served from
 // file:// — which left the PDF preview a blank white box for anyone running the
 // single-file build. Data-URL <img> tags have no such restriction.
+export interface RenderedPdfPreview {
+  images: string[];
+  // Total pages in the source PDF (may exceed images.length when capped by
+  // maxPages), so callers can tell the user the preview was truncated.
+  totalPages: number;
+}
+
 export async function renderPdfBlobToImages(
   blob: Blob,
   options: { scale?: number; maxPages?: number } = {},
-): Promise<string[]> {
+): Promise<RenderedPdfPreview> {
   const scale = options.scale ?? 1.5;
   const maxPages = options.maxPages ?? 6;
   const pdfjs = await import('pdfjs-dist');
@@ -303,8 +327,9 @@ export async function renderPdfBlobToImages(
     images.push(canvas.toDataURL('image/png'));
     page.cleanup();
   }
+  const totalPages = doc.numPages;
   await doc.destroy();
-  return images;
+  return { images, totalPages };
 }
 
 let previewPdfWorkerConfigured = false;
@@ -434,7 +459,7 @@ function sectionToDocx(section: Section, resume: Resume, docx: DocxModule, usabl
 
   if (section.type === 'skills' || section.layout === 'skills-grid') {
     return section.entries
-      .filter((entry) => entry.title || entry.subtitle)
+      .filter((entry) => entry.visible !== false && (entry.title || entry.subtitle))
       .map(
         (entry) =>
           new Paragraph({
@@ -453,7 +478,7 @@ function sectionToDocx(section: Section, resume: Resume, docx: DocxModule, usabl
 }
 
 function entryToDocx(entry: Entry, section: Section, resume: Resume, docx: DocxModule, usableWidth: number) {
-  const { AlignmentType, Paragraph, TabStopType, TextRun } = docx;
+  const { Paragraph, TextRun } = docx;
 
   const isStudyAbroad =
     section.type === 'study-abroad' || entry.customFields?.kind === 'study-abroad';
@@ -462,30 +487,32 @@ function entryToDocx(entry: Entry, section: Section, resume: Resume, docx: DocxM
   const dateEnd = section.type === 'publications' ? entry.endDate || entry.customFields?.year : entry.endDate;
   const date = formatDateRange(entry.startDate, dateEnd, entry.current, resume.styles.dateFormat);
 
-  // Compose the same headline lines the PDF/preview use so the Word output
-  // reads identically: a bold title (with the date flush right via a right tab
-  // stop), then the subtitle, then a tertiary line (location / GPA / honors).
-  const title = isStudyAbroad ? studyAbroadLine(entry) : titleForPreview(entry, section);
-  const subtitle = isStudyAbroad ? entry.subtitle?.trim() ?? '' : subtitleForPreview(entry, section);
-  const tertiary = isStudyAbroad ? '' : tertiaryForPreview(entry, section);
-  const italicSubtitle = section.type === 'projects';
+  // Some templates fold the company/role (or project title/stack) into a single
+  // inline headline. When we do that here, the subtitle is already part of the
+  // header runs, so we must not also emit it as its own line.
+  const inlineHeader =
+    (resume.template === 'mccombs' && mccombsSwapBold(section.type)) || section.type === 'projects';
 
-  const paragraphs: import('docx').Paragraph[] = [];
+  // Compose the same headline the PDF/preview use so the Word output reads
+  // identically. The header runs go in the left column of a borderless table;
+  // the date sits flush-right in the right column (see entryHeadline). This
+  // replaces the old single-paragraph right-tab approach, where a long title
+  // would shove the date onto its own line and balloon the document.
+  const headerRuns = headlineRuns(entry, section, docx, isStudyAbroad, inlineHeader);
+  const subtitle = isStudyAbroad
+    ? entry.subtitle?.trim() ?? ''
+    : inlineHeader
+      ? ''
+      : subtitleForPreview(entry, section);
+  // Inline headers already carry the location (McCombs "; City") and projects
+  // don't show a location line, so the tertiary (location) would be a duplicate.
+  const tertiary = isStudyAbroad || inlineHeader ? '' : tertiaryForPreview(entry, section);
 
-  if (title || date) {
-    const headerRuns: import('docx').TextRun[] = [];
-    if (title) headerRuns.push(new TextRun({ text: title, bold: true }));
-    if (date) {
-      if (title) headerRuns.push(new TextRun({ text: '\t' }));
-      headerRuns.push(new TextRun({ text: date }));
-    }
+  const paragraphs: (import('docx').Paragraph | import('docx').Table)[] = [];
+
+  if (headerRuns.length > 0 || date) {
     paragraphs.push(
-      new Paragraph({
-        tabStops: [{ type: TabStopType.RIGHT, position: usableWidth }],
-        spacing: { after: subtitle || tertiary ? 0 : 40 },
-        alignment: AlignmentType.LEFT,
-        children: headerRuns,
-      }),
+      entryHeadline(headerRuns, date, docx, usableWidth, subtitle || tertiary ? 0 : 40),
     );
   }
 
@@ -493,7 +520,7 @@ function entryToDocx(entry: Entry, section: Section, resume: Resume, docx: DocxM
     paragraphs.push(
       new Paragraph({
         spacing: { after: tertiary ? 0 : 40 },
-        children: [new TextRun({ text: subtitle, italics: italicSubtitle })],
+        children: [new TextRun({ text: subtitle })],
       }),
     );
   }
@@ -532,6 +559,120 @@ function entryToDocx(entry: Entry, section: Section, resume: Resume, docx: DocxM
   }
 
   return paragraphs;
+}
+
+// Build the bold/italic headline runs for an entry, mirroring the PDF/preview
+// per-template composition (e.g. McCombs "Company - Role; Location", projects
+// "Title - Tech stack") so Word doesn't stack what the preview shows inline.
+function headlineRuns(
+  entry: Entry,
+  section: Section,
+  docx: DocxModule,
+  isStudyAbroad: boolean,
+  inlineHeader: boolean,
+): import('docx').TextRun[] {
+  const { TextRun } = docx;
+  const runs: import('docx').TextRun[] = [];
+
+  if (isStudyAbroad) {
+    const line = studyAbroadLine(entry);
+    if (line) runs.push(new TextRun({ text: line, bold: true }));
+    return runs;
+  }
+
+  if (inlineHeader) {
+    const isProject = section.type === 'projects';
+    // McCombs experience leads with the bold company; projects lead with the
+    // bold project title. The secondary piece is italic, matching the PDF.
+    const primary = (isProject ? entry.title : entry.subtitle)?.trim();
+    const secondary = (isProject ? entry.subtitle : entry.title)?.trim();
+    const location = entry.location?.trim();
+    if (primary) runs.push(new TextRun({ text: primary, bold: true }));
+    if (primary && secondary) runs.push(new TextRun({ text: ' - ' }));
+    if (secondary) runs.push(new TextRun({ text: secondary, italics: true }));
+    if (!isProject) {
+      if ((primary || secondary) && location) runs.push(new TextRun({ text: `; ${location}` }));
+      else if (!primary && !secondary && location) runs.push(new TextRun({ text: location }));
+    }
+    return runs;
+  }
+
+  const title = titleForPreview(entry, section);
+  if (title) runs.push(new TextRun({ text: title, bold: true }));
+  return runs;
+}
+
+// Render an entry's headline as a borderless two-column table: the title runs
+// fill the left column (and wrap within it), while the date stays flush-right in
+// a fixed-width right column. A single-paragraph right tab would instead push
+// the date onto its own line whenever the title got long.
+function entryHeadline(
+  headerRuns: import('docx').TextRun[],
+  date: string,
+  docx: DocxModule,
+  usableWidth: number,
+  spacingAfter: number,
+): import('docx').Paragraph | import('docx').Table {
+  const { AlignmentType, BorderStyle, Paragraph, Table, TableCell, TableLayoutType, TableRow, TextRun, WidthType } =
+    docx;
+
+  // No date: a plain left-aligned paragraph is lighter than a one-cell table.
+  if (!date) {
+    return new Paragraph({ spacing: { after: spacingAfter }, children: headerRuns });
+  }
+
+  // Date but no title text (rare): right-align the lone date.
+  if (headerRuns.length === 0) {
+    return new Paragraph({
+      spacing: { after: spacingAfter },
+      alignment: AlignmentType.RIGHT,
+      children: [new TextRun({ text: date })],
+    });
+  }
+
+  const dateWidth = 2016; // ~1.4in, enough for "Sep 2024 - Aug 2025"
+  const titleWidth = Math.max(1440, usableWidth - dateWidth);
+  const none = { style: BorderStyle.NONE, size: 0, color: 'auto' };
+  const noBorders = {
+    top: none,
+    bottom: none,
+    left: none,
+    right: none,
+    insideHorizontal: none,
+    insideVertical: none,
+  };
+  const noMargins = { top: 0, bottom: 0, left: 0, right: 0 };
+
+  return new Table({
+    width: { size: usableWidth, type: WidthType.DXA },
+    columnWidths: [titleWidth, dateWidth],
+    layout: TableLayoutType.FIXED,
+    borders: noBorders,
+    rows: [
+      new TableRow({
+        children: [
+          new TableCell({
+            width: { size: titleWidth, type: WidthType.DXA },
+            margins: noMargins,
+            borders: noBorders,
+            children: [new Paragraph({ spacing: { after: 0 }, children: headerRuns })],
+          }),
+          new TableCell({
+            width: { size: dateWidth, type: WidthType.DXA },
+            margins: noMargins,
+            borders: noBorders,
+            children: [
+              new Paragraph({
+                spacing: { after: 0 },
+                alignment: AlignmentType.RIGHT,
+                children: [new TextRun({ text: date })],
+              }),
+            ],
+          }),
+        ],
+      }),
+    ],
+  });
 }
 
 function visibleSections(resume: Resume): Section[] {

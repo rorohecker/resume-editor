@@ -1,7 +1,7 @@
 {
   "name": "resume-editor",
   "private": true,
-  "version": "0.2.29",
+  "version": "0.2.31",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -32,6 +32,7 @@
     "lucide-react": "^0.460.0",
     "mammoth": "^1.12.0",
     "pdfjs-dist": "^5.7.284",
+    "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-i18next": "^17.0.8",
@@ -41,6 +42,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.8.0",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^6.0.2",
