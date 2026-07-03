@@ -61,6 +61,18 @@ export default {
       tagline: 'Equilibrado · Cualquier carrera',
       description: 'Diseño neutro y equilibrado. Funciona para cualquier carrera o trayectoria inicial.',
     },
+    'professional-multipage': {
+      name: 'Profesional (varias páginas)',
+      tagline: '2 páginas · Resumen opcional',
+      description:
+        'Resumen opcional arriba, experiencia primero, números de página activados. Añade saltos de página para controlar el diseño.',
+    },
+    'sidebar-professional': {
+      name: 'Profesional con barra lateral',
+      tagline: 'Dos columnas · Habilidades a la izquierda',
+      description:
+        'Habilidades y educación en la barra lateral izquierda; experiencia y proyectos a la derecha. Resumen opcional sin cabecera arriba.',
+    },
     blank: {
       name: 'Lienzo en blanco',
       tagline: 'Empieza desde cero',
@@ -183,7 +195,13 @@ export default {
     paperLetter: 'Carta (US)',
     paperA4: 'A4',
     onePageMode: 'Modo de una página',
+    pageCountEstimate: '~{{count}} pág.',
     pageNumbers: 'Mostrar números de página cuando el contenido excede una página',
+    summaryPresetStudent: 'Estudiante / recién graduado',
+    summaryPresetSwe: 'Ingeniero de software',
+    summaryPresetBusiness: 'Negocios / consultoría',
+    summaryPresetResearch: 'Investigación / académico',
+    summaryPresetCareerChange: 'Cambio de carrera',
     untitledSection: 'Sección sin título',
     toggleSection: 'Alternar {{title}}',
     quickAdd: 'Añadir rápido',
@@ -217,6 +235,7 @@ export default {
     spaceAboveLabel: 'Espacio superior (por defecto {{n}}pt)',
     entrySpacingLabel: 'Espaciado entre entradas (por defecto {{n}}pt)',
     hideRule: 'Ocultar regla bajo la cabecera',
+    hideHeader: 'Ocultar cabecera de sección',
     sectionTitleUppercase: 'Título de sección en mayúsculas',
     bodyTextOverride: 'Texto del cuerpo',
     sectionHeaderOverride: 'Cabecera de sección',
@@ -333,6 +352,11 @@ export default {
     sectionCertifications: 'Certificaciones',
     sectionPublications: 'Publicaciones',
     sectionSummary: 'Resumen',
+    summaryHint:
+      'Un párrafo breve al inicio del currículum. Oculta la sección o usa “Ocultar cabecera de sección” en los ajustes si prefieres sin título.',
+    summaryPlaceholder: '2–4 oraciones que destaquen tu experiencia y objetivos…',
+    pageBreakHint:
+      'Fuerza una nueva página en exportación PDF y Word. Se muestra como línea discontinua en la vista previa.',
     sectionCustom: 'Sección personalizada',
     copySuffix: 'Copia de {{title}}',
     emailWarning: 'El formato del correo parece incorrecto.',

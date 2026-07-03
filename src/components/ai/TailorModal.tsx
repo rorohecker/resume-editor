@@ -8,6 +8,7 @@ import { loadAiSettings } from '@/utils/aiByok';
 import { generateTailoring, type TailorOutcome } from '@/utils/aiTailor';
 import { replaceBulletContent } from '@/utils/resumeText';
 import { matchKeywords } from '@/utils/keywordMatch';
+import { upsertSummarySection } from '@/utils/summarySection';
 
 export function TailorModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useTranslation();
@@ -167,16 +168,36 @@ export function TailorModal({ open, onClose }: { open: boolean; onClose: () => v
                     {t('tailor.tailoredSummary')}
                   </div>
                   <p className="text-ink">{outcome.summary}</p>
-                  <button
-                    type="button"
-                    className="mt-2 text-[11px] font-medium text-accent"
-                    onClick={() => {
-                      void navigator.clipboard.writeText(outcome.summary);
-                      toast(t('tailor.summaryCopied'), { tone: 'success', ttl: 1500 });
-                    }}
-                  >
-                    {t('common.copy')}
-                  </button>
+                  <div className="mt-2 flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      className="text-[11px] font-medium text-accent"
+                      onClick={() => {
+                        if (!resume || !outcome.summary) return;
+                        updateResume((current) => ({
+                          ...current,
+                          sections: upsertSummarySection(
+                            current.sections,
+                            outcome.summary,
+                            t('editor.sectionSummary'),
+                          ),
+                        }));
+                        toast(t('ai.summaryAdded'), { tone: 'success', ttl: 1500 });
+                      }}
+                    >
+                      {t('ai.summaryAdd')}
+                    </button>
+                    <button
+                      type="button"
+                      className="text-[11px] font-medium text-accent"
+                      onClick={() => {
+                        void navigator.clipboard.writeText(outcome.summary);
+                        toast(t('tailor.summaryCopied'), { tone: 'success', ttl: 1500 });
+                      }}
+                    >
+                      {t('common.copy')}
+                    </button>
+                  </div>
                 </section>
               )}
 

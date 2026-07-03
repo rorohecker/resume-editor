@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Copy, Download, FileText, Pencil, Plus, Trash2, Upload } from 'lucide-react';
 import { TEMPLATES } from '@/components/templates/registry';
+import { LiveTemplateThumbnail } from '@/components/templates/LiveTemplateThumbnail';
 import { ImportResumeModal } from '@/components/import/ImportResumeModal';
 import { ToastViewport } from '@/components/shared/ToastViewport';
 import { ThemeToggle } from '@/components/shared/ThemeToggle';
@@ -273,7 +274,7 @@ export function LandingPage() {
                 {tpl.id === 'blank' ? (
                   <Plus size={36} className="text-ink-subtle" />
                 ) : (
-                  <TemplateThumbnail name={t(`templates.${tpl.id}.name`)} font={tpl.styles.font} />
+                  <LiveTemplateThumbnail templateId={tpl.id} />
                 )}
               </div>
               <div className="flex flex-1 flex-col p-4">
@@ -355,32 +356,6 @@ function KanbanView({
           </div>
         );
       })}
-    </div>
-  );
-}
-
-function TemplateThumbnail({ name, font }: { name: string; font: string }) {
-  const { t } = useTranslation();
-  // Lightweight visual placeholder until real template renderers land in Phase 2.
-  return (
-    <div
-      className="flex h-full w-full flex-col gap-1.5 p-6 text-[6px] leading-tight text-ink"
-      style={{ fontFamily: font }}
-    >
-      <div className="text-center text-[10px] font-bold">{name.split(' ').slice(0, 2).join(' ')}</div>
-      <div className="text-center text-[5px] text-ink-muted">{t('landing.thumbnailContact')}</div>
-      <div className="mt-2 border-b border-ink pb-0.5 text-[7px] font-bold uppercase tracking-wide">
-        {t('landing.thumbnailEducation')}
-      </div>
-      <div className="flex justify-between"><span className="font-semibold">{t('landing.thumbnailDegree')}</span><span>2023-2027</span></div>
-      <div className="text-ink-muted">{t('landing.thumbnailUniversity')}</div>
-      <div className="mt-1.5 border-b border-ink pb-0.5 text-[7px] font-bold uppercase tracking-wide">
-        {t('landing.thumbnailExperience')}
-      </div>
-      <div className="flex justify-between"><span className="font-semibold">{t('landing.thumbnailRole')}</span><span>{t('landing.thumbnailDate')}</span></div>
-      <div className="text-ink-muted">{t('landing.thumbnailCompany')}</div>
-      <div className="text-[5px]">• {t('landing.thumbnailBullet1')}</div>
-      <div className="text-[5px]">• {t('landing.thumbnailBullet2')}</div>
     </div>
   );
 }

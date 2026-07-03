@@ -22,6 +22,7 @@ export function SectionStyleOverridesPanel({ section, resumeDefaults, onChange }
     if (merged.spaceAbove !== undefined) cleaned.spaceAbove = merged.spaceAbove;
     if (merged.entrySpacing !== undefined) cleaned.entrySpacing = merged.entrySpacing;
     if (merged.hideRule !== undefined) cleaned.hideRule = merged.hideRule;
+    if (merged.hideHeader !== undefined) cleaned.hideHeader = merged.hideHeader;
     if (merged.uppercaseTitle !== undefined) cleaned.uppercaseTitle = merged.uppercaseTitle;
     if (merged.bodyColor) cleaned.bodyColor = merged.bodyColor;
     if (merged.sectionHeaderColor) cleaned.sectionHeaderColor = merged.sectionHeaderColor;
@@ -92,6 +93,11 @@ export function SectionStyleOverridesPanel({ section, resumeDefaults, onChange }
               label={t('editor.hideRule')}
               checked={overrides.hideRule ?? false}
               onChange={(v) => patch({ hideRule: v ? true : undefined })}
+            />
+            <Checkbox
+              label={t('editor.hideHeader', { defaultValue: 'Hide section header' })}
+              checked={overrides.hideHeader ?? false}
+              onChange={(v) => patch({ hideHeader: v ? true : undefined })}
             />
             <Checkbox
               label={t('editor.sectionTitleUppercase')}

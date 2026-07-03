@@ -38,7 +38,8 @@ import type {
 } from '@/types';
 import { iconForContactType } from '@/utils/contactIcon';
 import { makeId } from '@/utils/id';
-import { contrastRatio, estimatePageUsage, isDarkProfessionalColor } from '@/utils/styleChecks';
+import { SUMMARY_PRESETS } from '@/utils/summaryPresets';
+import { contrastRatio, estimatePageStats, isDarkProfessionalColor } from '@/utils/styleChecks';
 
 type ResumeUpdater = (
   updater: (resume: Resume) => Resume,
@@ -69,9 +70,11 @@ const SECTION_TYPES: SectionType[] = [
   'publications',
   'summary',
   'custom',
+  'page-break',
 ];
 
 const QUICK_SECTION_TYPES: SectionType[] = [
+  'summary',
   'education',
   'experience',
   'projects',
@@ -566,7 +569,8 @@ function AppearanceControls({
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
-  const pageUsage = estimatePageUsage(resume);
+  const pageStats = estimatePageStats(resume);
+  const pageUsage = pageStats.percent;
   const contrast = contrastRatio(resume.styles.colors.body, '#ffffff');
   const hasAtsColorWarning = !isDarkProfessionalColor(resume.styles.colors.body);
 
@@ -613,7 +617,7 @@ function AppearanceControls({
           <div className="mb-1 flex items-center justify-between text-xs">
             <span className="font-medium text-ink-muted">{t('editor.pageUsage')}</span>
             <span className={pageUsage > 100 ? 'text-danger' : pageUsage >= 90 ? 'text-warn' : 'text-ok'}>
-              {pageUsage}%
+              {pageUsage}% · {t('editor.pageCountEstimate', { count: pageStats.estimatedPages, defaultValue: '~{{count}} pg' })}
             </span>
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-paper-edge">
@@ -1001,6 +1005,8 @@ function SectionEditor({
             />
           ) : content === 'text' ? (
             <TextBlockEditor section={section} updateSection={patchSection} />
+          ) : content === 'page-break' ? (
+            <PageBreakEditor />
           ) : content === 'bullets' ? (
             <BulletListEditor section={section} updateSection={patchSection} />
           ) : (
@@ -1506,13 +1512,50 @@ function TextBlockEditor({
   };
 
   return (
-    <Field label={t('editor.text')}>
-      <textarea
-        value={entry.title ?? ''}
-        onChange={(e) => ensureEntry({ title: e.target.value })}
-        className="input min-h-28 resize-y"
-      />
-    </Field>
+    <div className="space-y-2">
+      {section.type === 'summary' && (
+        <div className="flex flex-wrap gap-1.5">
+          {SUMMARY_PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              className="rounded-md border border-paper-edge bg-paper px-2 py-1 text-[10px] text-ink-muted hover:border-accent hover:text-accent"
+              onClick={() => ensureEntry({ title: preset.text })}
+            >
+              {t(preset.labelKey, { defaultValue: preset.defaultLabel })}
+            </button>
+          ))}
+        </div>
+      )}
+      {section.type === 'summary' && (
+        <p className="text-[11px] text-ink-subtle">
+          {t('editor.summaryHint', {
+            defaultValue:
+              'A short paragraph at the top of your resume. Hide the section or use “Hide section header” in overrides if you prefer no title.',
+          })}
+        </p>
+      )}
+      <Field label={t('editor.text')}>
+        <textarea
+          value={entry.title ?? ''}
+          onChange={(e) => ensureEntry({ title: e.target.value })}
+          className="input min-h-28 resize-y"
+          placeholder={section.type === 'summary' ? t('editor.summaryPlaceholder', { defaultValue: '2–4 sentences highlighting your experience and goals…' }) : undefined}
+        />
+      </Field>
+    </div>
+  );
+}
+
+function PageBreakEditor() {
+  const { t } = useTranslation();
+  return (
+    <p className="rounded-md border border-dashed border-paper-edge bg-paper px-3 py-2 text-[11px] text-ink-subtle">
+      {t('editor.pageBreakHint', {
+        defaultValue:
+          'Forces a new page in PDF and Word export. Visible as a dashed line in the preview.',
+      })}
+    </p>
   );
 }
 
@@ -2120,7 +2163,8 @@ function defaultLayoutForSection(type: SectionType): SectionLayout {
   return 'entry-based';
 }
 
-function sectionContentKind(section: Section): 'entries' | 'skills' | 'text' | 'bullets' {
+function sectionContentKind(section: Section): 'entries' | 'skills' | 'text' | 'bullets' | 'page-break' {
+  if (section.type === 'page-break') return 'page-break';
   if (section.type === 'skills' || section.layout === 'skills-grid') return 'skills';
   if (section.type === 'summary' || section.layout === 'text-block') return 'text';
   if (section.layout === 'bullet-list') return 'bullets';

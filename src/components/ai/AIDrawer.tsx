@@ -3,7 +3,7 @@ import { AlertTriangle, Check, Copy, KeyRound, Languages, Search, Settings, Spar
 import { useTranslation } from 'react-i18next';
 import { checkGrammar, type GrammarHit } from '@/utils/grammar';
 import { useStore } from '@/store';
-import { makeId } from '@/utils/id';
+import { upsertSummarySection } from '@/utils/summarySection';
 import {
   ACTION_VERBS,
   analyzeBullets,
@@ -123,34 +123,10 @@ export function AIDrawer() {
   const summaryText = cloudSummary || (resume ? generateSummary(resume) : '');
   const addSummary = () => {
     if (!resume || !summaryText) return;
-    updateResume((current) => {
-      const existing = current.sections.find((s) => s.type === 'summary');
-      if (existing) {
-        return {
-          ...current,
-          sections: current.sections.map((s) =>
-            s.id === existing.id
-              ? { ...s, entries: [{ id: existing.entries[0]?.id ?? makeId(), title: summaryText }] }
-              : s,
-          ),
-        };
-      }
-      return {
-        ...current,
-        sections: [
-          {
-            id: makeId(),
-            type: 'summary',
-            title: t('editor.sectionSummary'),
-            visible: true,
-            order: 0,
-            layout: 'text-block',
-            entries: [{ id: makeId(), title: summaryText }],
-          },
-          ...current.sections.map((s) => ({ ...s, order: s.order + 1 })),
-        ],
-      };
-    });
+    updateResume((current) => ({
+      ...current,
+      sections: upsertSummarySection(current.sections, summaryText, t('editor.sectionSummary')),
+    }));
     toast(t('ai.summaryAdded'), { tone: 'success', ttl: 1800 });
   };
 

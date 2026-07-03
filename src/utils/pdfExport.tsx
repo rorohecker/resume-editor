@@ -15,6 +15,11 @@ import {
   titleForPreview,
   visibleCustomFieldRows,
 } from './resumeComposition';
+import {
+  headerAlignFor,
+  splitSectionsForLayout,
+  templateFeatures,
+} from './templateFeatures';
 
 const IN = 72;
 
@@ -41,22 +46,57 @@ export async function renderResumePdfBlob(resume: Resume): Promise<Blob> {
 function ResumePdfDocument({ resume }: { resume: Resume }) {
   const pdfStyles = createPdfStyles(resume);
   const visible = visibleSections(resume);
+  const layout = splitSectionsForLayout(resume, visible);
+  const features = templateFeatures(resume.template);
+
+  const renderPdfSection = (section: Section) =>
+    section.type === 'page-break' ? (
+      <View key={section.id} break style={pdfStyles.pageBreak} />
+    ) : (
+      <SectionBlock key={section.id} section={section} resume={resume} pdfStyles={pdfStyles} />
+    );
 
   return (
     <Document title={resume.header.name || resume.name || 'Resume'}>
       <Page size={PAGE_SIZES[resume.styles.paperSize]} style={pdfStyles.page}>
         <Header resume={resume} pdfStyles={pdfStyles} />
-        {visible.map((section) =>
-          section.type === 'page-break' ? (
-            <View key={section.id} break style={pdfStyles.pageBreak} />
-          ) : (
-            <SectionBlock
-              key={section.id}
-              section={section}
-              resume={resume}
-              pdfStyles={pdfStyles}
-            />
-          ),
+        {layout.single.length > 0
+          ? layout.single.map(renderPdfSection)
+          : (
+            <>
+              {layout.fullWidth.map(renderPdfSection)}
+              {(layout.left.length > 0 || layout.right.length > 0) && (
+                <View style={pdfStyles.twoColumnRow}>
+                  <View style={pdfStyles.leftColumn}>{layout.left.map(renderPdfSection)}</View>
+                  <View style={pdfStyles.rightColumn}>{layout.right.map(renderPdfSection)}</View>
+                </View>
+              )}
+            </>
+          )}
+        {resume.styles.pageNumbers && (
+          <Text
+            style={pdfStyles.pageNumber}
+            fixed
+            render={({ pageNumber, totalPages }) =>
+              totalPages > 1 ? String(pageNumber) : ''
+            }
+          />
+        )}
+        {features.repeatHeaderOnPages && (
+          <Text
+            style={pdfStyles.compactHeaderLine}
+            fixed
+            render={({ pageNumber }) => {
+              if (pageNumber <= 1) return '';
+              const name = resume.header.name || resume.name || 'Resume';
+              const contacts = resume.header.contactFields
+                .filter((field) => field.visible && field.value.trim())
+                .sort((a, b) => a.order - b.order)
+                .map((field) => displayContactValue(field.type, field.value.trim()))
+                .join(` ${separatorText(resume.header.separatorStyle)} `);
+              return contacts ? `${name}  ${separatorText(resume.header.separatorStyle)}  ${contacts}` : name;
+            }}
+          />
         )}
       </Page>
     </Document>
@@ -66,19 +106,25 @@ function ResumePdfDocument({ resume }: { resume: Resume }) {
 function Header({
   resume,
   pdfStyles,
+  compact = false,
 }: {
   resume: Resume;
   pdfStyles: ReturnType<typeof createPdfStyles>;
+  compact?: boolean;
 }) {
   const fields = resume.header.contactFields
     .filter((field) => field.visible && field.value.trim())
     .sort((a, b) => a.order - b.order);
+  const alignStyle =
+    headerAlignFor(resume) === 'left' ? pdfStyles.headerLeft : pdfStyles.headerCenter;
 
   return (
-    <View style={resume.template === 'cs-swe' ? pdfStyles.headerLeft : pdfStyles.headerCenter}>
-      <Text style={pdfStyles.name}>{resume.header.name || resume.name || 'Resume'}</Text>
+    <View style={alignStyle}>
+      <Text style={compact ? pdfStyles.compactName : pdfStyles.name}>
+        {resume.header.name || resume.name || 'Resume'}
+      </Text>
       {fields.length > 0 && (
-        <Text style={pdfStyles.contactLine}>
+        <Text style={compact ? pdfStyles.compactContactLine : pdfStyles.contactLine}>
           {fields.map((field, index) => {
             const value = displayContactValue(field.type, field.value.trim());
             const prefix = index > 0 ? ` ${separatorText(resume.header.separatorStyle)} ` : '';
@@ -127,15 +173,21 @@ function SectionBlock({
         },
       ]}
     >
-      <Text
-        style={[
-          pdfStyles.sectionTitle,
-          { color: overrides.sectionHeaderColor ?? resume.styles.colors.sectionHeader },
-        ]}
-      >
-        {title}
-      </Text>
-      {!overrides.hideRule && <SectionRule rule={resume.styles.ruleStyle} color={resume.styles.colors.sectionRule} />}
+      {!overrides.hideHeader && (
+        <>
+          <Text
+            style={[
+              pdfStyles.sectionTitle,
+              { color: overrides.sectionHeaderColor ?? resume.styles.colors.sectionHeader },
+            ]}
+          >
+            {title}
+          </Text>
+          {!overrides.hideRule && (
+            <SectionRule rule={resume.styles.ruleStyle} color={resume.styles.colors.sectionRule} />
+          )}
+        </>
+      )}
       {renderSectionContent(section, resume, pdfStyles)}
     </View>
   );
@@ -556,6 +608,56 @@ function createPdfStyles(resume: Resume) {
     },
     pageBreak: {
       height: 0,
+    },
+    pageNumber: {
+      position: 'absolute',
+      bottom: 18,
+      left: 0,
+      right: 0,
+      textAlign: 'center',
+      fontSize: 9,
+      color: styles.colors.body,
+    },
+    compactHeaderLine: {
+      position: 'absolute',
+      top: 14,
+      left: styles.margins.left * IN,
+      right: styles.margins.right * IN,
+      textAlign: headerAlignFor(resume) === 'left' ? 'left' : 'center',
+      fontSize: styles.fontSize.contactLine * 0.85,
+      color: styles.colors.body,
+    },
+    compactHeaderWrap: {
+      position: 'absolute',
+      top: 12,
+      left: styles.margins.left * IN,
+      right: styles.margins.right * IN,
+    },
+    compactName: {
+      color: styles.colors.name,
+      fontFamily,
+      fontSize: styles.fontSize.name * 0.72,
+      fontWeight: 700,
+      lineHeight: 1.05,
+    },
+    compactContactLine: {
+      color: styles.colors.body,
+      fontSize: styles.fontSize.contactLine * 0.85,
+      lineHeight: 1.2,
+      marginTop: 2,
+    },
+    twoColumnRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+    },
+    leftColumn: {
+      width: '30%',
+      paddingRight: 12,
+    },
+    rightColumn: {
+      flexGrow: 1,
+      flexShrink: 1,
+      width: 0,
     },
     headerCenter: {
       textAlign: 'center',

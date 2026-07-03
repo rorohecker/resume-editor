@@ -20,7 +20,15 @@ import type {
 import { defaultLabelForContactType } from '@/utils/contactIcon';
 import { makeId } from '@/utils/id';
 
-const TEMPLATE_IDS: TemplateId[] = ['mccombs', 'natural-sciences', 'cs-swe', 'general', 'blank'];
+const TEMPLATE_IDS: TemplateId[] = [
+  'mccombs',
+  'natural-sciences',
+  'cs-swe',
+  'general',
+  'professional-multipage',
+  'sidebar-professional',
+  'blank',
+];
 const SECTION_TYPES: SectionType[] = [
   'experience',
   'education',
@@ -171,6 +179,10 @@ function normalizeSection(input: unknown, order: number): Section | null {
     entries: entries as Entry[],
     layout,
     styleOverrides: normalizeStyleOverrides(input.styleOverrides),
+    column:
+      input.column === 'left' || input.column === 'right'
+        ? (input.column as Section['column'])
+        : undefined,
   };
 }
 
@@ -180,6 +192,7 @@ function normalizeStyleOverrides(input: unknown): Section['styleOverrides'] {
   if (typeof input.spaceAbove === 'number') result.spaceAbove = clamp(input.spaceAbove, 0, 32);
   if (typeof input.entrySpacing === 'number') result.entrySpacing = clamp(input.entrySpacing, 0, 16);
   if (typeof input.hideRule === 'boolean') result.hideRule = input.hideRule;
+  if (typeof input.hideHeader === 'boolean') result.hideHeader = input.hideHeader;
   if (typeof input.uppercaseTitle === 'boolean') result.uppercaseTitle = input.uppercaseTitle;
   if (typeof input.bodyColor === 'string' && /^#[0-9a-f]{6}$/i.test(input.bodyColor))
     result.bodyColor = input.bodyColor;

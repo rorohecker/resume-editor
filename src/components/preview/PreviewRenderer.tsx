@@ -1,9 +1,14 @@
-import { memo } from 'react';
+import { memo, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Bullet, ContactField, Entry, Resume, RuleStyle, Section } from '@/types';
 import { formatDateRange } from '@/utils/dateFormat';
 import { displayContactValue } from '@/utils/contactIcon';
 import { resumeForPagedExport } from '@/utils/resumeLayout';
+import {
+  headerAlignFor,
+  splitSectionsForLayout,
+  templateFeatures,
+} from '@/utils/templateFeatures';
 import { useStore } from '@/store';
 
 const PT_TO_PX = 96 / 72;
@@ -37,6 +42,54 @@ export function PreviewRenderer({
   // page break line where content overflows the printable area.
   const usableHeightPx =
     (PAGE_HEIGHT_IN[styles.paperSize] - styles.margins.top - styles.margins.bottom) * 96;
+  const marginTopPx = styles.margins.top * 96;
+  const layout = splitSectionsForLayout(displayResume, visibleSections);
+  const features = templateFeatures(displayResume.template);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [breakPositions, setBreakPositions] = useState<number[]>([]);
+
+  useLayoutEffect(() => {
+    if (!showPageBreaks || !contentRef.current) {
+      setBreakPositions([]);
+      return;
+    }
+    const root = contentRef.current;
+    const blocks = root.querySelectorAll<HTMLElement>('[data-page-block]');
+    const positions: number[] = [];
+    let pageBottom = marginTopPx + usableHeightPx;
+
+    blocks.forEach((block) => {
+      if (block.dataset.pageBreak === 'force') {
+        const top = block.offsetTop;
+        if (top > pageBottom - 4) {
+          positions.push(pageBottom);
+          pageBottom = top + usableHeightPx;
+        } else {
+          positions.push(pageBottom);
+          pageBottom += usableHeightPx;
+        }
+        return;
+      }
+
+      const top = block.offsetTop;
+      const bottom = top + block.offsetHeight;
+      if (bottom > pageBottom && top > marginTopPx + 8) {
+        positions.push(pageBottom);
+        pageBottom = top + usableHeightPx;
+      }
+    });
+
+    setBreakPositions(positions);
+  }, [displayResume, showPageBreaks, usableHeightPx, marginTopPx, visibleSections.length]);
+
+  const renderSection = (section: Section) => (
+    <SectionBlock
+      key={section.id}
+      section={section}
+      resume={displayResume}
+      interactive={interactive}
+    />
+  );
 
   return (
     <div
@@ -53,72 +106,112 @@ export function PreviewRenderer({
       }}
     >
       {showPageBreaks && (
-        <PageBreakOverlay usableHeightPx={usableHeightPx} marginTopPx={styles.margins.top * 96} />
+        <PageBreakOverlay
+          breakPositions={breakPositions}
+          resume={displayResume}
+          repeatHeader={features.repeatHeaderOnPages}
+        />
       )}
 
-      <Header header={header} resume={displayResume} />
+      <div ref={contentRef}>
+        <div data-page-block>
+          <Header header={header} resume={displayResume} compact={false} />
+        </div>
 
-      {visibleSections.length === 0 ? (
-        <EmptyResumeHint />
-      ) : (
-        visibleSections.map((section) => (
-          <SectionBlock
-            key={section.id}
-            section={section}
-            resume={displayResume}
-            interactive={interactive}
-          />
-        ))
-      )}
+        {visibleSections.length === 0 ? (
+          <EmptyResumeHint />
+        ) : layout.single.length > 0 ? (
+          layout.single.map(renderSection)
+        ) : (
+          <>
+            {layout.fullWidth.map(renderSection)}
+            {(layout.left.length > 0 || layout.right.length > 0) && (
+              <div
+                data-page-block
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'minmax(0, 30%) minmax(0, 1fr)',
+                  gap: pt(12),
+                  alignItems: 'start',
+                }}
+              >
+                <div>{layout.left.map(renderSection)}</div>
+                <div>{layout.right.map(renderSection)}</div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
 
-// Renders horizontal dashed lines at predicted page-break positions so users
-// know where the printed PDF will paginate.
+// Renders horizontal dashed lines at measured page-break positions.
 function PageBreakOverlay({
-  usableHeightPx,
-  marginTopPx,
+  breakPositions,
+  resume,
+  repeatHeader,
 }: {
-  usableHeightPx: number;
-  marginTopPx: number;
+  breakPositions: number[];
+  resume: Resume;
+  repeatHeader: boolean;
 }) {
-  if (usableHeightPx <= 0) return null;
-  // Render up to 4 break indicators (rare for resumes to exceed 4 pages).
-  const lines = [1, 2, 3, 4].map((n) => marginTopPx + usableHeightPx * n);
+  if (breakPositions.length === 0) return null;
+
   return (
     <>
-      {lines.map((top) => (
-        <div
-          key={top}
-          aria-hidden
-          style={{
-            position: 'absolute',
-            top,
-            left: 0,
-            right: 0,
-            borderTop: '1px dashed rgba(0,0,0,0.25)',
-            pointerEvents: 'none',
-            zIndex: 2,
-          }}
-        />
+      {breakPositions.map((top, index) => (
+        <div key={`${top}-${index}`} aria-hidden style={{ pointerEvents: 'none' }}>
+          <div
+            style={{
+              position: 'absolute',
+              top,
+              left: 0,
+              right: 0,
+              borderTop: '1px dashed rgba(0,0,0,0.25)',
+              zIndex: 2,
+            }}
+          />
+          {repeatHeader && (
+            <div
+              style={{
+                position: 'absolute',
+                top: top + 6,
+                left: 0,
+                right: 0,
+                zIndex: 2,
+                opacity: 0.55,
+              }}
+            >
+              <Header header={resume.header} resume={resume} compact />
+            </div>
+          )}
+        </div>
       ))}
     </>
   );
 }
 
-function Header({ header, resume }: { header: Resume['header']; resume: Resume }) {
+function Header({
+  header,
+  resume,
+  compact = false,
+}: {
+  header: Resume['header'];
+  resume: Resume;
+  compact?: boolean;
+}) {
   const { t } = useTranslation();
   const { styles } = resume;
   const visibleFields = header.contactFields
-    .filter((field) => field.visible)
+    .filter((field) => field.visible && (compact ? field.value.trim() : true))
     .sort((a, b) => a.order - b.order);
 
   return (
-    <header className={resume.template === 'cs-swe' ? 'text-left' : 'text-center'}>
+    <header className={headerAlignFor(resume) === 'left' ? 'text-left' : 'text-center'}>
       <div
         style={{
-          fontSize: pt(styles.fontSize.name),
+          fontSize: pt(compact ? styles.fontSize.name * 0.72 : styles.fontSize.name),
           fontWeight: 700,
           color: styles.colors.name,
           letterSpacing: 0,
@@ -130,8 +223,8 @@ function Header({ header, resume }: { header: Resume['header']; resume: Resume }
       {visibleFields.length > 0 && (
         <div
           style={{
-            fontSize: pt(styles.fontSize.contactLine),
-            marginTop: pt(4),
+            fontSize: pt(compact ? styles.fontSize.contactLine * 0.85 : styles.fontSize.contactLine),
+            marginTop: pt(compact ? 2 : 4),
             color: styles.colors.body,
           }}
         >
@@ -219,6 +312,8 @@ const SectionBlock = memo(function SectionBlockInner({
     return (
       <div
         aria-hidden
+        data-page-block
+        data-page-break="force"
         className="page-break"
         style={{
           breakAfter: 'page',
@@ -235,18 +330,21 @@ const SectionBlock = memo(function SectionBlockInner({
   const o = section.styleOverrides ?? {};
   return (
     <section
+      data-page-block
       style={{
         marginTop: pt(o.spaceAbove ?? styles.spacing.section),
         color: o.bodyColor ?? undefined,
       }}
     >
-      <SectionHeader
-        title={section.title}
-        resume={resume}
-        overrides={o}
-        sectionId={section.id}
-        interactive={interactive}
-      />
+      {!o.hideHeader && (
+        <SectionHeader
+          title={section.title}
+          resume={resume}
+          overrides={o}
+          sectionId={section.id}
+          interactive={interactive}
+        />
+      )}
       <div>{renderSectionContent(section, resume)}</div>
     </section>
   );
@@ -289,7 +387,7 @@ function SkillsSection({ section, resume }: { section: Section; resume: Resume }
 function TextSection({ section }: { section: Section }) {
   const text = section.entries[0]?.title;
   if (!text) return null;
-  return <p style={{ margin: 0 }}>{text}</p>;
+  return <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{text}</p>;
 }
 
 const MCCOMBS_SWAP_BOLD: Section['type'][] = ['experience', 'leadership', 'research'];

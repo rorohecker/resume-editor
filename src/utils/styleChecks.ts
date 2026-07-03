@@ -1,9 +1,96 @@
 import type { Resume } from '@/types';
+import { resumeForPagedExport } from './resumeLayout';
+import { stripHtml } from './resumeText';
 
 const PAGE_HEIGHT_IN = {
   letter: 11,
   a4: 11.69,
 };
+
+const PAGE_WIDTH_IN = {
+  letter: 8.5,
+  a4: 8.27,
+};
+
+export interface PageUsageStats {
+  percent: number;
+  estimatedPages: number;
+}
+
+export function estimatePageUsage(resume: Resume): number {
+  return estimatePageStats(resume).percent;
+}
+
+export function estimatePageStats(resume: Resume): PageUsageStats {
+  const scaled = resume.styles.onePageMode ? resumeForPagedExport(resume) : resume;
+  const pageHeight = PAGE_HEIGHT_IN[scaled.styles.paperSize] * 72;
+  const verticalMargins = (scaled.styles.margins.top + scaled.styles.margins.bottom) * 72;
+  const usable = Math.max(1, pageHeight - verticalMargins);
+  const horizontalMargins = (scaled.styles.margins.left + scaled.styles.margins.right) * 72;
+  const pageWidth = PAGE_WIDTH_IN[scaled.styles.paperSize] * 72;
+  const charsPerLine = Math.max(
+    40,
+    Math.floor((pageWidth - horizontalMargins) / (scaled.styles.fontSize.body * 0.52)),
+  );
+
+  const body = scaled.styles.fontSize.body;
+  const line = body * scaled.styles.spacing.bullet;
+  let used = scaled.styles.fontSize.name + scaled.styles.fontSize.contactLine + 14;
+  let forcedPages = 1;
+
+  for (const section of scaled.sections.filter((item) => item.visible)) {
+    if (section.type === 'page-break') {
+      forcedPages += 1;
+      used = verticalMargins + scaled.styles.fontSize.name * 0.6;
+      continue;
+    }
+
+    const headerCost =
+      section.styleOverrides?.hideHeader
+        ? 0
+        : scaled.styles.spacing.section + scaled.styles.fontSize.sectionHeader + 6;
+    used += headerCost;
+
+    if (section.type === 'skills' || section.layout === 'skills-grid') {
+      used += Math.max(1, section.entries.filter((e) => e.visible !== false).length) * line;
+      continue;
+    }
+
+    if (section.type === 'summary' || section.layout === 'text-block') {
+      const text = section.entries[0]?.title ?? '';
+      const lines = text.split('\n').reduce(
+        (sum, row) => sum + Math.max(1, Math.ceil(row.length / charsPerLine)),
+        0,
+      );
+      used += Math.max(lines, text.trim() ? 1 : 0) * line;
+      continue;
+    }
+
+    for (const entry of section.entries) {
+      if (entry.visible === false) continue;
+      used += scaled.styles.fontSize.entryTitle + scaled.styles.spacing.entry;
+      if (entry.subtitle?.trim()) used += line;
+      if (entry.location?.trim()) used += line * 0.85;
+      used += visibleCustomFieldLines(entry) * line * 0.9;
+      for (const bullet of entry.bullets ?? []) {
+        if (!bullet.visible) continue;
+        const plain = stripHtml(bullet.content);
+        used += Math.max(1, Math.ceil(plain.length / charsPerLine)) * line;
+      }
+    }
+  }
+
+  const flowPages = Math.max(1, Math.ceil(used / usable));
+  const estimatedPages = Math.max(forcedPages, flowPages);
+  const percent = Math.round((used / usable) * 100);
+
+  return { percent, estimatedPages };
+}
+
+function visibleCustomFieldLines(entry: { customFields?: Record<string, string> }): number {
+  if (!entry.customFields) return 0;
+  return Object.values(entry.customFields).filter((value) => value.trim()).length;
+}
 
 export function contrastRatio(hexA: string, hexB: string): number {
   const a = relativeLuminance(hexToRgb(hexA));
@@ -16,34 +103,6 @@ export function contrastRatio(hexA: string, hexB: string): number {
 export function isDarkProfessionalColor(hex: string): boolean {
   const { r, g, b } = hexToRgb(hex);
   return (r + g + b) / 3 < 85;
-}
-
-export function estimatePageUsage(resume: Resume): number {
-  const pageHeight = PAGE_HEIGHT_IN[resume.styles.paperSize] * 72;
-  const verticalMargins = (resume.styles.margins.top + resume.styles.margins.bottom) * 72;
-  const usable = Math.max(1, pageHeight - verticalMargins);
-  const body = resume.styles.fontSize.body;
-  const line = body * resume.styles.spacing.bullet;
-  let used = resume.styles.fontSize.name + resume.styles.fontSize.contactLine + 12;
-
-  for (const section of resume.sections.filter((item) => item.visible)) {
-    used += resume.styles.spacing.section + resume.styles.fontSize.sectionHeader + 5;
-    if (section.type === 'skills' || section.layout === 'skills-grid') {
-      used += Math.max(1, section.entries.length) * line;
-      continue;
-    }
-    if (section.type === 'summary' || section.layout === 'text-block') {
-      used += Math.max(1, Math.ceil((section.entries[0]?.title?.length ?? 0) / 95)) * line;
-      continue;
-    }
-    for (const entry of section.entries) {
-      used += resume.styles.fontSize.entryTitle + resume.styles.spacing.entry;
-      used += (entry.subtitle || entry.location ? line : 0);
-      used += (entry.bullets ?? []).filter((bullet) => bullet.visible).length * line;
-    }
-  }
-
-  return Math.round((used / usable) * 100);
 }
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } {

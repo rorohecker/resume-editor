@@ -14,6 +14,7 @@ import { useStore } from '@/store';
 import {
   downloadArtifact,
   generateExportArtifact,
+  renderPdfBlob,
   renderPdfBlobToImages,
   renderResumePreviewDataUrl,
   type ExportArtifact,
@@ -107,6 +108,15 @@ export function ExportModal() {
       } else if (format === 'png') {
         url = URL.createObjectURL(artifact.blob);
         urlsRef.current.push(url);
+        try {
+          const pdfBlob = await renderPdfBlob(resume);
+          const rendered = await renderPdfBlobToImages(pdfBlob, { maxPages: 10 });
+          images = rendered.images.length > 0 ? rendered.images : [url];
+          totalPages = rendered.totalPages;
+        } catch (renderErr) {
+          console.warn('[ExportModal] PNG page preview failed, using single image:', renderErr);
+          images = [url];
+        }
       } else if (format === 'pdf') {
         // Render the PDF to page images so the preview works under file://,
         // where browsers refuse to render blob-URL PDFs inside an iframe.

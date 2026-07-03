@@ -5,6 +5,8 @@ export type TemplateId =
   | 'natural-sciences'
   | 'cs-swe'
   | 'general'
+  | 'professional-multipage'
+  | 'sidebar-professional'
   | 'blank';
 
 export type SectionType =
@@ -109,10 +111,13 @@ export interface SectionStyleOverrides {
   spaceAbove?: number; // pt — overrides ResumeStyles.spacing.section
   entrySpacing?: number; // pt — overrides ResumeStyles.spacing.entry
   hideRule?: boolean; // hide the rule under this section's header
+  hideHeader?: boolean; // hide the section title (e.g. headerless summary at top)
   uppercaseTitle?: boolean; // override default uppercase formatting (true/false)
   bodyColor?: string; // hex — overrides ResumeStyles.colors.body for this section
   sectionHeaderColor?: string; // hex — overrides sectionHeader color
 }
+
+export type SectionColumn = 'left' | 'right';
 
 export interface Section {
   id: string;
@@ -123,6 +128,8 @@ export interface Section {
   entries: Entry[];
   layout: SectionLayout;
   styleOverrides?: SectionStyleOverrides;
+  /** Sidebar two-column templates: which column this section renders in. */
+  column?: SectionColumn;
 }
 
 export interface FontSizeConfig {

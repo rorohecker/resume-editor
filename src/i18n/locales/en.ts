@@ -57,6 +57,18 @@ export default {
       tagline: 'Balanced · Any major',
       description: 'Neutral, balanced layout. Works for any major or early-career path.',
     },
+    'professional-multipage': {
+      name: 'Professional (Multi-page)',
+      tagline: '2-page · Summary optional',
+      description:
+        'Optional summary at the top, experience-first order, page numbers on by default. Add page breaks to control layout.',
+    },
+    'sidebar-professional': {
+      name: 'Sidebar Professional',
+      tagline: 'Two-column · Skills sidebar',
+      description:
+        'Skills and education in a left sidebar; experience and projects on the right. Optional headerless summary at the top.',
+    },
     blank: {
       name: 'Blank Canvas',
       tagline: 'Start from scratch',
@@ -179,7 +191,13 @@ export default {
     paperLetter: 'US Letter',
     paperA4: 'A4',
     onePageMode: 'One-page mode',
+    pageCountEstimate: '~{{count}} pg',
     pageNumbers: 'Show page numbers when content exceeds one page',
+    summaryPresetStudent: 'Student / new grad',
+    summaryPresetSwe: 'Software engineer',
+    summaryPresetBusiness: 'Business / consulting',
+    summaryPresetResearch: 'Research / academic',
+    summaryPresetCareerChange: 'Career change',
     untitledSection: 'Untitled Section',
     toggleSection: 'Toggle {{title}}',
     quickAdd: 'Quick add',
@@ -213,6 +231,7 @@ export default {
     spaceAboveLabel: 'Space above (default {{n}}pt)',
     entrySpacingLabel: 'Entry spacing (default {{n}}pt)',
     hideRule: 'Hide rule under header',
+    hideHeader: 'Hide section header',
     sectionTitleUppercase: 'Section title uppercase',
     bodyTextOverride: 'Body text',
     sectionHeaderOverride: 'Section header',
@@ -329,6 +348,11 @@ export default {
     sectionCertifications: 'Certifications',
     sectionPublications: 'Publications',
     sectionSummary: 'Summary',
+    summaryHint:
+      'A short paragraph at the top of your resume. Hide the section or use “Hide section header” in overrides if you prefer no title.',
+    summaryPlaceholder: '2–4 sentences highlighting your experience and goals…',
+    pageBreakHint:
+      'Forces a new page in PDF and Word export. Visible as a dashed line in the preview.',
     sectionCustom: 'Custom Section',
     copySuffix: '{{title}} Copy',
     emailWarning: 'Email format looks off.',

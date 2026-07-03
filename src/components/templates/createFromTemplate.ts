@@ -1,12 +1,33 @@
-import type { Entry, Resume, SectionType, TemplateId } from '@/types';
+import type { Entry, Resume, SectionLayout, SectionType, TemplateId } from '@/types';
 import { makeId } from '@/utils/id';
 import { defaultLabelForContactType } from '@/utils/contactIcon';
 import { getTemplate } from './registry';
+
+function layoutForSection(type: SectionType): SectionLayout {
+  if (type === 'skills') return 'skills-grid';
+  if (type === 'summary') return 'text-block';
+  return 'entry-based';
+}
+
+function emptySummaryEntry(): Entry {
+  return {
+    id: makeId(),
+    title: '',
+    subtitle: '',
+    location: '',
+    startDate: '',
+    endDate: '',
+    bullets: [],
+  };
+}
 
 // Pre-seeded entries for templates that have a sensible default starting point.
 // Today only McCombs seeds an Education entry with the Undeclared Business
 // track so new students don't stare at an empty section.
 function seedEntriesFor(templateId: TemplateId, sectionType: SectionType): Entry[] {
+  if (sectionType === 'summary') {
+    return [emptySummaryEntry()];
+  }
   if (templateId === 'mccombs' && sectionType === 'education') {
     return [
       {
@@ -56,7 +77,9 @@ export function createResumeFromTemplate(templateId: TemplateId): Resume {
       title: seed.title,
       visible: true,
       order: i,
-      layout: seed.type === 'skills' ? 'skills-grid' : 'entry-based',
+      layout: layoutForSection(seed.type),
+      styleOverrides: seed.styleOverrides,
+      column: seed.column,
       entries: seedEntriesFor(templateId, seed.type),
     })),
     styles: tpl.styles,
@@ -78,6 +101,7 @@ export function applyTemplate(resume: Resume, templateId: TemplateId): Resume {
     if (ai === -1 && bi === -1) return a.order - b.order;
     if (ai === -1) return 1;
     if (bi === -1) return -1;
+    if (ai === bi) return a.order - b.order;
     return ai - bi;
   });
 

@@ -6,6 +6,7 @@ import { formatDateRange } from './dateFormat';
 import { resumeToPlainText, stripHtml } from './resumeText';
 import { displayContactValue } from './contactIcon';
 import { resumeForPagedExport } from './resumeLayout';
+import { headerAlignFor } from './templateFeatures';
 import {
   labelFromKey,
   mccombsSwapBold,
@@ -24,6 +25,7 @@ export interface ExportArtifact {
   blob: Blob;
   filename: string;
   mimeType: string;
+  extraDownloads?: { blob: Blob; filename: string; mimeType: string }[];
 }
 
 // Generates the export blob WITHOUT downloading. Used by the ExportModal's
@@ -58,8 +60,7 @@ export async function generateExportArtifact(
       return { blob, filename: `${base}.json`, mimeType: 'application/json;charset=utf-8' };
     }
     case 'png': {
-      const blob = await renderPngBlob(resume);
-      return { blob, filename: `${base}.png`, mimeType: 'image/png' };
+      return renderPngArtifact(resume, base);
     }
   }
 }
@@ -68,6 +69,9 @@ export async function generateExportArtifact(
 // preview-confirm flow after the user clicks Confirm.
 export function downloadArtifact(artifact: ExportArtifact): void {
   downloadBlob(artifact.blob, artifact.filename, artifact.mimeType);
+  for (const extra of artifact.extraDownloads ?? []) {
+    downloadBlob(extra.blob, extra.filename, extra.mimeType);
+  }
 }
 
 export async function renderPdfBlob(resume: Resume): Promise<Blob> {
@@ -85,6 +89,7 @@ async function renderDocxBlob(resume: Resume): Promise<Blob> {
     HeadingLevel,
     LevelFormat,
     Packer,
+    PageBreak,
     PageOrientation,
     Paragraph,
     TabStopPosition,
@@ -115,7 +120,7 @@ async function renderDocxBlob(resume: Resume): Promise<Blob> {
 
   const children: (import('docx').Paragraph | import('docx').Table)[] = [
     new Paragraph({
-      alignment: layoutResume.template === 'cs-swe' ? AlignmentType.LEFT : AlignmentType.CENTER,
+      alignment: headerAlignFor(layoutResume) === 'left' ? AlignmentType.LEFT : AlignmentType.CENTER,
       spacing: { after: 0 },
       children: [
         new TextRun({
@@ -134,7 +139,7 @@ async function renderDocxBlob(resume: Resume): Promise<Blob> {
   if (contacts.length > 0) {
     children.push(
       new Paragraph({
-        alignment: layoutResume.template === 'cs-swe' ? AlignmentType.LEFT : AlignmentType.CENTER,
+        alignment: headerAlignFor(layoutResume) === 'left' ? AlignmentType.LEFT : AlignmentType.CENTER,
         spacing: { before: twipsFromPt(2), after: headerAfter },
         children: [
           new TextRun({
@@ -147,43 +152,59 @@ async function renderDocxBlob(resume: Resume): Promise<Blob> {
   }
 
   for (const section of visibleSections(layoutResume)) {
+    if (section.type === 'page-break') {
+      children.push(new Paragraph({ children: [new PageBreak()] }));
+      continue;
+    }
+
     const sectionChildren = sectionToDocx(section, layoutResume, docx, usableWidth);
     if (sectionChildren.length === 0) continue;
-    const hideRule =
-      section.styleOverrides?.hideRule || layoutResume.styles.ruleStyle.variant === 'none';
-    const ruleColor = (layoutResume.styles.colors.sectionRule || '#000000').replace('#', '');
-    const sectionBefore = twipsFromPt(
-      section.styleOverrides?.spaceAbove ?? layoutResume.styles.spacing.section,
-    );
-    children.push(
-      new Paragraph({
-        spacing: { before: sectionBefore, after: twipsFromPt(2) },
-        border: hideRule
-          ? undefined
-          : {
-              bottom: {
-                color: ruleColor,
-                space: 1,
-                style:
-                  layoutResume.styles.ruleStyle.variant === 'double'
-                    ? BorderStyle.DOUBLE
-                    : BorderStyle.SINGLE,
-                size: docxRuleSize(layoutResume),
+
+    if (!section.styleOverrides?.hideHeader) {
+      const hideRule =
+        section.styleOverrides?.hideRule || layoutResume.styles.ruleStyle.variant === 'none';
+      const ruleColor = (layoutResume.styles.colors.sectionRule || '#000000').replace('#', '');
+      const sectionBefore = twipsFromPt(
+        section.styleOverrides?.spaceAbove ?? layoutResume.styles.spacing.section,
+      );
+      children.push(
+        new Paragraph({
+          spacing: { before: sectionBefore, after: twipsFromPt(2) },
+          border: hideRule
+            ? undefined
+            : {
+                bottom: {
+                  color: ruleColor,
+                  space: 1,
+                  style:
+                    layoutResume.styles.ruleStyle.variant === 'double'
+                      ? BorderStyle.DOUBLE
+                      : BorderStyle.SINGLE,
+                  size: docxRuleSize(layoutResume),
+                },
               },
-            },
-        children: [
-          new TextRun({
-            text:
-              section.styleOverrides?.uppercaseTitle === false
-                ? section.title
-                : section.title.toUpperCase(),
-            bold: true,
-            size: Math.round(layoutResume.styles.fontSize.sectionHeader * 2),
-          }),
-        ],
-      }),
-      ...sectionChildren,
-    );
+          children: [
+            new TextRun({
+              text:
+                section.styleOverrides?.uppercaseTitle === false
+                  ? section.title
+                  : section.title.toUpperCase(),
+              bold: true,
+              size: Math.round(layoutResume.styles.fontSize.sectionHeader * 2),
+            }),
+          ],
+        }),
+      );
+    } else {
+      const sectionBefore = twipsFromPt(
+        section.styleOverrides?.spaceAbove ?? layoutResume.styles.spacing.section,
+      );
+      if (sectionBefore > 0) {
+        children.push(new Paragraph({ spacing: { before: sectionBefore } }));
+      }
+    }
+
+    children.push(...sectionChildren);
   }
 
   // Word merges two tables that touch with nothing between them. Entry headlines
@@ -249,6 +270,37 @@ async function renderDocxBlob(resume: Resume): Promise<Blob> {
   void TabStopPosition;
   void TabStopType;
   return blob;
+}
+
+async function renderPngArtifact(resume: Resume, base: string): Promise<ExportArtifact> {
+  try {
+    const pdfBlob = await renderPdfBlob(resume);
+    const { images } = await renderPdfBlobToImages(pdfBlob, { scale: 2, maxPages: 20 });
+    if (images.length > 0) {
+      const files = await Promise.all(
+        images.map(async (dataUrl, index) => {
+          const response = await fetch(dataUrl);
+          return {
+            blob: await response.blob(),
+            filename: `${base}_page_${index + 1}.png`,
+            mimeType: 'image/png',
+          };
+        }),
+      );
+      const [first, ...rest] = files;
+      return {
+        blob: first.blob,
+        filename: first.filename,
+        mimeType: first.mimeType,
+        extraDownloads: rest,
+      };
+    }
+  } catch (err) {
+    console.warn('[export] PDF-based PNG pages failed, falling back to single image:', err);
+  }
+
+  const blob = await renderPngBlob(resume);
+  return { blob, filename: `${base}.png`, mimeType: 'image/png' };
 }
 
 async function renderPngBlob(resume: Resume): Promise<Blob> {
