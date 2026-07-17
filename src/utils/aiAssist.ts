@@ -76,7 +76,7 @@ export type BulletSuggestion = 'actionVerb' | 'metric' | 'length';
 
 export interface WeakLanguageHit {
   phrase: string;
-  replacementOptions: string[];
+  replacementOptions: readonly string[];
   bulletLabel: string;
   content: string;
 }

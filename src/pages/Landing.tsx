@@ -451,7 +451,7 @@ function KanbanCard({ resume, onOpen }: { resume: Resume; onOpen: () => void }) 
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: resume.id,
   });
-  const style: CSSProperties = transform
+  const style: CSSProperties | undefined = transform
     ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
     : undefined;
 

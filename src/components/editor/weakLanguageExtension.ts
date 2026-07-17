@@ -1,6 +1,6 @@
 import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
-import { Decoration, Decoration } from '@tiptap/pm/view';
+import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { WEAK_LANGUAGE } from '@/utils/aiAssist';
 
 function escapeRegex(value: string): string {
@@ -33,13 +33,13 @@ export const WeakLanguageHighlight = Extension.create({
                     Decoration.inline(from, to, {
                       class: 'weak-language-mark',
                       'data-phrase': weak.phrase,
-                      title: `Weak phrasing: “${weak.phrase}” — click for stronger options`,
+                      title: `Weak phrasing: "${weak.phrase}" — click for stronger options`,
                     }),
                   );
                 }
               }
             });
-            return Decoration.create(state.doc, decorations);
+            return DecorationSet.create(state.doc, decorations);
           },
         },
       }),
