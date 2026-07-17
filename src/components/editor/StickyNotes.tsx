@@ -27,40 +27,74 @@ export function StickyNotes({ resumeId }: { resumeId: string }) {
   const [notes, setNotes] = useState<StickyNote[]>([]);
   const [storageError, setStorageError] = useState<string | null>(null);
   // Tracks which resume's notes are currently loaded, so a debounced save never
-  // writes a previous resume's notes under a freshly switched id.
+  // writes a previous resume's notes under a freshly switched id — and never
+  // after a failed load (which would wipe stored notes with []).
   const loadedFor = useRef<string | null>(null);
+  const notesRef = useRef<StickyNote[]>(notes);
+  const dirtyRef = useRef(false);
   const lastErrorToastAt = useRef(0);
+  notesRef.current = notes;
 
-  const notifyStickyError = useCallback(
-    (message: string) => {
-      setStorageError(message);
-      const now = Date.now();
-      if (now - lastErrorToastAt.current < 8000) return;
-      lastErrorToastAt.current = now;
-      void import('@/hooks/useToast').then(({ toast }) => {
-        toast(message, { tone: 'danger', ttl: 6000 });
-      });
+  const notifyStickyError = useCallback((message: string) => {
+    setStorageError(message);
+    const now = Date.now();
+    if (now - lastErrorToastAt.current < 8000) return;
+    lastErrorToastAt.current = now;
+    void import('@/hooks/useToast').then(({ toast }) => {
+      toast(message, { tone: 'danger', ttl: 6000 });
+    });
+  }, []);
+
+  const flushSave = useCallback(
+    (id: string, nextNotes: StickyNote[]) => {
+      if (loadedFor.current !== id) return;
+      dirtyRef.current = false;
+      void saveStickyNotes(id, nextNotes)
+        .then(() => setStorageError(null))
+        .catch(() => {
+          dirtyRef.current = true;
+          notifyStickyError(
+            t('stickyNotes.saveFailed', {
+              defaultValue: 'Could not save sticky notes. Changes may be lost.',
+            }),
+          );
+        });
     },
-    [],
+    [notifyStickyError, t],
   );
 
   useEffect(() => {
     let cancelled = false;
+    const previousId = loadedFor.current;
+    const previousNotes = notesRef.current;
+    const previousDirty = dirtyRef.current;
+
+    // Flush outgoing resume before switching so the debounce timer can't drop edits.
+    if (previousId && previousId !== resumeId && previousDirty) {
+      void saveStickyNotes(previousId, previousNotes).catch(() => {});
+    }
+
     loadedFor.current = null;
+    dirtyRef.current = false;
     setNotes([]);
     setStorageError(null);
+
     void loadStickyNotes(resumeId).then(({ notes: loaded, error }) => {
       if (cancelled) return;
-      setNotes(loaded);
-      loadedFor.current = resumeId;
       if (error) {
+        // Do NOT mark loadedFor or enable saves — empty notes must not overwrite IDB.
         notifyStickyError(
           t('stickyNotes.loadFailed', {
             defaultValue: 'Could not load sticky notes from browser storage.',
           }),
         );
+        return;
       }
+      setNotes(loaded);
+      loadedFor.current = resumeId;
+      dirtyRef.current = false;
     });
+
     return () => {
       cancelled = true;
     };
@@ -68,19 +102,27 @@ export function StickyNotes({ resumeId }: { resumeId: string }) {
 
   useEffect(() => {
     if (loadedFor.current !== resumeId) return;
-    const timer = setTimeout(() => {
-      void saveStickyNotes(resumeId, notes)
-        .then(() => setStorageError(null))
-        .catch(() => {
-          notifyStickyError(
-            t('stickyNotes.saveFailed', {
-              defaultValue: 'Could not save sticky notes. Changes may be lost.',
-            }),
-          );
-        });
-    }, 400);
+    dirtyRef.current = true;
+    const timer = setTimeout(() => flushSave(resumeId, notes), 400);
     return () => clearTimeout(timer);
-  }, [notes, resumeId, notifyStickyError, t]);
+  }, [notes, resumeId, flushSave]);
+
+  // Mirror resume persistence: flush pending sticky edits on tab close / hide.
+  useEffect(() => {
+    const flush = () => {
+      if (loadedFor.current !== resumeId || !dirtyRef.current) return;
+      dirtyRef.current = false;
+      // beforeunload cannot await; fire-and-forget is best-effort.
+      void saveStickyNotes(resumeId, notesRef.current).catch(() => {});
+    };
+    window.addEventListener('beforeunload', flush);
+    window.addEventListener('pagehide', flush);
+    return () => {
+      window.removeEventListener('beforeunload', flush);
+      window.removeEventListener('pagehide', flush);
+      flush();
+    };
+  }, [resumeId]);
 
   const updateNote = useCallback((id: string, patch: Partial<StickyNote>) => {
     setNotes((cur) => cur.map((n) => (n.id === id ? { ...n, ...patch } : n)));
@@ -136,10 +178,7 @@ export function StickyNotes({ resumeId }: { resumeId: string }) {
           ))}
           {storageError && (
             <div className="pointer-events-none absolute inset-x-0 top-16 flex justify-center px-4">
-              <p
-                className="rounded-md bg-red-700/90 px-3 py-1.5 text-xs text-white"
-                role="status"
-              >
+              <p className="rounded-md bg-red-700/90 px-3 py-1.5 text-xs text-white" role="status">
                 {storageError}
               </p>
             </div>

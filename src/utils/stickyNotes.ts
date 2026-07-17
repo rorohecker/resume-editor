@@ -1,11 +1,11 @@
-import { get as idbGet, set as idbSet, del as idbDel } from 'idb-keyval';
+import { get as idbGet, set as idbSet, del as idbDel, keys as idbKeys } from 'idb-keyval';
 import { makeId } from '@/utils/id';
 
 // Sticky notes are an editing scratchpad — reminders the user jots down while
 // working on a resume ("quantify this bullet", "ask manager for exact %", etc).
 // They are intentionally stored OUTSIDE the Resume document (a separate IDB key
 // per resume) so they never leak into exports, share links, PDF/DOCX output, or
-// version snapshots.
+// version snapshots — except full-app JSON backups, which include them.
 
 const STICKY_NOTES_PREFIX = 'sticky-notes:';
 
@@ -62,7 +62,13 @@ export async function loadStickyNotes(
 ): Promise<{ notes: StickyNote[]; error?: Error }> {
   try {
     const value = await idbGet<unknown>(STICKY_NOTES_PREFIX + resumeId);
-    if (!Array.isArray(value)) return { notes: [] };
+    if (value == null) return { notes: [] };
+    if (!Array.isArray(value)) {
+      return {
+        notes: [],
+        error: toError(null, 'Sticky notes data was corrupted in browser storage.'),
+      };
+    }
     return {
       notes: value.map(normalizeNote).filter((note): note is StickyNote => Boolean(note)),
     };
@@ -84,10 +90,35 @@ export async function saveStickyNotes(resumeId: string, notes: StickyNote[]): Pr
   }
 }
 
+export async function loadAllStickyNotes(): Promise<Record<string, StickyNote[]>> {
+  const out: Record<string, StickyNote[]> = {};
+  try {
+    const allKeys = await idbKeys();
+    for (const key of allKeys) {
+      if (typeof key !== 'string' || !key.startsWith(STICKY_NOTES_PREFIX)) continue;
+      const resumeId = key.slice(STICKY_NOTES_PREFIX.length);
+      const { notes, error } = await loadStickyNotes(resumeId);
+      if (!error && notes.length > 0) out[resumeId] = notes;
+    }
+  } catch (err) {
+    console.warn('Failed to enumerate sticky notes for backup', err);
+  }
+  return out;
+}
+
 export function deleteStickyNotes(resumeId: string): void {
   void idbDel(STICKY_NOTES_PREFIX + resumeId).catch((err) => {
     console.warn('Failed to delete sticky notes', err);
   });
+}
+
+export async function copyStickyNotes(fromResumeId: string, toResumeId: string): Promise<void> {
+  const { notes, error } = await loadStickyNotes(fromResumeId);
+  if (error || notes.length === 0) return;
+  await saveStickyNotes(
+    toResumeId,
+    notes.map((note) => ({ ...note, id: makeId() })),
+  );
 }
 
 export function createStickyNote(partial: Partial<StickyNote> = {}): StickyNote {

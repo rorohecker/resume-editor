@@ -24,6 +24,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Typecheck and test
+        run: npm run typecheck && npm test
       - name: Build hosted PWA
         env:
           # GitHub Pages serves from a repo subpath. Tell Vite about it so

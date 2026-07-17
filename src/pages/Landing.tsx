@@ -74,17 +74,19 @@ export function LandingPage() {
   };
 
   const exportBackup = () => {
-    const blob = new Blob([JSON.stringify(exportAllData(), null, 2)], {
-      type: 'application/json;charset=utf-8',
+    void exportAllData().then((data) => {
+      const blob = new Blob([JSON.stringify(data, null, 2)], {
+        type: 'application/json;charset=utf-8',
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `resume-editor-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+      recordBackup();
+      toast(t('landing.backupSaved'), { tone: 'success', ttl: 2000 });
     });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `resume-editor-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    link.click();
-    URL.revokeObjectURL(url);
-    recordBackup();
-    toast(t('landing.backupSaved'), { tone: 'success', ttl: 2000 });
   };
 
   const moveResumeStatus = (resumeId: string, status: ApplicationStatus) => {

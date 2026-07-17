@@ -240,4 +240,34 @@ describe('parseResumeText fixtures', () => {
       0,
     );
   });
+
+  it('splits single-comma role, company titles', () => {
+    const text = [
+      'Alex Rivera',
+      'alex@ex.com',
+      'EXPERIENCE',
+      'Software Engineer, Acme Corp',
+      '2022 - Present',
+      '- Shipped payments',
+    ].join('\n');
+    const result = parseResumeText(text);
+    const experience = result.resume.sections.find((s) => s.type === 'experience');
+    expect(experience?.entries[0]?.title).toMatch(/software engineer/i);
+    expect(experience?.entries[0]?.subtitle).toMatch(/acme/i);
+  });
+
+  it('keeps ALL-CAPS two-word custom headings', () => {
+    const text = [
+      'Alex Rivera',
+      'alex@ex.com',
+      'KEY ACHIEVEMENTS',
+      '- Grew revenue 40%',
+      'EXPERIENCE',
+      'Engineer — Co',
+      '2022 - Present',
+      '- Built APIs',
+    ].join('\n');
+    const result = parseResumeText(text);
+    expect(result.resume.sections.some((s) => /key achievements/i.test(s.title))).toBe(true);
+  });
 });

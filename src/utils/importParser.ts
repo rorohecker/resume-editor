@@ -365,7 +365,7 @@ function groupLinkedInSections(lines: string[]): SectionGroup[] {
       continue;
     }
     const fallback = detectHeading(line);
-    if (fallback && !current) {
+    if (fallback) {
       current = { title: fallback.title, type: fallback.type, lines: [] };
       groups.push(current);
       continue;
@@ -402,8 +402,9 @@ function detectHeading(line: string): { title: string; type: SectionType } | nul
     const words = trimmed.split(/\s+/).filter((w) => w !== '&' && w !== '/');
     // Job-title headlines (PRODUCT … EXECUTIVE) belong in summary preamble, not as sections.
     if (looksLikeJobTitleHeadline(trimmed)) return null;
-    // Unknown ALL-CAPS labels: 1–3 words (skip 2-word names like "ALEX RIVERA" via person check above).
-    if (isAllCaps && trimmed.length < 40 && (words.length === 1 || words.length >= 3) && words.length <= 4) {
+    // Unknown ALL-CAPS labels: allow 2–4 words (e.g. KEY ACHIEVEMENTS).
+    // 2-word Title Case names are already excluded by looksLikePersonName.
+    if (isAllCaps && trimmed.length < 40 && words.length >= 1 && words.length <= 4) {
       return { title: titleCase(trimmed), type: 'custom' };
     }
   }
@@ -709,6 +710,17 @@ function parseEntryHeader(
     parts = withoutDate.split(/\s+[-–—]\s+/).map((p) => p.trim()).filter(Boolean);
   } else if ((withoutDate.match(/,/g) ?? []).length >= 2) {
     parts = withoutDate.split(/,\s+/).map((p) => p.trim()).filter(Boolean);
+  } else if (
+    (type === 'experience' || type === 'education') &&
+    /^[^,]+,\s+[^,]+$/.test(withoutDate)
+  ) {
+    // "Software Engineer, Acme Corp" / "B.S. Computer Science, State U"
+    const [left, right] = withoutDate.split(/,\s+/);
+    if (left && right && !/^[A-Z]{2}$/.test(right) && !isLocationLike(right)) {
+      parts = [left, right];
+    } else {
+      parts = [withoutDate];
+    }
   } else {
     parts = [withoutDate];
   }
@@ -808,8 +820,20 @@ function applyDateToEntry(entry: Entry, line: string): void {
 
 function looksLikePersonName(line: string): boolean {
   if (matchSectionType(line) || fuzzyMatchSectionType(line)) return false;
+  if (looksLikeJobTitleHeadline(line) || looksLikeRoleTitle(line)) return false;
   const words = line.trim().split(/\s+/);
-  return words.length >= 2 && words.length <= 5 && !isContactHeavy(line) && !DATE_PATTERN.test(line);
+  if (words.length < 2 || words.length > 4) return false;
+  if (isContactHeavy(line) || DATE_PATTERN.test(line)) return false;
+  // Section-ish phrases ("Selected Work", "KEY ACHIEVEMENTS") are not names.
+  if (
+    /\b(work|works|projects?|skills?|experience|education|summary|awards?|honors?|affiliations?|achievements?|publications?|certifications?|selected|additional|relevant|professional|technical|leadership|volunteer|languages?|interests?|references?|key)\b/i.test(
+      line,
+    )
+  ) {
+    return false;
+  }
+  // Prefer name-like tokens (letters / hyphen / apostrophe only).
+  return words.every((w) => /^[A-Z][a-zA-Z'’-]*$/.test(w) || /^[A-Z]\.?$/.test(w));
 }
 
 function cleanBullet(line: string): string {

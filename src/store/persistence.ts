@@ -2,7 +2,7 @@ import { get as idbGet, set as idbSet, del as idbDel, keys as idbKeys } from 'id
 import type { Resume, VersionSnapshot } from '@/types';
 import { normalizeResume } from '@/types/schema';
 import { makeId } from '@/utils/id';
-import { deleteStickyNotes } from '@/utils/stickyNotes';
+import { deleteStickyNotes, loadAllStickyNotes, copyStickyNotes } from '@/utils/stickyNotes';
 
 // Persistence strategy: IndexedDB is the source of truth, with a synchronous
 // in-memory write-through cache. Reads always hit the cache (instant, sync).
@@ -250,16 +250,21 @@ export function duplicateResume(id: string): Resume | null {
   cache.resumes.set(duplicate.id, duplicate);
   queueWrite(RESUME_PREFIX + duplicate.id, duplicate);
   broadcast({ type: 'resume:save', resume: duplicate });
+  void copyStickyNotes(id, duplicate.id).catch((err) => {
+    console.warn('Failed to copy sticky notes for duplicate', err);
+  });
   return duplicate;
 }
 
-export function exportAllData(): {
+export async function exportAllData(): Promise<{
   resumes: Record<string, Resume>;
   versions: Record<string, VersionSnapshot[]>;
-} {
+  stickyNotes: Record<string, import('@/utils/stickyNotes').StickyNote[]>;
+}> {
   return {
     resumes: Object.fromEntries(cache.resumes),
     versions: Object.fromEntries(cache.snapshots),
+    stickyNotes: await loadAllStickyNotes(),
   };
 }
 
@@ -299,6 +304,7 @@ async function writeSnapshotsCompressed(resumeId: string, snapshots: VersionSnap
   try {
     if (typeof CompressionStream === 'undefined') {
       await idbSet(key, snapshots);
+      notifyPersistOk();
       return;
     }
     const json = JSON.stringify(snapshots);
@@ -306,9 +312,15 @@ async function writeSnapshotsCompressed(resumeId: string, snapshots: VersionSnap
     const compressed = new Response(blob.stream().pipeThrough(new CompressionStream('gzip')));
     const buffer = await compressed.arrayBuffer();
     await idbSet(key, { __gzip: true, data: buffer });
+    notifyPersistOk();
   } catch (err) {
     console.warn('snapshot compression failed; storing raw', err);
-    await idbSet(key, snapshots);
+    try {
+      await idbSet(key, snapshots);
+      notifyPersistOk();
+    } catch (rawErr) {
+      notifyPersistError(rawErr, key);
+    }
   }
 }
 

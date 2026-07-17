@@ -60,7 +60,6 @@ export default defineConfig({
           '**/pdfWorker-*.js',
           '**/pdf-*.js',
           '**/mammoth.browser-*.js',
-          '**/RichBulletEditor-*.js',
           '**/dist-*.js',
         ],
         navigateFallback: 'index.html',

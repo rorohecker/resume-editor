@@ -50,7 +50,7 @@ export function FileSyncControl() {
       }
       writingRef.current = true;
       try {
-        await writeJsonToHandle(handle, exportAllData());
+        await writeJsonToHandle(handle, await exportAllData());
       } catch (err) {
         // If the file was moved/deleted or permission was revoked, surface it
         // and drop the handle so the user can re-pick.
@@ -83,7 +83,7 @@ export function FileSyncControl() {
       setNeedsPermission(false);
       // Initial write so the file isn't empty until the next edit.
       try {
-        await writeJsonToHandle(picked, exportAllData());
+        await writeJsonToHandle(picked, await exportAllData());
         recordBackup();
         toast(
           t('editor.fileSyncEnabled', { defaultValue: 'Auto-save to file enabled' }),
@@ -107,7 +107,7 @@ export function FileSyncControl() {
     if (granted) {
       setNeedsPermission(false);
       try {
-        await writeJsonToHandle(handle, exportAllData());
+        await writeJsonToHandle(handle, await exportAllData());
         recordBackup();
       } catch {
         // ignore
