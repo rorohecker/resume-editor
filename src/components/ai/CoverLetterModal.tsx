@@ -6,6 +6,7 @@ import { generateCoverLetter } from '@/utils/aiAssist';
 import { generateAiText, loadAiSettings, promptForCoverLetter } from '@/utils/aiByok';
 import { Modal } from '@/components/shared/Modal';
 import { toast } from '@/hooks/useToast';
+import { CoverLetterEditor } from './CoverLetterEditor';
 
 export function CoverLetterModal() {
   const { t } = useTranslation();
@@ -161,16 +162,14 @@ export function CoverLetterModal() {
           <Sparkles size={14} />
           {busy ? t('cover.generating') : hasKey ? t('cover.generateBYOK') : t('cover.generateLocal')}
         </button>
-        <label className="block">
+        <div>
           <span className="mb-1 block text-xs font-medium text-ink-muted">{t('cover.draftLabel')}</span>
-          <textarea
+          <CoverLetterEditor
             value={letter}
-            onChange={(e) => setLetter(e.target.value)}
+            onChange={setLetter}
             placeholder={t('cover.draftPlaceholder')}
-            className="input min-h-72 resize-y"
-            spellCheck
           />
-        </label>
+        </div>
       </div>
     </Modal>
   );
@@ -185,8 +184,6 @@ function downloadBlob(blob: Blob, fileName: string) {
   link.style.display = 'none';
   document.body.appendChild(link);
   link.click();
-  // Defer cleanup so the browser can start the download before the object URL
-  // is revoked; revoking synchronously cancels the download in some browsers.
   window.setTimeout(() => {
     link.remove();
     URL.revokeObjectURL(url);

@@ -4,7 +4,12 @@ import {
   createResumeFromTemplate as factory,
   applyTemplate,
 } from '@/components/templates/createFromTemplate';
-import { loadResume as loadFromStorage, saveResumeFast } from './persistence';
+import {
+  loadResume as loadFromStorage,
+  saveResumeFast,
+  onPersistError,
+  onPersistOk,
+} from './persistence';
 import { makeId } from '@/utils/id';
 
 interface UIState {
@@ -25,6 +30,7 @@ interface UIState {
   zoom: number;
   mobileTab: 'edit' | 'preview';
   lastSavedAt: number | null;
+  persistError: string | null;
   // Section ID the editor should scroll to and expand. Bumped via a counter so
   // re-requesting the same section still fires the effect.
   focusedSectionId: string | null;
@@ -55,6 +61,8 @@ interface Actions {
   setZoom: (zoom: number) => void;
   setMobileTab: (tab: 'edit' | 'preview') => void;
   focusSection: (sectionId: string) => void;
+  clearPersistError: () => void;
+  setPersistError: (message: string | null) => void;
 
   createResumeFromTemplate: (template: TemplateId) => Resume;
   loadResume: (id: string) => Resume | null;
@@ -101,6 +109,7 @@ export const useStore = create<UIState & ResumeState & Actions>((set, get) => ({
   zoom: 1,
   mobileTab: 'edit',
   lastSavedAt: null,
+  persistError: null,
   focusedSectionId: null,
   focusedSectionToken: 0,
 
@@ -124,6 +133,8 @@ export const useStore = create<UIState & ResumeState & Actions>((set, get) => ({
   setAnonymized: (anonymized) => set({ anonymized }),
   setZoom: (zoom) => set({ zoom: clamp(zoom, 0.5, 1.5) }),
   setMobileTab: (mobileTab) => set({ mobileTab }),
+  clearPersistError: () => set({ persistError: null }),
+  setPersistError: (persistError) => set({ persistError }),
   focusSection: (sectionId) =>
     set((state) => ({
       focusedSectionId: sectionId,
@@ -310,4 +321,35 @@ export function onResumeSaved(listener: (time: number) => void): () => void {
   return () => {
     saveListeners.delete(listener);
   };
+}
+
+// Surface IndexedDB write failures into UI state (and clear on the next OK write).
+if (typeof window !== 'undefined') {
+  let lastToastAt = 0;
+  onPersistError((error) => {
+    const message =
+      error.name === 'QuotaExceededError' || /quota/i.test(error.message)
+        ? 'Storage quota exceeded. Export a backup and free space.'
+        : error.message || 'Failed to save to browser storage.';
+    useStore.setState({ persistError: message });
+    const now = Date.now();
+    if (now - lastToastAt > 8000) {
+      lastToastAt = now;
+      void import('@/hooks/useToast').then(({ toast }) => {
+        toast(message, {
+          tone: 'danger',
+          ttl: 0,
+          action: {
+            label: 'Retry',
+            onClick: () => useStore.getState().saveNow(),
+          },
+        });
+      });
+    }
+  });
+  onPersistOk(() => {
+    if (useStore.getState().persistError) {
+      useStore.setState({ persistError: null });
+    }
+  });
 }

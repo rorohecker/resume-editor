@@ -148,6 +148,13 @@ async function fetchWithTimeout(input: string, init: RequestInit): Promise<Respo
     if (error instanceof DOMException && error.name === 'AbortError') {
       throw new Error('AI request timed out. Check your connection or try a smaller request.');
     }
+    // Browser CORS blocks often surface as TypeError: Failed to fetch with no status.
+    const message = error instanceof Error ? error.message : String(error);
+    if (/failed to fetch|networkerror|load failed|cors/i.test(message)) {
+      throw new Error(
+        'Browser blocked this AI request (likely CORS). Claude (Anthropic) works in-browser; OpenAI/Gemini may need a small backend proxy — see api/README.md.',
+      );
+    }
     throw error instanceof Error
       ? error
       : new Error('Network error reaching the AI provider.');

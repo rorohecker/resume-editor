@@ -584,6 +584,11 @@ export function AIDrawer() {
                     </datalist>
                   </Field>
                   <UsageDashboard settings={settings} />
+                  {(settings.provider === 'openai' || settings.provider === 'gemini') && (
+                    <p className="rounded-md border border-yellow-200 bg-yellow-50 px-3 py-2 text-xs text-warn">
+                      {t('ai.corsWarning')}
+                    </p>
+                  )}
                   <div className="grid grid-cols-2 gap-3">
                     <Field label={t('ai.callsPerMinute')}>
                       <input

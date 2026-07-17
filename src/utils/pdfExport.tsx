@@ -78,7 +78,7 @@ function ResumePdfDocument({ resume }: { resume: Resume }) {
             style={pdfStyles.pageNumber}
             fixed
             render={({ pageNumber, totalPages }) =>
-              totalPages > 1 ? String(pageNumber) : ''
+              totalPages > 1 ? `Page ${pageNumber} of ${totalPages}` : ''
             }
           />
         )}

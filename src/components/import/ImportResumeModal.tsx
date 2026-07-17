@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, FileText, Loader2, Pencil, RefreshCw, Sparkles, Upload } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { Resume } from '@/types';
+import type { Resume, Section, SectionLayout } from '@/types';
 import {
   looksLikeJson,
   parseResumeJson,
@@ -21,6 +21,7 @@ import {
   shouldShowPrivacyDisclosure,
 } from './PrivacyDisclosureModal';
 import type { SectionType } from '@/types';
+import { makeId } from '@/utils/id';
 
 export function ImportResumeModal({
   open,
@@ -43,6 +44,7 @@ export function ImportResumeModal({
   const [offlineOnly, setOfflineOnly] = useState(true);
   const [enriching, setEnriching] = useState(false);
   const [disclosureOpen, setDisclosureOpen] = useState(false);
+  const [selectedSectionIds, setSelectedSectionIds] = useState<Set<string>>(new Set());
   const settings = useMemo(() => loadAiSettings(), [open]);
   const hasKey = Boolean(settings.apiKey.trim());
 
@@ -55,8 +57,18 @@ export function ImportResumeModal({
       setWarning('');
       setBusy(false);
       setEnriching(false);
+      setSelectedSectionIds(new Set());
     }
   }, [open]);
+
+  // When a parse result arrives, default to selecting every section for merge.
+  useEffect(() => {
+    if (!result) {
+      setSelectedSectionIds(new Set());
+      return;
+    }
+    setSelectedSectionIds(new Set(result.resume.sections.map((section) => section.id)));
+  }, [result]);
 
   const parseText = (raw: string, sourceName?: string, hints?: ImportParseResult['hints']) => {
     setWarning('');
@@ -154,9 +166,79 @@ export function ImportResumeModal({
     });
   };
 
+  const addManualSection = (type: SectionType, title: string, content: string) => {
+    if (!result || !content.trim()) return;
+    const section: Section = {
+      id: makeId(),
+      type,
+      title: title.trim() || defaultSectionTitle(type),
+      visible: true,
+      order: result.resume.sections.length,
+      layout: layoutForSectionType(type),
+      entries: contentToEntries(type, content),
+    };
+    setResult({
+      ...result,
+      resume: {
+        ...result.resume,
+        sections: [...result.resume.sections, section],
+      },
+      stats: recomputeStats({
+        ...result.resume,
+        sections: [...result.resume.sections, section],
+      }),
+    });
+    setSelectedSectionIds((prev) => new Set([...prev, section.id]));
+    toast(t('importer.manualSectionAdded'), { tone: 'success', ttl: 1500 });
+  };
+
+  const appendManualBullets = (sectionId: string, content: string) => {
+    if (!result || !content.trim()) return;
+    const lines = content
+      .split('\n')
+      .map((line) => line.replace(/^[-*•▪◦●‣∙·\d.)\s]+/, '').trim())
+      .filter(Boolean);
+    if (lines.length === 0) return;
+    const nextResume = {
+      ...result.resume,
+      sections: result.resume.sections.map((section) => {
+        if (section.id !== sectionId) return section;
+        const entries = section.entries.length > 0 ? [...section.entries] : [{ id: makeId(), bullets: [] }];
+        const entry = entries[entries.length - 1];
+        const start = entry.bullets?.length ?? 0;
+        entries[entries.length - 1] = {
+          ...entry,
+          bullets: [
+            ...(entry.bullets ?? []),
+            ...lines.map((line, index) => ({
+              id: makeId(),
+              content: line,
+              visible: true,
+              order: start + index,
+            })),
+          ],
+        };
+        return { ...section, entries };
+      }),
+    };
+    setResult({ ...result, resume: nextResume, stats: recomputeStats(nextResume) });
+    toast(t('importer.manualBulletsAdded', { count: lines.length }), { tone: 'success', ttl: 1500 });
+  };
+
   const finish = () => {
     if (!result) return;
-    onImported(result.resume, mode);
+    if (mode === 'merge') {
+      const sections = result.resume.sections.filter((section) =>
+        selectedSectionIds.has(section.id),
+      );
+      if (sections.length === 0) {
+        toast(t('importer.selectAtLeastOne'), { tone: 'warn' });
+        return;
+      }
+      onImported({ ...result.resume, sections }, mode);
+    } else {
+      onImported(result.resume, mode);
+    }
     onClose();
   };
 
@@ -188,9 +270,11 @@ export function ImportResumeModal({
               type="button"
               onClick={finish}
               className="btn-primary"
-              disabled={!result}
+              disabled={!result || (mode === 'merge' && selectedSectionIds.size === 0)}
             >
-              {mode === 'merge' ? t('importer.mergeEditor') : t('importer.openEditor')}
+              {mode === 'merge'
+                ? t('importer.mergeSelected', { count: selectedSectionIds.size })
+                : t('importer.openEditor')}
             </button>
           </div>
         </div>
@@ -304,12 +388,32 @@ export function ImportResumeModal({
             {result ? (
               <ReviewResult
                 result={result}
+                mode={mode}
+                selectedSectionIds={selectedSectionIds}
+                onToggleSection={(sectionId) => {
+                  setSelectedSectionIds((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(sectionId)) next.delete(sectionId);
+                    else next.add(sectionId);
+                    return next;
+                  });
+                }}
+                onToggleAll={(selectAll) => {
+                  if (!result) return;
+                  setSelectedSectionIds(
+                    selectAll
+                      ? new Set(result.resume.sections.map((section) => section.id))
+                      : new Set(),
+                  );
+                }}
                 onReparse={(edited) => {
                   setText(edited);
                   parseText(edited, undefined, result.hints);
                   toast(t('importer.reparseDone'), { tone: 'success', ttl: 1500 });
                 }}
                 onReclassify={reclassifySection}
+                onAddManualSection={addManualSection}
+                onAppendManualBullets={appendManualBullets}
               />
             ) : (
               <div className="flex h-full min-h-72 items-center justify-center rounded-lg border border-paper-edge bg-paper-tint p-6 text-center text-sm text-ink-subtle">
@@ -351,16 +455,32 @@ const SECTION_TYPES_FOR_PICKER: SectionType[] = [
 
 function ReviewResult({
   result,
+  mode,
+  selectedSectionIds,
+  onToggleSection,
+  onToggleAll,
   onReparse,
   onReclassify,
+  onAddManualSection,
+  onAppendManualBullets,
 }: {
   result: ImportParseResult;
+  mode: 'create' | 'replace' | 'merge';
+  selectedSectionIds: Set<string>;
+  onToggleSection: (sectionId: string) => void;
+  onToggleAll: (selectAll: boolean) => void;
   onReparse: (rawText: string) => void;
   onReclassify: (sectionId: string, type: SectionType) => void;
+  onAddManualSection: (type: SectionType, title: string, content: string) => void;
+  onAppendManualBullets: (sectionId: string, content: string) => void;
 }) {
   const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(result.rawText);
+  const [manualText, setManualText] = useState('');
+  const [manualType, setManualType] = useState<SectionType>('custom');
+  const [manualTitle, setManualTitle] = useState('');
+  const [targetSectionId, setTargetSectionId] = useState(result.resume.sections[0]?.id ?? '');
 
   useEffect(() => {
     setDraft(result.rawText);
@@ -373,6 +493,44 @@ function ReviewResult({
     }
     return map;
   }, [result]);
+
+  const allSelected =
+    result.resume.sections.length > 0 &&
+    result.resume.sections.every((section) => selectedSectionIds.has(section.id));
+
+  useEffect(() => {
+    if (!targetSectionId && result.resume.sections[0]) {
+      setTargetSectionId(result.resume.sections[0].id);
+    } else if (
+      targetSectionId &&
+      !result.resume.sections.some((section) => section.id === targetSectionId)
+    ) {
+      setTargetSectionId(result.resume.sections[0]?.id ?? '');
+    }
+  }, [result.resume.sections, targetSectionId]);
+
+  const useSelectedReferenceText = () => {
+    const selected = window.getSelection()?.toString().trim();
+    if (selected) {
+      setManualText(selected);
+      toast(t('importer.selectionCopied'), { tone: 'info', ttl: 1200 });
+    } else {
+      toast(t('importer.noSelection'), { tone: 'warn', ttl: 1500 });
+    }
+  };
+
+  const addAsSection = () => {
+    if (!manualText.trim()) return;
+    onAddManualSection(manualType, manualTitle, manualText);
+    setManualText('');
+    setManualTitle('');
+  };
+
+  const appendAsBullets = () => {
+    if (!manualText.trim() || !targetSectionId) return;
+    onAppendManualBullets(targetSectionId, manualText);
+    setManualText('');
+  };
 
   return (
     <div className="space-y-4">
@@ -405,7 +563,7 @@ function ReviewResult({
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[0.95fr_1.05fr]">
         <div className="rounded-lg border border-paper-edge bg-paper">
           <div className="flex items-center justify-between border-b border-paper-edge px-3 py-2">
             <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
@@ -463,10 +621,26 @@ function ReviewResult({
           )}
         </div>
         <div className="rounded-lg border border-paper-edge bg-paper">
-          <div className="border-b border-paper-edge px-3 py-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
-            {t('importer.parsedResult')}
+          <div className="flex items-center justify-between border-b border-paper-edge px-3 py-2">
+            <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+              {t('importer.parsedResult')}
+            </span>
+            {mode === 'merge' && (
+              <button
+                type="button"
+                className="btn-ghost h-7 text-xs"
+                onClick={() => onToggleAll(!allSelected)}
+              >
+                {allSelected ? t('importer.deselectAll') : t('importer.selectAll')}
+              </button>
+            )}
           </div>
           <div className="max-h-96 space-y-2 overflow-auto p-3">
+            {mode === 'merge' && (
+              <p className="text-[11px] text-ink-subtle">
+                {t('importer.selectSectionsHint', { count: selectedSectionIds.size })}
+              </p>
+            )}
             {result.resume.sections.map((section) => (
               <details
                 key={section.id}
@@ -474,6 +648,16 @@ function ReviewResult({
                 open
               >
                 <summary className="cursor-pointer text-sm font-medium text-ink">
+                  {mode === 'merge' && (
+                    <input
+                      type="checkbox"
+                      className="mr-2 align-middle accent-ink"
+                      checked={selectedSectionIds.has(section.id)}
+                      onChange={() => onToggleSection(section.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      aria-label={t('importer.selectSection', { title: section.title })}
+                    />
+                  )}
                   <span>{section.title}</span>{' '}
                   <span className="text-xs text-ink-subtle">({section.type})</span>
                   {isUnclassified(section) && (
@@ -546,12 +730,177 @@ function ReviewResult({
           </div>
         </div>
       </div>
+
+      <div className="rounded-lg border border-paper-edge bg-paper">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-paper-edge px-3 py-2">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+              {t('importer.missedContentTitle')}
+            </div>
+            <p className="text-[11px] text-ink-subtle">{t('importer.missedContentHint')}</p>
+          </div>
+          <button type="button" className="btn-ghost h-7 text-xs" onClick={useSelectedReferenceText}>
+            {t('importer.useSelectedText')}
+          </button>
+        </div>
+        <div className="grid grid-cols-1 gap-3 p-3 lg:grid-cols-[1fr_0.9fr]">
+          <textarea
+            value={manualText}
+            onChange={(e) => setManualText(e.target.value)}
+            placeholder={t('importer.missedContentPlaceholder')}
+            className="input min-h-32 resize-y font-mono text-xs"
+            spellCheck
+          />
+          <div className="space-y-3 text-xs">
+            <div className="rounded-md border border-paper-edge bg-paper-tint p-3">
+              <div className="mb-2 font-semibold text-ink">{t('importer.addNewSection')}</div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <label>
+                  <span className="mb-1 block text-ink-muted">{t('importer.sectionTypeAria')}</span>
+                  <select
+                    value={manualType}
+                    onChange={(e) => {
+                      const type = e.target.value as SectionType;
+                      setManualType(type);
+                      if (!manualTitle.trim()) setManualTitle(defaultSectionTitle(type));
+                    }}
+                    className="input"
+                  >
+                    {SECTION_TYPES_FOR_PICKER.map((type) => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span className="mb-1 block text-ink-muted">{t('importer.sectionTitle')}</span>
+                  <input
+                    value={manualTitle}
+                    onChange={(e) => setManualTitle(e.target.value)}
+                    placeholder={defaultSectionTitle(manualType)}
+                    className="input"
+                  />
+                </label>
+              </div>
+              <button
+                type="button"
+                className="btn-primary mt-3 text-xs"
+                disabled={!manualText.trim()}
+                onClick={addAsSection}
+              >
+                {t('importer.addAsSection')}
+              </button>
+            </div>
+            <div className="rounded-md border border-paper-edge bg-paper-tint p-3">
+              <div className="mb-2 font-semibold text-ink">{t('importer.addToExisting')}</div>
+              <select
+                value={targetSectionId}
+                onChange={(e) => setTargetSectionId(e.target.value)}
+                className="input"
+              >
+                {result.resume.sections.map((section) => (
+                  <option key={section.id} value={section.id}>
+                    {section.title}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="btn-secondary mt-3 text-xs"
+                disabled={!manualText.trim() || !targetSectionId}
+                onClick={appendAsBullets}
+              >
+                {t('importer.addAsBullets')}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
 
 function sectionPathForFlag(title: string): string {
   return title.toLowerCase().replace(/\s+/g, '-');
+}
+
+function defaultSectionTitle(type: SectionType): string {
+  const labels: Record<SectionType, string> = {
+    experience: 'Experience',
+    education: 'Education',
+    'study-abroad': 'Study Abroad',
+    projects: 'Projects',
+    skills: 'Skills',
+    leadership: 'Leadership',
+    research: 'Research',
+    awards: 'Awards',
+    certifications: 'Certifications',
+    publications: 'Publications',
+    summary: 'Summary',
+    custom: 'Imported Content',
+    'page-break': 'Page Break',
+  };
+  return labels[type];
+}
+
+function layoutForSectionType(type: SectionType): SectionLayout {
+  if (type === 'skills') return 'skills-grid';
+  if (type === 'summary') return 'text-block';
+  return 'entry-based';
+}
+
+function contentToEntries(type: SectionType, content: string): Section['entries'] {
+  const lines = content
+    .split('\n')
+    .map((line) => line.replace(/^[-*•▪◦●‣∙·\d.)\s]+/, '').trim())
+    .filter(Boolean);
+  if (type === 'summary') {
+    return [{ id: makeId(), title: lines.join(' ') }];
+  }
+  if (type === 'skills') {
+    return lines
+      .flatMap((line) => line.split(/[,;|]/))
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .map((skill) => ({ id: makeId(), title: 'General', subtitle: skill }));
+  }
+  if (lines.length === 0) {
+    return [{ id: makeId(), bullets: [] }];
+  }
+  if (lines.length === 1) {
+    return [
+      {
+        id: makeId(),
+        bullets: [{ id: makeId(), content: lines[0], visible: true, order: 0 }],
+      },
+    ];
+  }
+  return [
+    {
+      id: makeId(),
+      title: lines[0],
+      bullets: lines.slice(1).map((line, order) => ({
+        id: makeId(),
+        content: line,
+        visible: true,
+        order,
+      })),
+    },
+  ];
+}
+
+function recomputeStats(resume: Resume): ImportParseResult['stats'] {
+  return {
+    contactFields: resume.header.contactFields.length,
+    sections: resume.sections.length,
+    entries: resume.sections.reduce((sum, section) => sum + section.entries.length, 0),
+    bullets: resume.sections.reduce(
+      (sum, section) =>
+        sum + section.entries.reduce((entrySum, entry) => entrySum + (entry.bullets?.length ?? 0), 0),
+      0,
+    ),
+  };
 }
 
 function humanizePath(path: string): string {

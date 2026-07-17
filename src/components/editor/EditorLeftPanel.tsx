@@ -17,7 +17,13 @@ import { RichBulletEditor } from './LazyRichBulletEditor';
 import { SortableList } from '@/components/shared/Sortable';
 import { SectionStyleOverridesPanel } from './SectionStyleOverrides';
 import { ApplicationEditor } from '@/components/jobs/ApplicationEditor';
-import { analyzeSingleBullet, shortenBullet } from '@/utils/aiAssist';
+import {
+  analyzeSingleBullet,
+  findWeakPhrasesInText,
+  replaceWeakPhrase,
+  shortenBullet,
+} from '@/utils/aiAssist';
+import { isFallbackPdfFont } from '@/utils/pdfFonts';
 import { sampleEntryForSection } from './sectionSamples';
 import type {
   Bullet,
@@ -637,9 +643,13 @@ function AppearanceControls({
             {FONTS.map((font) => (
               <option key={font} value={font}>
                 {font}
+                {isFallbackPdfFont(font) ? ` (${t('editor.fontPdfFallback')})` : ''}
               </option>
             ))}
           </select>
+          {isFallbackPdfFont(resume.styles.font) && (
+            <p className="mt-1 text-[10px] text-warn">{t('editor.fontFallbackWarn')}</p>
+          )}
         </Field>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -1693,6 +1703,28 @@ function BulletEditor({
                       {t('editor.charCount', { count: len, max: 200 })}
                     </BulletBadge>
                   )}
+                  {findWeakPhrasesInText(bullet.content).map((weak) => (
+                    <span key={weak.phrase} className="inline-flex flex-wrap items-center gap-1">
+                      <BulletBadge ok={false}>
+                        {t('editor.weakPhrase', { phrase: weak.phrase })}
+                      </BulletBadge>
+                      {weak.replacements.slice(0, 2).map((option) => (
+                        <button
+                          key={option}
+                          type="button"
+                          className="rounded-full bg-paper-tint px-2 py-0.5 text-[10px] font-medium text-ink hover:bg-paper-edge"
+                          title={t('editor.replaceWith', { option })}
+                          onClick={() =>
+                            updateBullet(bullet.id, {
+                              content: replaceWeakPhrase(bullet.content, weak.phrase, option),
+                            })
+                          }
+                        >
+                          → {option}
+                        </button>
+                      ))}
+                    </span>
+                  ))}
                   {wrapsLikely && (
                     <button
                       type="button"

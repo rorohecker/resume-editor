@@ -10,7 +10,7 @@ export const ACTION_VERBS = {
   Impact: ['Reduced', 'Increased', 'Generated', 'Improved', 'Accelerated', 'Delivered'],
 } as const;
 
-const WEAK_LANGUAGE = [
+export const WEAK_LANGUAGE = [
   { phrase: 'helped', replacements: ['Supported', 'Contributed to', 'Enabled'] },
   { phrase: 'worked on', replacements: ['Developed', 'Built', 'Advanced'] },
   { phrase: 'assisted', replacements: ['Coordinated', 'Supported', 'Executed'] },
@@ -23,7 +23,21 @@ const WEAK_LANGUAGE = [
   { phrase: 'self-starter', replacements: ['Initiated', 'Launched', 'Owned'] },
   { phrase: 'detail-oriented', replacements: ['Audited', 'Validated', 'Reviewed'] },
   { phrase: 'duties included', replacements: ['Owned', 'Managed', 'Executed'] },
-];
+] as const;
+
+export type WeakLanguageRule = (typeof WEAK_LANGUAGE)[number];
+
+/** Find weak phrases in a single bullet/string (for inline coaching UI). */
+export function findWeakPhrasesInText(content: string): WeakLanguageRule[] {
+  const plain = stripHtml(content);
+  return WEAK_LANGUAGE.filter((weak) =>
+    new RegExp(`\\b${escapeRegex(weak.phrase)}\\b`, 'i').test(plain),
+  );
+}
+
+export function replaceWeakPhrase(content: string, phrase: string, replacement: string): string {
+  return content.replace(new RegExp(`\\b${escapeRegex(phrase)}\\b`, 'i'), replacement);
+}
 
 const STOP_WORDS = new Set([
   'and',

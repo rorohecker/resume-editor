@@ -154,14 +154,42 @@ async function migrateLegacyLocalStorage(): Promise<void> {
   }
 }
 
-// Fire-and-forget IDB write helper. Failures (e.g. quota exceeded) get logged
-// but never throw, so the in-memory state stays consistent for the session.
+// Fire-and-forget IDB write helper. Failures (e.g. quota exceeded) notify
+// listeners so the UI can show a sticky error; in-memory cache stays consistent.
+const persistErrorListeners = new Set<(error: Error) => void>();
+const persistOkListeners = new Set<() => void>();
+
+export function onPersistError(listener: (error: Error) => void): () => void {
+  persistErrorListeners.add(listener);
+  return () => persistErrorListeners.delete(listener);
+}
+
+export function onPersistOk(listener: () => void): () => void {
+  persistOkListeners.add(listener);
+  return () => persistOkListeners.delete(listener);
+}
+
+function notifyPersistError(err: unknown, key: string): void {
+  const error =
+    err instanceof Error ? err : new Error(`Failed to persist ${key}`);
+  console.warn(`Failed to persist ${key}`, err);
+  for (const listener of persistErrorListeners) listener(error);
+}
+
+function notifyPersistOk(): void {
+  for (const listener of persistOkListeners) listener();
+}
+
 function queueWrite(key: string, value: unknown): void {
-  void idbSet(key, value).catch((err) => console.warn(`Failed to persist ${key}`, err));
+  void idbSet(key, value)
+    .then(() => notifyPersistOk())
+    .catch((err) => notifyPersistError(err, key));
 }
 
 function queueDelete(key: string): void {
-  void idbDel(key).catch((err) => console.warn(`Failed to delete ${key}`, err));
+  void idbDel(key)
+    .then(() => notifyPersistOk())
+    .catch((err) => notifyPersistError(err, key));
 }
 
 export function saveResume(resume: Resume): void {

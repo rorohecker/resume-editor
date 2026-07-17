@@ -1,7 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Copy, Download, FileText, Pencil, Plus, Trash2, Upload } from 'lucide-react';
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  TouchSensor,
+  closestCorners,
+  useDroppable,
+  useDraggable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from '@dnd-kit/core';
 import { TEMPLATES } from '@/components/templates/registry';
 import { LiveTemplateThumbnail } from '@/components/templates/LiveTemplateThumbnail';
 import { ImportResumeModal } from '@/components/import/ImportResumeModal';
@@ -14,15 +27,17 @@ import { useStatusLabel } from '@/components/jobs/statusLabels';
 import { toast } from '@/hooks/useToast';
 import { recordBackup } from '@/utils/updateCheck';
 import { useStore } from '@/store';
-import type { Resume } from '@/types';
+import type { ApplicationStatus, Resume } from '@/types';
 import {
   deleteResume,
   duplicateResume,
   exportAllData,
   isHydrated,
   listResumes,
+  loadResume,
   onHydrated,
   renameResume,
+  saveResume,
 } from '@/store/persistence';
 import type { TemplateId } from '@/types';
 
@@ -41,9 +56,6 @@ export function LandingPage() {
 
   const refresh = () => setResumes(listResumes());
 
-  // On hard refresh the IndexedDB cache may not have hydrated yet when this
-  // component first reads it. Re-read once hydration finishes so the user
-  // doesn't see an empty manager.
   useEffect(() => {
     if (isHydrated()) return;
     const unsubscribe = onHydrated(() => refresh());
@@ -72,7 +84,32 @@ export function LandingPage() {
     link.click();
     URL.revokeObjectURL(url);
     recordBackup();
-    toast('Backup saved to your downloads', { tone: 'success', ttl: 2000 });
+    toast(t('landing.backupSaved'), { tone: 'success', ttl: 2000 });
+  };
+
+  const moveResumeStatus = (resumeId: string, status: ApplicationStatus) => {
+    const current = loadResume(resumeId);
+    if (!current) return;
+    const prev = current.application?.status ?? 'drafting';
+    if (prev === status) return;
+    const application = {
+      ...(current.application ?? { status: 'drafting' as ApplicationStatus }),
+      status,
+      appliedAt:
+        !current.application?.appliedAt && (status === 'applied' || status === 'interview')
+          ? new Date().toISOString()
+          : current.application?.appliedAt,
+    };
+    saveResume({
+      ...current,
+      application,
+      updatedAt: new Date().toISOString(),
+    });
+    refresh();
+    toast(t('landing.movedToStatus', { status: statusLabel(status) }), {
+      tone: 'success',
+      ttl: 1500,
+    });
   };
 
   return (
@@ -142,114 +179,117 @@ export function LandingPage() {
             </div>
 
             {view === 'kanban' ? (
-              <KanbanView grouped={grouped} navigate={navigate} />
+              <KanbanView grouped={grouped} navigate={navigate} onMoveStatus={moveResumeStatus} />
             ) : (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {recents.map((r) => (
-                <article
-                  key={r.id}
-                  className="rounded-md border border-paper-edge bg-paper p-4 text-left shadow-sm"
-                >
-                  <button
-                    type="button"
-                    onClick={() => navigate(`/editor/${r.id}`)}
-                    className="mb-3 block w-full rounded border border-paper-edge bg-paper-tint p-3 text-left hover:bg-paper"
+                  <article
+                    key={r.id}
+                    className="rounded-md border border-paper-edge bg-paper p-4 text-left shadow-sm"
                   >
-                    <div className="mb-2 h-20 rounded-sm bg-paper shadow-inner">
-                      <div className="space-y-1 p-3">
-                        <div className="h-2 w-1/2 rounded bg-ink" />
-                        <div className="h-1.5 w-3/4 rounded bg-paper-edge" />
-                        <div className="mt-3 h-1.5 w-full rounded bg-ink" />
-                        <div className="h-1.5 w-5/6 rounded bg-paper-edge" />
-                        <div className="h-1.5 w-2/3 rounded bg-paper-edge" />
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/editor/${r.id}`)}
+                      className="mb-3 block w-full rounded border border-paper-edge bg-paper-tint p-3 text-left hover:bg-paper"
+                    >
+                      <div className="mb-2 h-20 rounded-sm bg-paper shadow-inner">
+                        <div className="space-y-1 p-3">
+                          <div className="h-2 w-1/2 rounded bg-ink" />
+                          <div className="h-1.5 w-3/4 rounded bg-paper-edge" />
+                          <div className="mt-3 h-1.5 w-full rounded bg-ink" />
+                          <div className="h-1.5 w-5/6 rounded bg-paper-edge" />
+                          <div className="h-1.5 w-2/3 rounded bg-paper-edge" />
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-medium text-ink">{r.name}</div>
-                        {r.variantOf && (
-                          <div className="truncate text-[10px] uppercase tracking-wide text-accent">
-                            {t('landing.variantBadge')}
-                          </div>
-                        )}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-medium text-ink">{r.name}</div>
+                          {r.variantOf && (
+                            <div className="truncate text-[10px] uppercase tracking-wide text-accent">
+                              {t('landing.variantBadge')}
+                            </div>
+                          )}
+                        </div>
+                        <span
+                          className={`flex-shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                            STATUS_META[r.application?.status ?? 'drafting'].pillBg
+                          } ${STATUS_META[r.application?.status ?? 'drafting'].pillText}`}
+                        >
+                          {statusLabel(r.application?.status ?? 'drafting')}
+                        </span>
                       </div>
-                      <span
-                        className={`flex-shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
-                          STATUS_META[r.application?.status ?? 'drafting'].pillBg
-                        } ${STATUS_META[r.application?.status ?? 'drafting'].pillText}`}
+                      {r.application?.targetRole && (
+                        <div className="truncate text-xs text-ink-muted">
+                          {r.application.targetRole}
+                          {r.application.companyName && ` · ${r.application.companyName}`}
+                        </div>
+                      )}
+                      <div className="text-xs text-ink-subtle">
+                        {new Date(r.updatedAt).toLocaleDateString(undefined, {
+                          month: 'short',
+                          day: 'numeric',
+                          hour: 'numeric',
+                          minute: '2-digit',
+                        })}
+                      </div>
+                    </button>
+                    <div className="flex flex-wrap gap-1">
+                      <button
+                        type="button"
+                        className="icon-btn h-8 w-8"
+                        aria-label={t('landing.renameAria', { name: r.name })}
+                        title={t('common.rename')}
+                        onClick={() => {
+                          const name = window.prompt(t('landing.renamePrompt'), r.name);
+                          if (!name || !name.trim()) return;
+                          renameResume(r.id, name.trim());
+                          refresh();
+                          toast(t('landing.renamed'), { tone: 'success', ttl: 1500 });
+                        }}
                       >
-                        {statusLabel(r.application?.status ?? 'drafting')}
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        className="icon-btn h-8 w-8"
+                        aria-label={t('landing.duplicateAria', { name: r.name })}
+                        title={t('common.duplicate')}
+                        onClick={() => {
+                          const copy = duplicateResume(r.id);
+                          refresh();
+                          if (copy) {
+                            toast(t('landing.duplicated'), {
+                              tone: 'success',
+                              action: {
+                                label: t('common.open'),
+                                onClick: () => navigate(`/editor/${copy.id}`),
+                              },
+                            });
+                          }
+                        }}
+                      >
+                        <Copy size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        className="icon-btn h-8 w-8 hover:text-danger"
+                        aria-label={t('landing.deleteAria', { name: r.name })}
+                        title={t('common.delete')}
+                        onClick={() => {
+                          if (!window.confirm(t('landing.deletePrompt', { name: r.name }))) return;
+                          deleteResume(r.id);
+                          refresh();
+                          toast(t('landing.deleted'), { tone: 'info' });
+                        }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                      <span className="ml-auto self-center text-xs text-ink-subtle">
+                        {t(`templates.${r.template}.name`)}
                       </span>
                     </div>
-                    {r.application?.targetRole && (
-                      <div className="truncate text-xs text-ink-muted">
-                        {r.application.targetRole}
-                        {r.application.companyName && ` · ${r.application.companyName}`}
-                      </div>
-                    )}
-                    <div className="text-xs text-ink-subtle">
-                      {new Date(r.updatedAt).toLocaleDateString(undefined, {
-                        month: 'short',
-                        day: 'numeric',
-                        hour: 'numeric',
-                        minute: '2-digit',
-                      })}
-                    </div>
-                  </button>
-                  <div className="flex flex-wrap gap-1">
-                    <button
-                      type="button"
-                      className="icon-btn h-8 w-8"
-                      aria-label={t('landing.renameAria', { name: r.name })}
-                      title={t('common.rename')}
-                      onClick={() => {
-                        const name = window.prompt(t('landing.renamePrompt'), r.name);
-                        if (!name || !name.trim()) return;
-                        renameResume(r.id, name.trim());
-                        refresh();
-                        toast(t('landing.renamed'), { tone: 'success', ttl: 1500 });
-                      }}
-                    >
-                      <Pencil size={14} />
-                    </button>
-                    <button
-                      type="button"
-                      className="icon-btn h-8 w-8"
-                      aria-label={t('landing.duplicateAria', { name: r.name })}
-                      title={t('common.duplicate')}
-                      onClick={() => {
-                        const copy = duplicateResume(r.id);
-                        refresh();
-                        if (copy) {
-                          toast(t('landing.duplicated'), {
-                            tone: 'success',
-                            action: { label: t('common.open'), onClick: () => navigate(`/editor/${copy.id}`) },
-                          });
-                        }
-                      }}
-                    >
-                      <Copy size={14} />
-                    </button>
-                    <button
-                      type="button"
-                      className="icon-btn h-8 w-8 hover:text-danger"
-                      aria-label={t('landing.deleteAria', { name: r.name })}
-                      title={t('common.delete')}
-                      onClick={() => {
-                        if (!window.confirm(t('landing.deletePrompt', { name: r.name }))) return;
-                        deleteResume(r.id);
-                        refresh();
-                        toast(t('landing.deleted'), { tone: 'info' });
-                      }}
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                    <span className="ml-auto self-center text-xs text-ink-subtle">
-                      {t(`templates.${r.template}.name`)}
-                    </span>
-                  </div>
-                </article>
-              ))}
+                  </article>
+                ))}
               </div>
             )}
           </section>
@@ -307,55 +347,136 @@ export function LandingPage() {
 function KanbanView({
   grouped,
   navigate,
+  onMoveStatus,
 }: {
-  grouped: { status: keyof typeof STATUS_META; items: Resume[] }[];
+  grouped: { status: ApplicationStatus; items: Resume[] }[];
   navigate: (path: string) => void;
+  onMoveStatus: (resumeId: string, status: ApplicationStatus) => void;
 }) {
   const { t } = useTranslation();
   const statusLabel = useStatusLabel();
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 220, tolerance: 8 } }),
+  );
+
+  const activeResume = activeId
+    ? grouped.flatMap((g) => g.items).find((r) => r.id === activeId)
+    : undefined;
+
+  const onDragStart = (event: DragStartEvent) => {
+    setActiveId(String(event.active.id));
+  };
+
+  const onDragEnd = (event: DragEndEvent) => {
+    setActiveId(null);
+    const { active, over } = event;
+    if (!over) return;
+    const resumeId = String(active.id);
+    const overId = String(over.id);
+    const targetStatus = (STATUS_ORDER.includes(overId as ApplicationStatus)
+      ? overId
+      : grouped.find((g) => g.items.some((r) => r.id === overId))?.status) as
+      | ApplicationStatus
+      | undefined;
+    if (!targetStatus) return;
+    onMoveStatus(resumeId, targetStatus);
+  };
+
   return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
-      {grouped.map(({ status, items }) => {
-        const meta = STATUS_META[status];
-        return (
-          <div
-            key={status}
-            className="flex flex-col gap-2 rounded-md border border-paper-edge bg-paper-tint p-3"
-          >
-            <div className="flex items-center justify-between">
-              <span
-                className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-semibold ${meta.pillBg} ${meta.pillText}`}
-              >
-                {statusLabel(status)}
-              </span>
-              <span className="text-xs text-ink-subtle">{items.length}</span>
-            </div>
-            {items.length === 0 ? (
-              <p className="py-6 text-center text-xs text-ink-subtle">{t('landing.noKanbanItems')}</p>
-            ) : (
-              items.map((r) => (
-                <button
-                  key={r.id}
-                  type="button"
-                  onClick={() => navigate(`/editor/${r.id}`)}
-                  className="rounded-md border border-paper-edge bg-paper p-2 text-left hover:shadow-page"
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCorners}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      onDragCancel={() => setActiveId(null)}
+    >
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
+        {grouped.map(({ status, items }) => {
+          const meta = STATUS_META[status];
+          return (
+            <KanbanColumn key={status} status={status}>
+              <div className="flex items-center justify-between">
+                <span
+                  className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-semibold ${meta.pillBg} ${meta.pillText}`}
                 >
-                  <div className="truncate text-xs font-semibold text-ink">{r.name}</div>
-                  {r.application?.targetRole && (
-                    <div className="truncate text-[11px] text-ink-muted">
-                      {r.application.targetRole}
-                      {r.application.companyName && ` · ${r.application.companyName}`}
-                    </div>
-                  )}
-                  <div className="mt-1 text-[10px] text-ink-subtle">
-                    {new Date(r.updatedAt).toLocaleDateString()}
-                  </div>
-                </button>
-              ))
-            )}
+                  {statusLabel(status)}
+                </span>
+                <span className="text-xs text-ink-subtle">{items.length}</span>
+              </div>
+              {items.length === 0 ? (
+                <p className="py-6 text-center text-xs text-ink-subtle">{t('landing.noKanbanItems')}</p>
+              ) : (
+                items.map((r) => (
+                  <KanbanCard key={r.id} resume={r} onOpen={() => navigate(`/editor/${r.id}`)} />
+                ))
+              )}
+            </KanbanColumn>
+          );
+        })}
+      </div>
+      <DragOverlay>
+        {activeResume ? (
+          <div className="rounded-md border border-accent bg-paper p-2 shadow-page opacity-95">
+            <div className="truncate text-xs font-semibold text-ink">{activeResume.name}</div>
           </div>
-        );
-      })}
+        ) : null}
+      </DragOverlay>
+    </DndContext>
+  );
+}
+
+function KanbanColumn({
+  status,
+  children,
+}: {
+  status: ApplicationStatus;
+  children: ReactNode;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: status });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`flex min-h-[8rem] flex-col gap-2 rounded-md border p-3 ${
+        isOver ? 'border-accent bg-paper' : 'border-paper-edge bg-paper-tint'
+      }`}
+    >
+      {children}
     </div>
+  );
+}
+
+function KanbanCard({ resume, onOpen }: { resume: Resume; onOpen: () => void }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: resume.id,
+  });
+  const style: CSSProperties = transform
+    ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
+    : undefined;
+
+  return (
+    <button
+      ref={setNodeRef}
+      type="button"
+      style={style}
+      {...listeners}
+      {...attributes}
+      onClick={onOpen}
+      className={`rounded-md border border-paper-edge bg-paper p-2 text-left hover:shadow-page ${
+        isDragging ? 'opacity-40' : ''
+      }`}
+    >
+      <div className="truncate text-xs font-semibold text-ink">{resume.name}</div>
+      {resume.application?.targetRole && (
+        <div className="truncate text-[11px] text-ink-muted">
+          {resume.application.targetRole}
+          {resume.application.companyName && ` · ${resume.application.companyName}`}
+        </div>
+      )}
+      <div className="mt-1 text-[10px] text-ink-subtle">
+        {new Date(resume.updatedAt).toLocaleDateString()}
+      </div>
+    </button>
   );
 }

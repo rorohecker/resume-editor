@@ -5,6 +5,9 @@ import Link from '@tiptap/extension-link';
 import { Bold, Italic, Underline as UnderlineIcon, Link as LinkIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { WEAK_LANGUAGE, replaceWeakPhrase } from '@/utils/aiAssist';
+import { setFocusedRichEditor } from '@/utils/focusedRichEditor';
+import { WeakLanguageHighlight } from './weakLanguageExtension';
 
 const SLASH_COMMANDS: { trigger: string; labelKey: string; insert: string }[] = [
   { trigger: '/metric', labelKey: 'rich.slashMetric', insert: ' by [N%/$X/X users] ' },
@@ -21,10 +24,19 @@ interface RichBulletEditorProps {
   placeholder?: string;
 }
 
+interface WeakPopover {
+  phrase: string;
+  replacements: readonly string[];
+  x: number;
+  y: number;
+}
+
 export function RichBulletEditor({ content, onChange, onEnterSplit, placeholder }: RichBulletEditorProps) {
   const { t } = useTranslation();
   const [slashOpen, setSlashOpen] = useState(false);
   const [slashQuery, setSlashQuery] = useState('');
+  const [weakPopover, setWeakPopover] = useState<WeakPopover | null>(null);
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -38,11 +50,13 @@ export function RichBulletEditor({ content, onChange, onEnterSplit, placeholder 
       }),
       Underline,
       Link.configure({ openOnClick: false, autolink: true, linkOnPaste: true }),
+      WeakLanguageHighlight,
     ],
     content,
     editorProps: {
       attributes: {
-        class: 'min-h-12 w-full rounded-md border border-paper-edge bg-paper px-2 py-1.5 text-xs text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent',
+        class:
+          'min-h-12 w-full rounded-md border border-paper-edge bg-paper px-2 py-1.5 text-xs text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent',
         spellcheck: 'true',
         'data-placeholder': placeholder ?? '',
       },
@@ -54,11 +68,33 @@ export function RichBulletEditor({ content, onChange, onEnterSplit, placeholder 
         }
         return false;
       },
+      handleClick: (_view, _pos, event) => {
+        const target = event.target as HTMLElement | null;
+        const mark = target?.closest?.('.weak-language-mark') as HTMLElement | null;
+        if (!mark) {
+          setWeakPopover(null);
+          return false;
+        }
+        const phrase = mark.dataset.phrase ?? '';
+        const rule = WEAK_LANGUAGE.find((item) => item.phrase === phrase);
+        if (!rule) return false;
+        const rect = mark.getBoundingClientRect();
+        setWeakPopover({
+          phrase: rule.phrase,
+          replacements: rule.replacements,
+          x: rect.left,
+          y: rect.bottom + 4,
+        });
+        return true;
+      },
     },
     onUpdate: ({ editor: ed }) => {
       onChange(ed.getHTML());
-      // Cheap slash-menu trigger: scan the last 12 chars for /token.
-      const text = ed.state.doc.textBetween(Math.max(0, ed.state.selection.from - 12), ed.state.selection.from);
+      setWeakPopover(null);
+      const text = ed.state.doc.textBetween(
+        Math.max(0, ed.state.selection.from - 12),
+        ed.state.selection.from,
+      );
       const match = /(\/[a-z]*)$/i.exec(text);
       if (match) {
         setSlashQuery(match[1].toLowerCase());
@@ -67,15 +103,28 @@ export function RichBulletEditor({ content, onChange, onEnterSplit, placeholder 
         setSlashOpen(false);
       }
     },
+    onFocus: ({ editor: ed }) => setFocusedRichEditor(ed),
+    onBlur: ({ editor: ed }) => {
+      if (getStillFocused(ed)) return;
+      setFocusedRichEditor(null);
+    },
   });
 
-  // Keep editor in sync if external content changes (undo, redo, AI rewrite).
   useEffect(() => {
     if (!editor) return;
     if (editor.getHTML() !== content) {
       editor.commands.setContent(content || '', { emitUpdate: false });
     }
   }, [content, editor]);
+
+  useEffect(() => {
+    return () => {
+      if (editor && getStillFocused(editor) === false) {
+        // Clear registry if this instance was focused when unmounting.
+      }
+      setFocusedRichEditor(null);
+    };
+  }, [editor]);
 
   if (!editor) return null;
 
@@ -86,8 +135,22 @@ export function RichBulletEditor({ content, onChange, onEnterSplit, placeholder 
   const applySlash = (cmd: (typeof SLASH_COMMANDS)[number]) => {
     if (!editor) return;
     const from = editor.state.selection.from - slashQuery.length;
-    editor.chain().focus().setTextSelection({ from, to: editor.state.selection.from }).deleteSelection().insertContent(cmd.insert).run();
+    editor
+      .chain()
+      .focus()
+      .setTextSelection({ from, to: editor.state.selection.from })
+      .deleteSelection()
+      .insertContent(cmd.insert)
+      .run();
     setSlashOpen(false);
+  };
+
+  const applyWeakReplace = (replacement: string) => {
+    if (!weakPopover || !editor) return;
+    const html = editor.getHTML();
+    const next = replaceWeakPhrase(html, weakPopover.phrase, replacement);
+    editor.commands.setContent(next, { emitUpdate: true });
+    setWeakPopover(null);
   };
 
   return (
@@ -111,8 +174,38 @@ export function RichBulletEditor({ content, onChange, onEnterSplit, placeholder 
           ))}
         </div>
       )}
+      {weakPopover && (
+        <div
+          className="fixed z-50 min-w-[160px] rounded-md border border-paper-edge bg-paper p-1 shadow-page"
+          style={{ left: weakPopover.x, top: weakPopover.y }}
+          role="listbox"
+          aria-label={t('editor.weakReplaceTitle')}
+        >
+          <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
+            {t('editor.weakReplaceTitle')}
+          </div>
+          {weakPopover.replacements.map((option) => (
+            <button
+              key={option}
+              type="button"
+              role="option"
+              className="flex w-full rounded px-2 py-1 text-left text-xs text-ink hover:bg-paper-tint"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                applyWeakReplace(option);
+              }}
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
+}
+
+function getStillFocused(editor: Editor): boolean {
+  return editor.isFocused;
 }
 
 function Toolbar({ editor }: { editor: Editor }) {

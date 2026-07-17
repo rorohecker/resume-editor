@@ -3,6 +3,13 @@ import { createResumeFromTemplate } from '@/components/templates/createFromTempl
 import { normalizeResume } from '@/types/schema';
 import { defaultLabelForContactType } from './contactIcon';
 import { makeId } from './id';
+import {
+  LINKEDIN_SECTION_LABELS,
+  fuzzyMatchSectionType,
+  matchSectionType,
+  normalizeHeadingKey,
+  SECTION_LEXICON,
+} from './resumeSectionLexicon';
 
 export interface ConfidenceFlag {
   path: string;
@@ -28,33 +35,19 @@ export interface ImportParseResult {
   };
 }
 
-const SECTION_KEYWORDS: Record<string, SectionType> = {
-  experience: 'experience',
-  work: 'experience',
-  employment: 'experience',
-  'professional experience': 'experience',
-  education: 'education',
-  projects: 'projects',
-  'personal projects': 'projects',
-  skills: 'skills',
-  'technical skills': 'skills',
-  leadership: 'leadership',
-  activities: 'leadership',
-  extracurriculars: 'leadership',
-  'volunteer experience': 'leadership',
-  research: 'research',
-  awards: 'awards',
-  honors: 'awards',
-  'honors & awards': 'awards',
-  certifications: 'certifications',
-  certificates: 'certifications',
-  publications: 'publications',
-  summary: 'summary',
-  objective: 'summary',
-};
+// Month names + numeric dates + seasons + Present/Current/Now/Ongoing.
+// Ranges accept -, –, —, or "to" with optional spaces.
+const MONTH =
+  '(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
+const SEASON = '(spring|summer|fall|autumn|winter)';
+const YEAR = '((?:19|20)\\d{2})';
+const DATE_ATOM = `(?:${MONTH}\\.?\\s+${YEAR}|${SEASON}\\s+${YEAR}|${YEAR}|\\d{1,2}\\/${YEAR}|\\d{1,2}\\/\\d{1,2}\\/${YEAR})`;
+const DATE_PATTERN = new RegExp(
+  `\\b(?:${DATE_ATOM})(?:\\s*[-–—]\\s*|\\s+to\\s+)(?:present|current|now|ongoing|${DATE_ATOM})?|\\b(?:${DATE_ATOM})\\b`,
+  'i',
+);
 
-const DATE_PATTERN =
-  /\b((jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+)?(19|20)\d{2}\b(?:\s*[-–—]\s*(present|((jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+)?(19|20)\d{2}))?/i;
+const BULLET_PATTERN = /^\s*(?:[-*•▪◦●‣∙·]|[oO0°¢|](?=\s)|(?:\d{1,2}|[a-z])[.)])\s+/i;
 
 export function parseResumeText(
   raw: string,
@@ -62,7 +55,10 @@ export function parseResumeText(
   hints?: ImportParseResult['hints'],
 ): ImportParseResult {
   const normalized = normalizeResumeText(raw);
-  const lines = normalized.split('\n').map((line) => line.trim()).filter(Boolean);
+  const lines = normalized
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
   const warnings: string[] = [];
   const flags: ConfidenceFlag[] = [];
   const base = createResumeFromTemplate('general');
@@ -73,10 +69,14 @@ export function parseResumeText(
   if (!name) {
     flags.push({ path: 'header.name', severity: 'low', message: 'Could not detect a name in the header.' });
   } else if (nameConfidence < 0.7) {
-    flags.push({ path: 'header.name', severity: 'medium', message: 'Name detection was uncertain — please verify.' });
+    flags.push({
+      path: 'header.name',
+      severity: 'medium',
+      message: 'Name detection was uncertain — please verify.',
+    });
   }
 
-  base.header.contactFields = detectContactFields(lines).slice(0, 7);
+  base.header.contactFields = detectContactFields(lines).slice(0, 8);
   if (base.header.contactFields.length === 0) {
     flags.push({ path: 'header.contactFields', severity: 'low', message: 'No contact fields detected.' });
   }
@@ -102,7 +102,7 @@ export function parseResumeText(
         entries: [
           {
             id: makeId(),
-            bullets: lines.slice(1).map((line, order) => ({
+            bullets: lines.slice(name ? 1 : 0).map((line, order) => ({
               id: makeId(),
               content: cleanBullet(line),
               visible: true,
@@ -164,8 +164,6 @@ export function parseResumeJson(raw: string): ImportParseResult | null {
   }
 }
 
-// Heuristic: does this text look like it was meant to be a JSON resume export
-// (so a failed parse should be reported, not silently treated as prose)?
 export function looksLikeJson(raw: string): boolean {
   const trimmed = raw.trim();
   return trimmed.startsWith('{') && trimmed.endsWith('}') && /"sections"|"header"|"styles"/.test(trimmed);
@@ -177,47 +175,102 @@ export function normalizeResumeText(raw: string): string {
     .replace(/[“”]/g, '"')
     .replace(/[‘’]/g, "'")
     .replace(/[–—]/g, '-')
-    .replace(/[•▪◦●]/g, '-')
+    // Common OCR / PDF bullet artifacts → standard dash bullets.
+    .replace(/[•▪◦●‣∙·○◼︎□■◆◇►▸➢✔✓☑︎]/g, '-')
+    .replace(/(^|\n)\s*[oO0°¢|]\s+(?=[A-Za-z])/g, '$1- ')
     .replace(/[^\S\n]+/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
 
 function detectName(lines: string[]): { name: string; confidence: number } {
-  // Highest-confidence pick: a short top line that doesn't contain contact patterns.
-  const top = lines.slice(0, 5);
+  const top = lines.slice(0, 6);
   for (const line of top) {
-    if (/@|linkedin|github|www\.|https?:|(\d{3}[\s.-]\d{3}[\s.-]\d{4})/i.test(line)) continue;
+    if (isContactHeavy(line)) continue;
+    if (matchSectionType(line) || fuzzyMatchSectionType(line)) continue;
     if (line.length > 60) continue;
     const wordCount = line.split(/\s+/).length;
     if (wordCount < 2 || wordCount > 5) continue;
-    return { name: line, confidence: 0.9 };
+    // Prefer Title Case / ALL CAPS name lines over sentence fragments.
+    const titleLike =
+      /^[A-Z][a-zA-Z'’-]+(?:\s+[A-Z][a-zA-Z'’-]+){1,4}$/.test(line) ||
+      /^[A-Z][A-Z\s'’-]+$/.test(line);
+    return { name: toNameCase(line), confidence: titleLike ? 0.92 : 0.75 };
   }
-  // Fallback: first non-contact line, lower confidence.
   const fallback = lines.find(
-    (line) => !/@|linkedin|github|www\.|https?:|(\d{3}[\s.-]\d{3}[\s.-]\d{4})/i.test(line),
+    (line) => !isContactHeavy(line) && !matchSectionType(line) && line.length < 80,
   );
-  return { name: fallback ?? '', confidence: fallback ? 0.5 : 0 };
+  return { name: fallback ? toNameCase(fallback) : '', confidence: fallback ? 0.45 : 0 };
+}
+
+function isContactHeavy(line: string): boolean {
+  return /@|linkedin|github|www\.|https?:|\+?\d[\d\s().-]{7,}\d/i.test(line);
 }
 
 function detectContactFields(lines: string[]): ContactField[] {
-  const text = lines.slice(0, 8).join(' ');
-  const fields: Omit<ContactField, 'id' | 'label' | 'visible' | 'order'>[] = [];
-  const email = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0];
-  const phone = text.match(/(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}/)?.[0];
-  const linkedin = text.match(/(?:https?:\/\/)?(?:www\.)?linkedin\.com\/in\/[^\s|]+/i)?.[0];
-  const github = text.match(/(?:https?:\/\/)?(?:www\.)?github\.com\/[^\s|]+/i)?.[0];
-  const website = text.match(
-    /(?:https?:\/\/)?(?:www\.)?(?!linkedin\.com|github\.com)[a-z0-9-]+\.[a-z]{2,}(?:\/[^\s|]*)?/i,
-  )?.[0];
-  const location = text.match(/\b[A-Z][a-zA-Z .'-]+,\s*[A-Z]{2}\b/)?.[0];
+  // Scan until the first section heading (or first 20 lines) so wrapped contact
+  // blocks and LinkedIn-style headers still get emails / phones / links.
+  let end = lines.length;
+  for (let i = 0; i < Math.min(lines.length, 20); i += 1) {
+    if (i > 0 && (matchSectionType(lines[i]) || fuzzyMatchSectionType(lines[i]))) {
+      end = i;
+      break;
+    }
+  }
+  const headerLines = lines.slice(0, Math.max(end, Math.min(12, lines.length)));
+  const text = headerLines.join(' | ');
 
-  if (email) fields.push({ type: 'email', value: email });
-  if (phone) fields.push({ type: 'phone', value: phone });
-  if (linkedin) fields.push({ type: 'linkedin', value: linkedin });
-  if (github) fields.push({ type: 'github', value: github });
-  if (website && !email?.endsWith(website)) fields.push({ type: 'website', value: website });
-  if (location) fields.push({ type: 'location', value: location });
+  const seen = new Set<string>();
+  const fields: Omit<ContactField, 'id' | 'label' | 'visible' | 'order'>[] = [];
+
+  const push = (type: ContactFieldType, value: string) => {
+    const cleaned = value.replace(/[),.;]+$/, '').trim();
+    if (!cleaned) return;
+    const key = `${type}:${cleaned.toLowerCase()}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    fields.push({ type, value: cleaned });
+  };
+
+  for (const match of text.matchAll(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi)) {
+    push('email', match[0]);
+  }
+
+  // NANP + common intl formats (+44..., +91..., etc.).
+  for (const match of text.matchAll(
+    /(?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{2,4}\)?[\s.-]?)\d{3,4}[\s.-]?\d{3,4}(?:\s*(?:x|ext\.?)\s*\d+)?/gi,
+  )) {
+    const digits = match[0].replace(/\D/g, '');
+    if (digits.length < 10 || digits.length > 15) continue;
+    push('phone', match[0].trim());
+  }
+
+  for (const match of text.matchAll(
+    /(?:https?:\/\/)?(?:www\.)?linkedin\.com\/in\/[A-Za-z0-9_-]+\/?/gi,
+  )) {
+    push('linkedin', match[0]);
+  }
+  for (const match of text.matchAll(
+    /(?:https?:\/\/)?(?:www\.)?github\.com\/[A-Za-z0-9_-]+\/?/gi,
+  )) {
+    push('github', match[0]);
+  }
+
+  for (const match of text.matchAll(
+    /(?:https?:\/\/)?(?:www\.)?(?!linkedin\.com|github\.com)[a-z0-9][a-z0-9.-]+\.[a-z]{2,}(?:\/[^\s|,]*)?/gi,
+  )) {
+    const value = match[0];
+    if (/@/.test(value)) continue;
+    push('website', value);
+  }
+
+  // City, ST | City, State | City, Country
+  const location =
+    text.match(
+      /\b([A-Z][a-zA-Z .'-]+,\s*(?:[A-Z]{2}|[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)(?:\s+\d{5}(?:-\d{4})?)?)\b/,
+    )?.[1] ??
+    text.match(/\b([A-Z][a-zA-Z .'-]+,\s*[A-Z][a-zA-Z .'-]+)\b/)?.[1];
+  if (location && !/@/.test(location)) push('location', location);
 
   return fields.map((field, order) => ({
     ...field,
@@ -237,45 +290,68 @@ interface SectionGroup {
 function groupLinesBySection(lines: string[]): SectionGroup[] {
   const groups: SectionGroup[] = [];
   let current: SectionGroup | null = null;
+  let preamble: string[] = [];
+
   for (const line of lines) {
-    const sectionType = sectionTypeForLine(line);
-    if (sectionType) {
-      current = { title: titleCase(line), type: sectionType, lines: [] };
+    const detected = detectHeading(line);
+    if (detected) {
+      current = { title: detected.title, type: detected.type, lines: [] };
       groups.push(current);
       continue;
     }
     if (current) current.lines.push(line);
+    else preamble.push(line);
   }
+
+  // Content above the first heading (objective / summary blurbs) used to be
+  // discarded — keep it as a Summary when it looks like prose.
+  if (preamble.length > 0) {
+    const body = preamble.filter((line, index) => {
+      if (index === 0 && looksLikePersonName(line)) return false;
+      return !isContactHeavy(line);
+    });
+    if (body.length > 0) {
+      const joined = body.join(' ');
+      const looksLikeSummary =
+        joined.length > 40 ||
+        /\b(experienced|seeking|passionate|results|professional|engineer|developer|manager)\b/i.test(
+          joined,
+        );
+      if (looksLikeSummary) {
+        groups.unshift({
+          title: 'Summary',
+          type: 'summary',
+          lines: body,
+        });
+      } else if (groups.length === 0) {
+        groups.push({ title: 'Imported Content', type: 'custom', lines: body });
+      }
+    }
+  }
+
   return groups;
 }
 
-// LinkedIn PDFs use a predictable set of section labels and consistent whitespace.
 function groupLinkedInSections(lines: string[]): SectionGroup[] {
-  const knownLabels = [
-    'Contact',
-    'Top Skills',
-    'Languages',
-    'Summary',
-    'Experience',
-    'Education',
-    'Certifications',
-    'Honors & Awards',
-    'Honors and Awards',
-    'Publications',
-    'Volunteer Experience',
-    'Projects',
-    'Courses',
-    'Organizations',
-  ];
   const groups: SectionGroup[] = [];
   let current: SectionGroup | null = null;
   for (const line of lines) {
-    const matched = knownLabels.find(
-      (label) => line.toLowerCase().trim() === label.toLowerCase(),
+    const normalized = line.toLowerCase().trim().replace(/\s+\(\d+\)$/, '');
+    const matched = LINKEDIN_SECTION_LABELS.find(
+      (item) => item.label.toLowerCase() === normalized,
     );
     if (matched) {
-      const type = SECTION_KEYWORDS[matched.toLowerCase()] ?? 'custom';
-      current = { title: matched, type, lines: [] };
+      if (matched.label === 'Contact') {
+        current = null;
+        continue;
+      }
+      current = { title: matched.label, type: matched.type, lines: [] };
+      groups.push(current);
+      continue;
+    }
+    const fallback = detectHeading(line);
+    if (fallback && !current) {
+      current = { title: fallback.title, type: fallback.type, lines: [] };
       groups.push(current);
       continue;
     }
@@ -284,26 +360,46 @@ function groupLinkedInSections(lines: string[]): SectionGroup[] {
   return groups.length > 0 ? groups : groupLinesBySection(lines);
 }
 
-function sectionTypeForLine(line: string): SectionType | null {
-  const normalized = line.toLowerCase().replace(/[^a-z &]/g, '').trim();
-  if (normalized.length > 40) return null;
-  const key = Object.keys(SECTION_KEYWORDS).find(
-    (keyword) =>
-      normalized === keyword || normalized.endsWith(keyword) || normalized.startsWith(keyword),
-  );
-  if (key) return SECTION_KEYWORDS[key];
-  // Heading-shaped but unrecognized → custom (will be flagged for the user to
-  // re-classify in the import review per §12.3).
-  if (/^[A-Z][A-Z\s&]+$/.test(line) && line.length < 40) return 'custom';
+function detectHeading(line: string): { title: string; type: SectionType } | null {
+  const trimmed = line.trim();
+  if (trimmed.length > 48) return null;
+  if (BULLET_PATTERN.test(trimmed)) return null;
+  if (isContactHeavy(trimmed) && /@|linkedin|github/i.test(trimmed)) return null;
+
+  // Lexicon match first — before name heuristics (e.g. "Work Experience").
+  const exact = matchSectionType(trimmed);
+  if (exact) return { title: titleCase(trimmed), type: exact };
+
+  const fuzzyEarly = fuzzyMatchSectionType(trimmed);
+  if (fuzzyEarly) return { title: titleCase(trimmed), type: fuzzyEarly };
+
+  // Person names (2–4 capitalized words) are not section headings.
+  if (looksLikePersonName(trimmed)) return null;
+
+  // OpenResume-style: short ALL-CAPS or Title-Case standalone lines.
+  const isAllCaps = /^[A-Z][A-Z0-9\s&/'-]+$/.test(trimmed) && /[A-Z]{3,}/.test(trimmed);
+  const isTitleCase =
+    /^[A-Z][a-z]+(?:\s+(?:[&/]|[A-Z][a-z]+))+/.test(trimmed) &&
+    trimmed.split(/\s+/).length <= 5 &&
+    !trimmed.endsWith('.');
+
+  if (isAllCaps || isTitleCase) {
+    const words = trimmed.split(/\s+/);
+    // Unknown ALL-CAPS labels: 1 or 3+ words (skip 2-word names like "ALEX RIVERA").
+    if (isAllCaps && trimmed.length < 40 && (words.length === 1 || words.length >= 3)) {
+      return { title: titleCase(trimmed), type: 'custom' };
+    }
+  }
+
   return null;
 }
 
 export function isUnclassified(section: { type: SectionType; title: string }): boolean {
   if (section.type !== 'custom') return false;
-  // If the title matches a known keyword we trust the classification; otherwise
-  // it's an unrecognized heading the user should triage.
-  const normalized = section.title.toLowerCase().replace(/[^a-z &]/g, '').trim();
-  return !Object.keys(SECTION_KEYWORDS).some((k) => normalized.includes(k));
+  const normalized = normalizeHeadingKey(section.title);
+  return !Object.keys(SECTION_LEXICON).some(
+    (k) => normalized === k || normalized.includes(k) || k.includes(normalized),
+  );
 }
 
 function parseSection(
@@ -352,11 +448,19 @@ function parseSection(
 
 function parseSkills(lines: string[]): Entry[] {
   const entries = lines.flatMap((line) => {
-    const [category, ...rest] = line.split(':');
+    const cleaned = cleanBullet(line);
+    if (/[,;•|]/.test(cleaned) && !cleaned.includes(':')) {
+      return cleaned.split(/[,;•|]/).map((part) => ({
+        id: makeId(),
+        title: 'General',
+        subtitle: part.trim(),
+      }));
+    }
+    const [category, ...rest] = cleaned.split(':');
     if (rest.length > 0) {
       return [{ id: makeId(), title: category.trim(), subtitle: rest.join(':').trim() }];
     }
-    return line.split('|').map((part) => ({
+    return cleaned.split('|').map((part) => ({
       id: makeId(),
       title: 'General',
       subtitle: part.trim(),
@@ -375,9 +479,9 @@ function parseEntries(
   let active: Entry | null = null;
 
   for (const line of lines) {
-    if (/^[-*]\s+/.test(line)) {
+    if (BULLET_PATTERN.test(line)) {
       if (!active) {
-        active = emptyEntry(type);
+        active = emptyEntry();
         entries.push(active);
       }
       active.bullets = [
@@ -392,25 +496,30 @@ function parseEntries(
       continue;
     }
 
-    if (DATE_PATTERN.test(line) || !active || looksLikeEntryHeader(line)) {
+    // Standalone date line under a title → attach to the active entry.
+    if (active && isDateOnlyLine(line)) {
+      applyDateToEntry(active, line);
+      continue;
+    }
+
+    if (!active || looksLikeEntryHeader(line)) {
       active = parseEntryHeader(type, line, sectionPath, entries.length, flags);
       entries.push(active);
       continue;
     }
 
-    if (active) {
-      if (!active.subtitle) active.subtitle = line;
-      else {
-        active.bullets = [
-          ...(active.bullets ?? []),
-          {
-            id: makeId(),
-            content: cleanBullet(line),
-            visible: true,
-            order: active.bullets?.length ?? 0,
-          },
-        ];
-      }
+    if (!active.subtitle && line.length < 90 && !/[.!?]$/.test(line)) {
+      active.subtitle = line;
+    } else {
+      active.bullets = [
+        ...(active.bullets ?? []),
+        {
+          id: makeId(),
+          content: cleanBullet(line),
+          visible: true,
+          order: active.bullets?.length ?? 0,
+        },
+      ];
     }
   }
 
@@ -435,18 +544,42 @@ function parseEntryHeader(
   index: number,
   flags: ConfidenceFlag[],
 ): Entry {
-  const date = line.match(DATE_PATTERN)?.[0] ?? '';
-  const withoutDate = date ? line.replace(date, '').replace(/\s+[-|]\s*$/, '').trim() : line;
-  const parts = withoutDate.split(/\s+\|\s+|\s+-\s+|,\s+/).map((part) => part.trim()).filter(Boolean);
-  const entry = emptyEntry(type);
+  const dateMatch = line.match(DATE_PATTERN);
+  const date = dateMatch?.[0] ?? '';
+  const withoutDate = date
+    ? line.replace(date, '').replace(/[\s|,\-–—]+$/g, '').trim()
+    : line;
+
+  // Prefer | and " - " / " – " separators; avoid splitting "Austin, TX" on commas
+  // unless there are clearly 3+ comma-separated fields.
+  let parts: string[];
+  if (/\s+\|\s+/.test(withoutDate)) {
+    parts = withoutDate.split(/\s+\|\s+/).map((p) => p.trim()).filter(Boolean);
+  } else if (/\s+[-–—]\s+/.test(withoutDate)) {
+    parts = withoutDate.split(/\s+[-–—]\s+/).map((p) => p.trim()).filter(Boolean);
+  } else if ((withoutDate.match(/,/g) ?? []).length >= 2) {
+    parts = withoutDate.split(/,\s+/).map((p) => p.trim()).filter(Boolean);
+  } else {
+    parts = [withoutDate];
+  }
+
+  const entry = emptyEntry();
   entry.title = parts[0] ?? withoutDate;
   entry.subtitle = parts[1] ?? '';
   entry.location = parts[2] ?? '';
+
+  // If subtitle looks like a location (City, ST), promote it.
+  if (!entry.location && entry.subtitle && /^[A-Z].+,\s*[A-Z]{2}\b/.test(entry.subtitle)) {
+    entry.location = entry.subtitle;
+    entry.subtitle = '';
+  }
+
   if (date) {
-    const [start, end] = date.split(/\s+-\s+/);
-    entry.startDate = start?.trim() ?? '';
-    entry.endDate = end?.trim() ?? '';
-    entry.current = /present/i.test(entry.endDate);
+    const rangeParts = date.split(/\s*(?:[-–—]|to)\s*/i);
+    entry.startDate = normalizeDateToken(rangeParts[0] ?? '');
+    entry.endDate = normalizeDateToken(rangeParts[1] ?? '');
+    entry.current = /present|current|now|ongoing/i.test(entry.endDate);
+    if (entry.current) entry.endDate = 'Present';
   } else if (type === 'experience' || type === 'education' || type === 'projects') {
     flags.push({
       path: `sections.${sectionPath}.entries.${index}.dates`,
@@ -457,24 +590,80 @@ function parseEntryHeader(
   return entry;
 }
 
-function emptyEntry(type: SectionType): Entry {
+function normalizeDateToken(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  if (/present|current|now|ongoing/i.test(trimmed)) return 'Present';
+  return trimmed.replace(/\s+/g, ' ');
+}
+
+function emptyEntry(): Entry {
   return {
     id: makeId(),
     title: '',
     subtitle: '',
     location: '',
-    bullets:
-      type === 'awards' || type === 'certifications' || type === 'publications' ? [] : [],
+    bullets: [],
     customFields: {},
   };
 }
 
 function looksLikeEntryHeader(line: string): boolean {
-  return line.length < 100 && /^[A-Z0-9]/.test(line) && !line.endsWith('.');
+  if (BULLET_PATTERN.test(line)) return false;
+  if (line.length > 100) return false;
+  if (/[.!?]$/.test(line)) return false;
+  if (detectHeading(line)) return false;
+  if (isDateOnlyLine(line)) return false;
+
+  // Prose with an incidental year ("…since 2020…") is not an entry header.
+  if (DATE_PATTERN.test(line) && !dateLooksLikeHeader(line)) return false;
+
+  const words = line.split(/\s+/);
+  if (words.length > 12) return false;
+
+  const hasRoleSeparator = /\s+[|–—-]\s+/.test(line);
+  const startsCapitalized = /^[A-Z0-9]/.test(line);
+  const mostlyTitleCase =
+    words.filter((w) => /^[A-Z]/.test(w)).length >= Math.ceil(words.length * 0.5);
+
+  return startsCapitalized && (hasRoleSeparator || mostlyTitleCase || words.length <= 6);
+}
+
+function isDateOnlyLine(line: string): boolean {
+  const trimmed = line.trim();
+  if (!DATE_PATTERN.test(trimmed)) return false;
+  const withoutDates = trimmed
+    .replace(new RegExp(DATE_PATTERN.source, 'gi'), '')
+    .replace(/[-–—]|to|present|current|now|ongoing/gi, '')
+    .trim();
+  return withoutDates.length === 0;
+}
+
+function dateLooksLikeHeader(line: string): boolean {
+  return (
+    /^(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|spring|summer|fall|autumn|winter|\d{4}|\d{1,2}\/)/i.test(
+      line.trim(),
+    ) || /[-–—]\s*(?:present|current|\d{4})/i.test(line)
+  );
+}
+
+function applyDateToEntry(entry: Entry, line: string): void {
+  const date = line.match(DATE_PATTERN)?.[0] ?? line;
+  const rangeParts = date.split(/\s*(?:[-–—]|to)\s*/i);
+  entry.startDate = normalizeDateToken(rangeParts[0] ?? '');
+  entry.endDate = normalizeDateToken(rangeParts[1] ?? '');
+  entry.current = /present|current|now|ongoing/i.test(entry.endDate);
+  if (entry.current) entry.endDate = 'Present';
+}
+
+function looksLikePersonName(line: string): boolean {
+  if (matchSectionType(line) || fuzzyMatchSectionType(line)) return false;
+  const words = line.trim().split(/\s+/);
+  return words.length >= 2 && words.length <= 5 && !isContactHeavy(line) && !DATE_PATTERN.test(line);
 }
 
 function cleanBullet(line: string): string {
-  return line.replace(/^[-*]\s*/, '').trim();
+  return line.replace(BULLET_PATTERN, '').trim();
 }
 
 function layoutForType(type: SectionType): SectionLayout {
@@ -487,6 +676,17 @@ function titleCase(value: string): string {
   return value
     .toLowerCase()
     .split(/\s+/)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .map((word) => {
+      if (word === '&' || word === '/') return word;
+      if (word === 'and') return 'and';
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    })
     .join(' ');
+}
+
+function toNameCase(value: string): string {
+  if (/^[A-Z\s'’-]+$/.test(value) && value === value.toUpperCase()) {
+    return titleCase(value);
+  }
+  return value.trim();
 }

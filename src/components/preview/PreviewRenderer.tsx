@@ -157,6 +157,8 @@ function PageBreakOverlay({
   repeatHeader: boolean;
 }) {
   if (breakPositions.length === 0) return null;
+  const totalPages = breakPositions.length + 1;
+  const showPageNumbers = Boolean(resume.styles.pageNumbers) && totalPages > 1;
 
   return (
     <>
@@ -172,6 +174,21 @@ function PageBreakOverlay({
               zIndex: 2,
             }}
           />
+          {showPageNumbers && (
+            <div
+              style={{
+                position: 'absolute',
+                top: top - 14,
+                right: 8,
+                zIndex: 2,
+                fontSize: 9,
+                color: 'rgba(0,0,0,0.45)',
+                fontFamily: 'system-ui, sans-serif',
+              }}
+            >
+              Page {index + 1} of {totalPages}
+            </div>
+          )}
           {repeatHeader && (
             <div
               style={{

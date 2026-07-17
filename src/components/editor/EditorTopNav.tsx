@@ -21,6 +21,7 @@ import {
   ChevronDown,
   Check,
   Wand2,
+  AlertTriangle,
 } from 'lucide-react';
 import { useStore, onResumeSaved } from '@/store';
 import { ChangeTemplateMenu } from './ChangeTemplateMenu';
@@ -70,6 +71,7 @@ export function EditorTopNav() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyVersion, setHistoryVersion] = useState(0);
   const [savedHint, setSavedHint] = useState('');
+  const persistError = useStore((s) => s.persistError);
   const [restoreCandidate, setRestoreCandidate] = useState<ReturnType<typeof listVersionSnapshots>[number] | null>(null);
   const snapshots = useMemo(
     () => (resume ? listVersionSnapshots(resume.id) : []),
@@ -126,12 +128,22 @@ export function EditorTopNav() {
               {resume.name}
             </button>
           )}
-          {savedHint && (
+          {persistError ? (
+            <button
+              type="button"
+              className="ml-2 inline-flex max-w-[12rem] items-center gap-1 truncate text-xs text-danger"
+              title={persistError}
+              onClick={() => saveNow()}
+            >
+              <AlertTriangle size={12} /> {t('editor.saveFailed')}
+            </button>
+          ) : savedHint ? (
             <span className="ml-2 inline-flex items-center gap-1 text-xs text-ink-subtle" role="status">
               <Check size={12} className="text-ok" /> {t('editor.saved')}
             </span>
+          ) : (
+            <BackupHint />
           )}
-          {!savedHint && <BackupHint />}
           <div className="ml-2 hidden md:block">
             <ApplicationEditor
               resume={resume}

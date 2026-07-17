@@ -28,6 +28,7 @@ import { GenerateVariantModal } from '@/components/library/GenerateVariantModal'
 import { ShareModal } from '@/components/editor/ShareModal';
 import { ShortcutsModal } from '@/components/editor/ShortcutsModal';
 import { StickyNotes } from '@/components/editor/StickyNotes';
+import { getFocusedRichEditor } from '@/utils/focusedRichEditor';
 
 export function EditorPage() {
   const { t } = useTranslation();
@@ -135,10 +136,24 @@ export function EditorPage() {
       } else if (!isTextEditing && isHelp) {
         event.preventDefault();
         setShortcutsOpen(true);
-      } else if (!isTextEditing && isUndo) {
+      } else if (isUndo) {
+        // TipTap owns Ctrl+Z when its local history can undo; otherwise fall
+        // through to resume-level undo even while focus is in an input/editor.
+        const rich = target?.isContentEditable ? getFocusedRichEditor() : null;
+        if (rich?.can().undo()) {
+          event.preventDefault();
+          rich.chain().focus().undo().run();
+          return;
+        }
         event.preventDefault();
         undoResume();
-      } else if (!isTextEditing && isRedo) {
+      } else if (isRedo) {
+        const rich = target?.isContentEditable ? getFocusedRichEditor() : null;
+        if (rich?.can().redo()) {
+          event.preventDefault();
+          rich.chain().focus().redo().run();
+          return;
+        }
         event.preventDefault();
         redoResume();
       }

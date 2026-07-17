@@ -86,3 +86,9 @@ export function ensurePdfFontsRegistered(): void {
 export function pdfFontFamily(font: FontFamily): string {
   return FONT_FAMILY_MAP[font] ?? 'Times-Roman';
 }
+
+/** True when the PDF renderer uses a built-in fallback instead of the preview font. */
+export function isFallbackPdfFont(font: FontFamily): boolean {
+  const mapped = FONT_FAMILY_MAP[font];
+  return !mapped || mapped !== font;
+}
