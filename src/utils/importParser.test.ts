@@ -15,6 +15,7 @@ describe('section lexicon', () => {
     expect(matchSectionType('Professional Summary')).toBe('summary');
     expect(matchSectionType('Technical Skills')).toBe('skills');
     expect(matchSectionType('Honors & Awards')).toBe('awards');
+    expect(matchSectionType('Awards & Affiliations')).toBe('awards');
     expect(matchSectionType('Volunteer Experience')).toBe('leadership');
     expect(matchSectionType('Relevant Coursework')).toBe('education');
   });
@@ -163,5 +164,80 @@ describe('parseResumeText fixtures', () => {
     const experience = result.resume.sections.find((s) => s.type === 'experience');
     expect(experience?.entries.length).toBe(1);
     expect(experience?.entries[0]?.bullets?.[0]?.content).toMatch(/since 2020/i);
+  });
+
+  it('handles Sweta-style PDF quirks: bullets, nesting, awards, page junk, metro location', () => {
+    const text = [
+      'SWETA HARI',
+      'Dallas Fort-Worth Metroplex  swesub@gmail.com  (214) 555-0100',
+      'linkedin.com/in/swetahari',
+      'PRODUCT & CUSTOMER EXPERIENCE EXECUTIVE',
+      '',
+      'SKILLS',
+      'Customer Experience, Product Strategy, Stakeholder Management',
+      '',
+      'PROFESSIONAL EXPERIENCE',
+      'BRIGHT HORIZON CORP',
+      'Jan 2018 - Present',
+      'Director of Customer Experience',
+      'Jan 2020 - Present',
+      '\uF0B7 Grew NPS 18 points across enterprise accounts',
+      ' Led cross-functional launch of self-serve portal',
+      'Senior Manager, CX',
+      'Jan 2018 - Dec 2019',
+      '- Built voice-of-customer program used by 4 product teams',
+      '',
+      '-- 1 of 2 --',
+      '',
+      'EDUCATION',
+      'MBA — State University',
+      '2014 - 2016',
+      '',
+      'AWARDS & AFFILIATIONS',
+      'CX Leader of the Year — 2022',
+      'Member, Product Leadership Forum',
+    ].join('\n');
+
+    const normalized = normalizeResumeText(text);
+    expect(normalized).not.toMatch(/1 of 2/i);
+    expect(normalized).toMatch(/- Grew NPS/);
+    expect(normalized).toMatch(/- Led cross-functional/);
+
+    const result = parseResumeText(text, 'Sweta_Hari_RESUME.pdf');
+    expect(result.resume.header.name.toLowerCase()).toContain('sweta');
+    expect(result.resume.header.contactFields.some((f) => f.type === 'email')).toBe(true);
+    expect(result.resume.header.contactFields.some((f) => f.type === 'location')).toBe(true);
+    expect(
+      result.resume.header.contactFields.find((f) => f.type === 'location')?.value,
+    ).toMatch(/Metroplex/i);
+
+    const types = result.resume.sections.map((s) => s.type);
+    expect(types).not.toContain('custom');
+    expect(types).toContain('experience');
+    expect(types).toContain('education');
+    expect(types).toContain('awards');
+    expect(types).toContain('skills');
+
+    // Headline should land in summary preamble, not a fake section.
+    const summary = result.resume.sections.find((s) => s.type === 'summary');
+    expect(summary?.entries[0]?.title ?? summary?.entries[0]?.bullets?.[0]?.content ?? '').toMatch(
+      /executive|customer experience/i,
+    );
+
+    const experience = result.resume.sections.find((s) => s.type === 'experience');
+    expect(experience?.entries.length).toBeGreaterThanOrEqual(2);
+    const firstRole = experience?.entries[0];
+    expect(firstRole?.title).toMatch(/director/i);
+    expect(firstRole?.subtitle).toMatch(/bright horizon/i);
+    expect((firstRole?.bullets?.length ?? 0)).toBeGreaterThanOrEqual(2);
+
+    const secondRole = experience?.entries[1];
+    expect(secondRole?.title).toMatch(/senior manager/i);
+    expect(secondRole?.subtitle).toMatch(/bright horizon/i);
+
+    const awards = result.resume.sections.find((s) => s.type === 'awards');
+    expect((awards?.entries.length ?? 0) + (awards?.entries[0]?.bullets?.length ?? 0)).toBeGreaterThan(
+      0,
+    );
   });
 });

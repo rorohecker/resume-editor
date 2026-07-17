@@ -534,6 +534,8 @@ export default {
     placeholder: 'Type a note…',
     noteLabel: 'Sticky note',
     empty: 'No notes yet — add one with the + button.',
+    loadFailed: 'Could not load sticky notes from browser storage.',
+    saveFailed: 'Could not save sticky notes. Changes may be lost.',
   },
   cover: {
     title: 'Cover Letter Draft',

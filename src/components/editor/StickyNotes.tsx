@@ -25,29 +25,62 @@ export function StickyNotes({ resumeId }: { resumeId: string }) {
   const open = useStore((s) => s.stickyNotesOpen);
   const setOpen = useStore((s) => s.setStickyNotesOpen);
   const [notes, setNotes] = useState<StickyNote[]>([]);
+  const [storageError, setStorageError] = useState<string | null>(null);
   // Tracks which resume's notes are currently loaded, so a debounced save never
   // writes a previous resume's notes under a freshly switched id.
   const loadedFor = useRef<string | null>(null);
+  const lastErrorToastAt = useRef(0);
+
+  const notifyStickyError = useCallback(
+    (message: string) => {
+      setStorageError(message);
+      const now = Date.now();
+      if (now - lastErrorToastAt.current < 8000) return;
+      lastErrorToastAt.current = now;
+      void import('@/hooks/useToast').then(({ toast }) => {
+        toast(message, { tone: 'danger', ttl: 6000 });
+      });
+    },
+    [],
+  );
 
   useEffect(() => {
     let cancelled = false;
     loadedFor.current = null;
     setNotes([]);
-    void loadStickyNotes(resumeId).then((loaded) => {
+    setStorageError(null);
+    void loadStickyNotes(resumeId).then(({ notes: loaded, error }) => {
       if (cancelled) return;
       setNotes(loaded);
       loadedFor.current = resumeId;
+      if (error) {
+        notifyStickyError(
+          t('stickyNotes.loadFailed', {
+            defaultValue: 'Could not load sticky notes from browser storage.',
+          }),
+        );
+      }
     });
     return () => {
       cancelled = true;
     };
-  }, [resumeId]);
+  }, [resumeId, notifyStickyError, t]);
 
   useEffect(() => {
     if (loadedFor.current !== resumeId) return;
-    const timer = setTimeout(() => saveStickyNotes(resumeId, notes), 400);
+    const timer = setTimeout(() => {
+      void saveStickyNotes(resumeId, notes)
+        .then(() => setStorageError(null))
+        .catch(() => {
+          notifyStickyError(
+            t('stickyNotes.saveFailed', {
+              defaultValue: 'Could not save sticky notes. Changes may be lost.',
+            }),
+          );
+        });
+    }, 400);
     return () => clearTimeout(timer);
-  }, [notes, resumeId]);
+  }, [notes, resumeId, notifyStickyError, t]);
 
   const updateNote = useCallback((id: string, patch: Partial<StickyNote>) => {
     setNotes((cur) => cur.map((n) => (n.id === id ? { ...n, ...patch } : n)));
@@ -101,7 +134,17 @@ export function StickyNotes({ resumeId }: { resumeId: string }) {
               onDragStart={startDrag}
             />
           ))}
-          {notes.length === 0 && (
+          {storageError && (
+            <div className="pointer-events-none absolute inset-x-0 top-16 flex justify-center px-4">
+              <p
+                className="rounded-md bg-red-700/90 px-3 py-1.5 text-xs text-white"
+                role="status"
+              >
+                {storageError}
+              </p>
+            </div>
+          )}
+          {notes.length === 0 && !storageError && (
             <div className="pointer-events-none absolute inset-x-0 top-1/3 flex justify-center">
               <p className="rounded-md bg-ink/70 px-3 py-1.5 text-xs text-paper">
                 {t('stickyNotes.empty', { defaultValue: 'No notes yet — add one with the + button.' })}

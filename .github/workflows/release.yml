@@ -1,14 +1,17 @@
 name: Attach single-file html to release
 
-# Fires when a release tag is pushed (e.g. v0.2.4) or a release is published
-# from the GitHub UI. Builds the self-contained single-file html and attaches
-# it to the matching GitHub Release so users have a one-click download.
+# Fires when a release tag is pushed (e.g. v0.2.4). Builds the self-contained
+# single-file html and attaches it to the matching GitHub Release.
+# Only listen to tag pushes (not also release:published) to avoid racing
+# duplicate jobs that fight over the same asset upload.
 on:
   push:
     tags:
       - 'v*'
-  release:
-    types: [published]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -20,7 +23,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
       - name: Build single-file html
@@ -28,11 +31,7 @@ jobs:
       - name: Compute version
         id: ver
         run: |
-          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            VERSION="${GITHUB_REF_NAME}"
-          else
-            VERSION="v$(node -p "require('./package.json').version")"
-          fi
+          VERSION="${GITHUB_REF_NAME}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
       - name: Rename for download
         run: cp dist-single/index.html "resume-editor-${{ steps.ver.outputs.version }}.html"
@@ -41,12 +40,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${{ steps.ver.outputs.version }}"
-          # If no release exists for this tag yet (tag-push path), create one.
+          # If no release exists for this tag yet, create one with the asset.
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" \
               --title "$TAG" \
               --notes "Automated build. See commit history for changes." \
               "resume-editor-${TAG}.html"
           else
+            # Release was created manually (e.g. via gh release create); attach/replace asset.
             gh release upload "$TAG" "resume-editor-${TAG}.html" --clobber
           fi

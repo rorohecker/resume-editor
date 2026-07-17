@@ -539,6 +539,8 @@ export default {
     placeholder: 'Escribe una nota…',
     noteLabel: 'Nota adhesiva',
     empty: 'Aún no hay notas: agrega una con el botón +.',
+    loadFailed: 'No se pudieron cargar las notas adhesivas del almacenamiento del navegador.',
+    saveFailed: 'No se pudieron guardar las notas adhesivas. Es posible que se pierdan los cambios.',
   },
   cover: {
     title: 'Borrador de carta de presentación',

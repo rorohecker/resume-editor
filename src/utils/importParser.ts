@@ -47,7 +47,8 @@ const DATE_PATTERN = new RegExp(
   'i',
 );
 
-const BULLET_PATTERN = /^\s*(?:[-*•▪◦●‣∙·]|[oO0°¢|](?=\s)|(?:\d{1,2}|[a-z])[.)])\s+/i;
+const BULLET_PATTERN =
+  /^\s*(?:[-*\uF0B7\uF0A7\u25CF\u25A0\u25AA\u2022\u2023\u2043•▪◦●‣∙·]|[oO0°¢|](?=\s)|(?:\d{1,2}|[a-z])[.)])\s+/i;
 
 export function parseResumeText(
   raw: string,
@@ -175,8 +176,12 @@ export function normalizeResumeText(raw: string): string {
     .replace(/[“”]/g, '"')
     .replace(/[‘’]/g, "'")
     .replace(/[–—]/g, '-')
-    // Common OCR / PDF bullet artifacts → standard dash bullets.
-    .replace(/[•▪◦●‣∙·○◼︎□■◆◇►▸➢✔✓☑︎]/g, '-')
+    // Drop PDF page chrome before structure detection.
+    .replace(/^[ \t]*(?:--\s*)?(?:page\s+)?\d+\s*(?:of|\/)\s*\d+\s*(?:--)?[ \t]*$/gim, '')
+    .replace(/^[ \t]*page\s+\d+[ \t]*$/gim, '')
+    // Common OCR / PDF / Word bullet artifacts → standard dash bullets.
+    // Includes Wingdings private-use bullet (\uF0B7) often extracted as .
+    .replace(/[\uF0B7\uF0A7\u25CF\u25A0\u25AA\u2022\u2023\u2043•▪◦●‣∙·○◼︎□■◆◇►▸➢✔✓☑︎]\s*/g, '- ')
     .replace(/(^|\n)\s*[oO0°¢|]\s+(?=[A-Za-z])/g, '$1- ')
     .replace(/[^\S\n]+/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
@@ -264,13 +269,22 @@ function detectContactFields(lines: string[]): ContactField[] {
     push('website', value);
   }
 
-  // City, ST | City, State | City, Country
+  // Prefer metro-style places, then City, ST / City, State. Avoid skill-list commas.
   const location =
     text.match(
-      /\b([A-Z][a-zA-Z .'-]+,\s*(?:[A-Z]{2}|[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)(?:\s+\d{5}(?:-\d{4})?)?)\b/,
+      /\b((?:[A-Z][a-zA-Z]+(?:[\s-][A-Z]?[a-zA-Z]+){0,3})\s+(?:Metroplex|Metro(?:politan)?(?:\s+Area)?|Bay Area|Area|Region|Valley))\b/,
     )?.[1] ??
-    text.match(/\b([A-Z][a-zA-Z .'-]+,\s*[A-Z][a-zA-Z .'-]+)\b/)?.[1];
-  if (location && !/@/.test(location)) push('location', location);
+    text.match(
+      /\b([A-Z][a-zA-Z .'-]+,\s*(?:[A-Z]{2}|[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)(?:\s+\d{5}(?:-\d{4})?)?)\b/,
+    )?.[1];
+  if (
+    location &&
+    !/@/.test(location) &&
+    !/linkedin|github|http/i.test(location) &&
+    !/\b(experience|strategy|management|skills|product|customer)\b/i.test(location)
+  ) {
+    push('location', location);
+  }
 
   return fields.map((field, order) => ({
     ...field,
@@ -313,8 +327,9 @@ function groupLinesBySection(lines: string[]): SectionGroup[] {
     if (body.length > 0) {
       const joined = body.join(' ');
       const looksLikeSummary =
-        joined.length > 40 ||
-        /\b(experienced|seeking|passionate|results|professional|engineer|developer|manager)\b/i.test(
+        joined.length >= 40 ||
+        looksLikeJobTitleHeadline(joined) ||
+        /\b(experienced|experience|seeking|passionate|results|professional|engineer|developer|manager|executive)\b/i.test(
           joined,
         );
       if (looksLikeSummary) {
@@ -384,14 +399,22 @@ function detectHeading(line: string): { title: string; type: SectionType } | nul
     !trimmed.endsWith('.');
 
   if (isAllCaps || isTitleCase) {
-    const words = trimmed.split(/\s+/);
-    // Unknown ALL-CAPS labels: 1 or 3+ words (skip 2-word names like "ALEX RIVERA").
-    if (isAllCaps && trimmed.length < 40 && (words.length === 1 || words.length >= 3)) {
+    const words = trimmed.split(/\s+/).filter((w) => w !== '&' && w !== '/');
+    // Job-title headlines (PRODUCT … EXECUTIVE) belong in summary preamble, not as sections.
+    if (looksLikeJobTitleHeadline(trimmed)) return null;
+    // Unknown ALL-CAPS labels: 1–3 words (skip 2-word names like "ALEX RIVERA" via person check above).
+    if (isAllCaps && trimmed.length < 40 && (words.length === 1 || words.length >= 3) && words.length <= 4) {
       return { title: titleCase(trimmed), type: 'custom' };
     }
   }
 
   return null;
+}
+
+function looksLikeJobTitleHeadline(line: string): boolean {
+  return /\b(executive|director|manager|engineer|analyst|specialist|consultant|officer|president|founder|lead|head|vp|svp|evp)\b/i.test(
+    line,
+  );
 }
 
 export function isUnclassified(section: { type: SectionType; title: string }): boolean {
@@ -477,6 +500,8 @@ function parseEntries(
 ): Entry[] {
   const entries: Entry[] = [];
   let active: Entry | null = null;
+  // When a company header nests multiple roles, keep the employer for siblings.
+  let employerContext: { subtitle: string; location: string } | null = null;
 
   for (const line of lines) {
     if (BULLET_PATTERN.test(line)) {
@@ -503,13 +528,84 @@ function parseEntries(
     }
 
     if (!active || looksLikeEntryHeader(line)) {
-      active = parseEntryHeader(type, line, sectionPath, entries.length, flags);
+      const next = parseEntryHeader(type, line, sectionPath, entries.length, flags);
+
+      // Company line then role line (common PDF layout): title=role, subtitle=company.
+      if (
+        type === 'experience' &&
+        active &&
+        (active.bullets?.length ?? 0) === 0 &&
+        looksLikeCompanyThenRole(active, next)
+      ) {
+        const companyName = active.title ?? '';
+        const companyLocation = active.location;
+        const companyStart = active.startDate;
+        const companyEnd = active.endDate;
+        const companyCurrent = active.current;
+        active.title = next.title;
+        active.subtitle = companyName;
+        active.location = next.location || companyLocation || '';
+        active.startDate = next.startDate || companyStart;
+        active.endDate = next.endDate || companyEnd;
+        active.current = next.current ?? companyCurrent;
+        if (active.current) active.endDate = 'Present';
+        employerContext = { subtitle: companyName, location: active.location || '' };
+        continue;
+      }
+
+      // Another role under the same employer (after bullets on the previous role).
+      if (
+        type === 'experience' &&
+        employerContext &&
+        active &&
+        (active.bullets?.length ?? 0) > 0 &&
+        looksLikeSiblingRole(next, employerContext)
+      ) {
+        next.subtitle = next.subtitle || employerContext.subtitle;
+        next.location = next.location || employerContext.location;
+        active = next;
+        entries.push(active);
+        continue;
+      }
+
+      if (type === 'experience' && looksLikeOrgName(next.title ?? '') && !next.subtitle) {
+        employerContext = { subtitle: next.title ?? '', location: next.location || '' };
+      } else if (type === 'experience' && next.subtitle && looksLikeOrgName(next.subtitle)) {
+        employerContext = { subtitle: next.subtitle, location: next.location || '' };
+      } else if (!looksLikeSiblingRole(next, employerContext ?? { subtitle: '', location: '' })) {
+        employerContext = null;
+      }
+
+      active = next;
       entries.push(active);
+      continue;
+    }
+
+    // Company + dates already set; next short line is the role title.
+    if (
+      type === 'experience' &&
+      active &&
+      active.title &&
+      !active.subtitle &&
+      (active.bullets?.length ?? 0) === 0 &&
+      looksLikeRoleTitle(line) &&
+      line.length < 90 &&
+      !/[.!?]$/.test(line)
+    ) {
+      active.subtitle = active.title;
+      active.title = line;
+      employerContext = {
+        subtitle: active.subtitle,
+        location: active.location || '',
+      };
       continue;
     }
 
     if (!active.subtitle && line.length < 90 && !/[.!?]$/.test(line)) {
       active.subtitle = line;
+      if (type === 'experience' && looksLikeOrgName(line)) {
+        employerContext = { subtitle: line, location: active.location || '' };
+      }
     } else {
       active.bullets = [
         ...(active.bullets ?? []),
@@ -535,6 +631,60 @@ function parseEntries(
       }
       return entry;
     });
+}
+
+function isLocationLike(value: string): boolean {
+  return (
+    /^[A-Z].+,\s*[A-Z]{2}\b/.test(value) ||
+    /\b(?:Metroplex|Metro(?:politan)?(?:\s+Area)?|Bay Area|Area|Region|Valley)\b/i.test(value)
+  );
+}
+
+function looksLikeOrgName(title: string): boolean {
+  const trimmed = title.trim();
+  if (!trimmed) return false;
+  if (looksLikeRoleTitle(trimmed)) return false;
+  if (
+    /\b(inc|llc|ltd|corp|corporation|company|co|group|labs|lab|technologies|technology|systems|solutions|partners|university|college|hospital|clinic|agency|studio|ventures|holdings)\b\.?$/i.test(
+      trimmed,
+    )
+  ) {
+    return true;
+  }
+  // ALL-CAPS employer lines are common in PDF extracts.
+  return /^[A-Z][A-Z0-9][A-Z0-9\s&.,'-]+$/.test(trimmed) && trimmed.split(/\s+/).length <= 8;
+}
+
+function looksLikeRoleTitle(title: string): boolean {
+  return (
+    looksLikeJobTitleHeadline(title) ||
+    /\b(engineer|manager|director|analyst|designer|developer|specialist|consultant|intern|associate|architect|scientist|coordinator|administrator|producer|strategist|researcher|technician|advisor|accountant|attorney|nurse|teacher|professor)\b/i.test(
+      title,
+    )
+  );
+}
+
+function looksLikeCompanyThenRole(company: Entry, role: Entry): boolean {
+  if (!company.title || !role.title) return false;
+  if ((company.bullets?.length ?? 0) > 0) return false;
+  if (company.subtitle && !isLocationLike(company.subtitle)) return false;
+  // Already parsed as "Role — Company".
+  if (looksLikeRoleTitle(company.title) && company.subtitle) return false;
+  return (
+    looksLikeOrgName(company.title) ||
+    looksLikeRoleTitle(role.title) ||
+    Boolean(company.startDate && role.startDate && company.title !== role.title)
+  );
+}
+
+function looksLikeSiblingRole(
+  role: Entry,
+  employer: { subtitle: string; location: string },
+): boolean {
+  if (!employer.subtitle || !role.title) return false;
+  if (role.subtitle && !isLocationLike(role.subtitle)) return false;
+  if (looksLikeOrgName(role.title) && !looksLikeRoleTitle(role.title)) return false;
+  return Boolean(role.startDate) || looksLikeRoleTitle(role.title);
 }
 
 function parseEntryHeader(

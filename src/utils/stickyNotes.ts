@@ -53,24 +53,41 @@ function normalizeNote(input: unknown): StickyNote | null {
   };
 }
 
-export async function loadStickyNotes(resumeId: string): Promise<StickyNote[]> {
+function toError(err: unknown, fallback: string): Error {
+  return err instanceof Error ? err : new Error(fallback);
+}
+
+export async function loadStickyNotes(
+  resumeId: string,
+): Promise<{ notes: StickyNote[]; error?: Error }> {
   try {
     const value = await idbGet<unknown>(STICKY_NOTES_PREFIX + resumeId);
-    if (!Array.isArray(value)) return [];
-    return value.map(normalizeNote).filter((note): note is StickyNote => Boolean(note));
-  } catch {
-    return [];
+    if (!Array.isArray(value)) return { notes: [] };
+    return {
+      notes: value.map(normalizeNote).filter((note): note is StickyNote => Boolean(note)),
+    };
+  } catch (err) {
+    return {
+      notes: [],
+      error: toError(err, 'Failed to load sticky notes'),
+    };
   }
 }
 
-export function saveStickyNotes(resumeId: string, notes: StickyNote[]): void {
-  void idbSet(STICKY_NOTES_PREFIX + resumeId, notes).catch((err) =>
-    console.warn('Failed to persist sticky notes', err),
-  );
+export async function saveStickyNotes(resumeId: string, notes: StickyNote[]): Promise<void> {
+  try {
+    await idbSet(STICKY_NOTES_PREFIX + resumeId, notes);
+  } catch (err) {
+    const error = toError(err, 'Failed to save sticky notes');
+    console.warn('Failed to persist sticky notes', err);
+    throw error;
+  }
 }
 
 export function deleteStickyNotes(resumeId: string): void {
-  void idbDel(STICKY_NOTES_PREFIX + resumeId).catch(() => {});
+  void idbDel(STICKY_NOTES_PREFIX + resumeId).catch((err) => {
+    console.warn('Failed to delete sticky notes', err);
+  });
 }
 
 export function createStickyNote(partial: Partial<StickyNote> = {}): StickyNote {
