@@ -118,6 +118,7 @@ export default {
     fontPdfFallback: 'PDF aprox.',
     fontFallbackWarn:
       'Esta fuente usa un respaldo en PDF — los saltos de línea del preview pueden diferir un poco del PDF exportado.',
+    fontPdfExact: 'La fuente exacta se incluye en el PDF exportado.',
     saveSnapshot: 'Guardar instantánea',
     tailorToJob: 'Adaptar al puesto',
     compare: 'Comparar con otro currículum o instantánea',

@@ -1,7 +1,7 @@
 {
   "name": "resume-editor",
   "private": true,
-  "version": "0.2.39",
+  "version": "0.2.40",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -19,6 +19,8 @@
     "@fontsource/eb-garamond": "^5.2.7",
     "@fontsource/inter": "^5.2.8",
     "@fontsource/lato": "^5.2.7",
+    "@fontsource/source-sans-3": "^5.2.9",
+    "@fontsource/source-serif-4": "^5.2.9",
     "@react-pdf/renderer": "^4.5.1",
     "@tiptap/extension-link": "^3.23.4",
     "@tiptap/extension-underline": "^3.23.4",

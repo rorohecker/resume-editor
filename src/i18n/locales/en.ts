@@ -113,6 +113,7 @@ export default {
     weakReplaceTitle: 'Stronger phrasing',
     fontPdfFallback: 'PDF approx.',
     fontFallbackWarn: 'This font uses a PDF fallback — preview line breaks may differ slightly from the exported PDF.',
+    fontPdfExact: 'Exact font embedded in PDF export.',
     saveSnapshot: 'Save snapshot',
     tailorToJob: 'Tailor to job',
     compare: 'Compare with another resume or snapshot',

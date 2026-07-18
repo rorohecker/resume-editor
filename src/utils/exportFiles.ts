@@ -817,6 +817,10 @@ function wordFontFor(font: Resume['styles']['font']): string {
       return 'Inter';
     case 'Carlito':
       return 'Carlito';
+    case 'Source Serif 4':
+      return 'Source Serif 4';
+    case 'Source Sans 3':
+      return 'Source Sans 3';
     case 'Nimbus Sans':
       return 'Nimbus Sans';
     case 'Latin Modern Roman':

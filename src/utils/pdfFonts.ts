@@ -30,6 +30,14 @@ import carlitoRegular from '@fontsource/carlito/files/carlito-latin-400-normal.w
 import carlitoBold from '@fontsource/carlito/files/carlito-latin-700-normal.woff?url';
 import carlitoItalic from '@fontsource/carlito/files/carlito-latin-400-italic.woff?url';
 
+import sourceSerifRegular from '@fontsource/source-serif-4/files/source-serif-4-latin-400-normal.woff?url';
+import sourceSerifBold from '@fontsource/source-serif-4/files/source-serif-4-latin-700-normal.woff?url';
+import sourceSerifItalic from '@fontsource/source-serif-4/files/source-serif-4-latin-400-italic.woff?url';
+
+import sourceSansRegular from '@fontsource/source-sans-3/files/source-sans-3-latin-400-normal.woff?url';
+import sourceSansBold from '@fontsource/source-sans-3/files/source-sans-3-latin-700-normal.woff?url';
+import sourceSansItalic from '@fontsource/source-sans-3/files/source-sans-3-latin-400-italic.woff?url';
+
 interface EmbeddedFont {
   family: string;
   regular: string;
@@ -42,6 +50,8 @@ const EMBEDDED_FONTS: EmbeddedFont[] = [
   { family: 'Inter', regular: interRegular, bold: interBold, italic: interItalic },
   { family: 'Lato', regular: latoRegular, bold: latoBold, italic: latoItalic },
   { family: 'Carlito', regular: carlitoRegular, bold: carlitoBold, italic: carlitoItalic },
+  { family: 'Source Serif 4', regular: sourceSerifRegular, bold: sourceSerifBold, italic: sourceSerifItalic },
+  { family: 'Source Sans 3', regular: sourceSansRegular, bold: sourceSansBold, italic: sourceSansItalic },
 ];
 
 // Map every selectable font to the PDF family we render with. Embedded fonts
@@ -53,6 +63,8 @@ const FONT_FAMILY_MAP: Record<FontFamily, string> = {
   Inter: 'Inter',
   Lato: 'Lato',
   Carlito: 'Carlito',
+  'Source Serif 4': 'Source Serif 4',
+  'Source Sans 3': 'Source Sans 3',
   Georgia: 'Times-Roman',
   'Times New Roman': 'Times-Roman',
   'Nimbus Sans': 'Helvetica',

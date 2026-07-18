@@ -153,9 +153,27 @@ const FONTS: FontFamily[] = [
   'Lato',
   'Inter',
   'Carlito',
+  'Source Serif 4',
+  'Source Sans 3',
   'Nimbus Sans',
   'Latin Modern Roman',
 ];
+
+function fontPreviewStack(font: FontFamily): string {
+  const stacks: Record<FontFamily, string> = {
+    'EB Garamond': '"EB Garamond", Garamond, Georgia, serif',
+    Georgia: 'Georgia, serif',
+    'Times New Roman': '"Times New Roman", Times, serif',
+    Lato: 'Lato, Arial, sans-serif',
+    Inter: 'Inter, Arial, sans-serif',
+    Carlito: 'Carlito, Calibri, Arial, sans-serif',
+    'Source Serif 4': '"Source Serif 4", Georgia, serif',
+    'Source Sans 3': '"Source Sans 3", Arial, sans-serif',
+    'Nimbus Sans': '"Nimbus Sans", Helvetica, Arial, sans-serif',
+    'Latin Modern Roman': '"Latin Modern Roman", Georgia, serif',
+  };
+  return stacks[font];
+}
 
 const COLOR_THEMES = [
   { name: 'editor.themeClassicBlack', nameColor: '#000000', rule: '#000000', accent: '#111111', body: '#000000' },
@@ -639,9 +657,10 @@ function AppearanceControls({
             value={resume.styles.font}
             onChange={(e) => updateStyles({ font: e.target.value as FontFamily })}
             className="input"
+            style={{ fontFamily: fontPreviewStack(resume.styles.font) }}
           >
             {FONTS.map((font) => (
-              <option key={font} value={font}>
+              <option key={font} value={font} style={{ fontFamily: fontPreviewStack(font) }}>
                 {font}
                 {isFallbackPdfFont(font) ? ` (${t('editor.fontPdfFallback')})` : ''}
               </option>
@@ -649,6 +668,9 @@ function AppearanceControls({
           </select>
           {isFallbackPdfFont(resume.styles.font) && (
             <p className="mt-1 text-[10px] text-warn">{t('editor.fontFallbackWarn')}</p>
+          )}
+          {!isFallbackPdfFont(resume.styles.font) && (
+            <p className="mt-1 text-[10px] text-ok">{t('editor.fontPdfExact')}</p>
           )}
         </Field>
 

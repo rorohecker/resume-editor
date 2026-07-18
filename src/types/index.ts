@@ -49,6 +49,8 @@ export type FontFamily =
   | 'Lato'
   | 'Inter'
   | 'Carlito'
+  | 'Source Serif 4'
+  | 'Source Sans 3'
   | 'Nimbus Sans'
   | 'Latin Modern Roman';
 

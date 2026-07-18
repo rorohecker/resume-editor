@@ -1029,6 +1029,10 @@ function cssFontStack(font: Resume['styles']['font']): string {
       return 'Inter, system-ui, -apple-system, sans-serif';
     case 'Carlito':
       return 'Carlito, Calibri, sans-serif';
+    case 'Source Serif 4':
+      return '"Source Serif 4", Georgia, "Times New Roman", serif';
+    case 'Source Sans 3':
+      return '"Source Sans 3", "Helvetica Neue", Arial, sans-serif';
     case 'Nimbus Sans':
       return '"Nimbus Sans", "Helvetica Neue", Helvetica, Arial, sans-serif';
     case 'Latin Modern Roman':
