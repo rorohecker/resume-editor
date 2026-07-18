@@ -82,6 +82,225 @@
     --c-warn: 251 146 60;
   }
 
+  /* Sakura — inspired by Japanese cyberdeck palettes: cherry blossom pink,
+     jade highlights, deep plum glass, and softly drifting petal lights. */
+  .accent-sakura {
+    --c-ink: 68 34 53;
+    --c-ink-soft: 91 42 68;
+    --c-ink-muted: 126 70 98;
+    --c-ink-subtle: 165 111 137;
+    --c-paper: 255 249 252;
+    --c-paper-tint: 255 239 246;
+    --c-paper-edge: 244 190 215;
+    --c-accent: 219 39 119;
+    --c-accent-hover: 190 24 93;
+    --c-ok: 5 150 105;
+  }
+  .accent-sakura.dark {
+    --c-ink: 255 240 248;
+    --c-ink-soft: 250 214 232;
+    --c-ink-muted: 216 160 190;
+    --c-ink-subtle: 161 105 137;
+    --c-paper: 35 20 34;
+    --c-paper-tint: 52 28 48;
+    --c-paper-edge: 100 51 83;
+    --c-accent: 255 92 163;
+    --c-accent-hover: 255 150 194;
+    --c-ok: 52 211 153;
+  }
+
+  /* Golden Hour — a layered coral-to-amber horizon with plum shadows and
+     a slow moving light leak, inspired by cinematic sunset dashboards. */
+  .accent-sunset {
+    --c-ink: 72 31 50;
+    --c-ink-soft: 91 38 56;
+    --c-ink-muted: 130 67 71;
+    --c-ink-subtle: 170 106 94;
+    --c-paper: 255 251 244;
+    --c-paper-tint: 255 241 220;
+    --c-paper-edge: 241 190 139;
+    --c-accent: 234 88 12;
+    --c-accent-hover: 194 65 12;
+    --c-warn: 180 83 9;
+  }
+  .accent-sunset.dark {
+    --c-ink: 255 244 225;
+    --c-ink-soft: 254 215 170;
+    --c-ink-muted: 222 166 132;
+    --c-ink-subtle: 166 107 104;
+    --c-paper: 42 19 32;
+    --c-paper-tint: 64 27 38;
+    --c-paper-edge: 113 52 54;
+    --c-accent: 251 146 60;
+    --c-accent-hover: 253 186 116;
+    --c-warn: 251 191 36;
+  }
+
+  /* Cosmic — neon cyan and violet on a deep-space glass surface. The subtle
+     grid and star drift borrow from modern cyberpunk/glassmorphism consoles. */
+  .accent-cosmic {
+    --c-ink: 35 25 72;
+    --c-ink-soft: 49 36 91;
+    --c-ink-muted: 89 76 128;
+    --c-ink-subtle: 132 117 164;
+    --c-paper: 250 249 255;
+    --c-paper-tint: 241 238 255;
+    --c-paper-edge: 205 194 239;
+    --c-accent: 109 40 217;
+    --c-accent-hover: 76 29 149;
+    --c-ok: 8 145 178;
+  }
+  .accent-cosmic.dark {
+    --c-ink: 241 245 255;
+    --c-ink-soft: 219 225 250;
+    --c-ink-muted: 166 174 216;
+    --c-ink-subtle: 105 113 163;
+    --c-paper: 12 9 31;
+    --c-paper-tint: 22 16 48;
+    --c-paper-edge: 59 45 104;
+    --c-accent: 34 211 238;
+    --c-accent-hover: 103 232 249;
+    --c-ok: 52 211 153;
+  }
+
+  html.accent-sakura body,
+  html.accent-sunset body,
+  html.accent-cosmic body {
+    background-attachment: fixed;
+    background-size: 180% 180%;
+    animation: atmosphere-drift 18s ease-in-out infinite alternate;
+  }
+  html.accent-sakura body {
+    background-image:
+      radial-gradient(circle at 12% 18%, rgb(244 114 182 / 0.28), transparent 34%),
+      radial-gradient(circle at 88% 78%, rgb(52 211 153 / 0.18), transparent 30%),
+      linear-gradient(145deg, rgb(255 247 251), rgb(255 237 246) 52%, rgb(240 253 250));
+  }
+  html.accent-sakura.dark body {
+    background-image:
+      radial-gradient(circle at 12% 18%, rgb(255 34 137 / 0.2), transparent 35%),
+      radial-gradient(circle at 88% 78%, rgb(0 255 136 / 0.1), transparent 30%),
+      linear-gradient(145deg, rgb(19 13 26), rgb(45 20 42) 55%, rgb(14 35 34));
+  }
+  html.accent-sunset body {
+    background-image:
+      radial-gradient(circle at 15% 85%, rgb(251 146 60 / 0.3), transparent 35%),
+      radial-gradient(circle at 85% 10%, rgb(251 191 36 / 0.24), transparent 30%),
+      linear-gradient(145deg, rgb(255 247 237), rgb(255 228 196) 50%, rgb(253 230 240));
+  }
+  html.accent-sunset.dark body {
+    background-image:
+      radial-gradient(circle at 15% 85%, rgb(249 115 22 / 0.2), transparent 38%),
+      radial-gradient(circle at 85% 10%, rgb(251 191 36 / 0.13), transparent 30%),
+      linear-gradient(145deg, rgb(21 8 16), rgb(68 25 38) 52%, rgb(55 30 20));
+  }
+  html.accent-cosmic body {
+    background-image:
+      radial-gradient(circle at 18% 15%, rgb(192 132 252 / 0.28), transparent 34%),
+      radial-gradient(circle at 82% 82%, rgb(34 211 238 / 0.2), transparent 32%),
+      linear-gradient(145deg, rgb(248 247 255), rgb(236 232 255) 55%, rgb(236 254 255));
+  }
+  html.accent-cosmic.dark body {
+    background-image:
+      radial-gradient(circle at 18% 15%, rgb(192 132 252 / 0.2), transparent 36%),
+      radial-gradient(circle at 82% 82%, rgb(34 211 238 / 0.15), transparent 32%),
+      linear-gradient(145deg, rgb(5 5 16), rgb(17 10 44) 55%, rgb(3 24 35));
+  }
+
+  html.accent-sakura body::before,
+  html.accent-sunset body::before,
+  html.accent-cosmic body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.45;
+    will-change: transform, background-position;
+  }
+  html.accent-sakura body::before {
+    background-image:
+      radial-gradient(ellipse at center, rgb(255 255 255 / 0.9) 0 2px, transparent 3px),
+      radial-gradient(ellipse at center, rgb(244 114 182 / 0.55) 0 3px, transparent 4px);
+    background-position: 0 0, 40px 55px;
+    background-size: 96px 110px, 140px 160px;
+    animation: petals-fall 24s linear infinite;
+  }
+  html.accent-sunset body::before {
+    background: linear-gradient(
+      105deg,
+      transparent 20%,
+      rgb(255 255 255 / 0.18) 42%,
+      rgb(251 191 36 / 0.18) 50%,
+      transparent 72%
+    );
+    transform: translateX(-55%);
+    animation: sunset-light-leak 12s ease-in-out infinite;
+  }
+  html.accent-cosmic body::before {
+    background-image:
+      radial-gradient(circle, rgb(255 255 255 / 0.75) 0 1px, transparent 1.5px),
+      linear-gradient(rgb(34 211 238 / 0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(192 132 252 / 0.07) 1px, transparent 1px);
+    background-size: 70px 70px, 48px 48px, 48px 48px;
+    animation: cosmic-grid 28s linear infinite;
+  }
+
+  html.accent-sakura #root,
+  html.accent-sunset #root,
+  html.accent-cosmic #root {
+    position: relative;
+    z-index: 1;
+  }
+  html.accent-sakura #root > .bg-paper-tint,
+  html.accent-sunset #root > .bg-paper-tint,
+  html.accent-cosmic #root > .bg-paper-tint {
+    background-color: transparent;
+  }
+  html.accent-sakura .bg-paper,
+  html.accent-sunset .bg-paper,
+  html.accent-cosmic .bg-paper {
+    background-color: rgb(var(--c-paper) / 0.9);
+    backdrop-filter: blur(14px) saturate(125%);
+  }
+  html.accent-sakura .shadow-page {
+    box-shadow: 0 18px 48px rgb(219 39 119 / 0.12);
+  }
+  html.accent-sunset .shadow-page {
+    box-shadow: 0 18px 48px rgb(234 88 12 / 0.14);
+  }
+  html.accent-cosmic .shadow-page {
+    box-shadow: 0 18px 52px rgb(109 40 217 / 0.17);
+  }
+
+  @keyframes atmosphere-drift {
+    from { background-position: 0% 20%; }
+    to { background-position: 100% 80%; }
+  }
+  @keyframes petals-fall {
+    from { background-position: 0 -180px, 40px -260px; transform: translateX(-18px); }
+    to { background-position: 90px 900px, -30px 1100px; transform: translateX(24px); }
+  }
+  @keyframes sunset-light-leak {
+    0%, 100% { transform: translateX(-65%) skewX(-8deg); opacity: 0.18; }
+    50% { transform: translateX(65%) skewX(-8deg); opacity: 0.5; }
+  }
+  @keyframes cosmic-grid {
+    from { background-position: 0 0, 0 0, 0 0; }
+    to { background-position: 80px 520px, 96px 96px, 96px 96px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html.accent-sakura body,
+    html.accent-sunset body,
+    html.accent-cosmic body,
+    html.accent-sakura body::before,
+    html.accent-sunset body::before,
+    html.accent-cosmic body::before {
+      animation: none !important;
+    }
+  }
+
   html,
   body,
   #root {

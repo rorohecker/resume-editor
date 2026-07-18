@@ -1,13 +1,26 @@
 import { useEffect, useState } from 'react';
 
-// Editor-chrome accent palette. Three variants, all of which only affect the
+// Editor-chrome accent palette. Variants only affect the
 // editor UI (buttons, borders, hover states). The rendered resume itself is
 // driven by `resume.styles.colors` and is never touched by this hook so prints
 // stay neutral regardless of what palette the user picked.
-export type AccentTheme = 'minimal' | 'accent' | 'distinct';
+export type AccentTheme =
+  | 'minimal'
+  | 'accent'
+  | 'distinct'
+  | 'sakura'
+  | 'sunset'
+  | 'cosmic';
 
 const STORAGE_KEY = 'resume-editor:accent';
-const ACCENTS: AccentTheme[] = ['minimal', 'accent', 'distinct'];
+const ACCENTS: AccentTheme[] = [
+  'minimal',
+  'accent',
+  'distinct',
+  'sakura',
+  'sunset',
+  'cosmic',
+];
 
 function readStored(): AccentTheme {
   try {

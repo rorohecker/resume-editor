@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Download, FileText, Replace, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, FileText, Loader2, Rocket, X } from 'lucide-react';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import {
   compareVersions,
@@ -7,14 +7,23 @@ import {
   recordBackup,
   type ReleaseInfo,
 } from '@/utils/updateCheck';
-import { exportAllData, persistResumeNow } from '@/store/persistence';
-import { flushPendingSave, useStore } from '@/store';
 import {
-  isFileSystemAccessSupported,
-  LATEST_SINGLE_FILE_URL,
-  replaceLocalFileWithLatest,
-} from '@/utils/fileSync';
+  exportAllData,
+  importAllData,
+  isFullAppBackup,
+  persistResumeNow,
+} from '@/store/persistence';
+import { flushPendingSave, useStore } from '@/store';
 import { toast } from '@/hooks/useToast';
+
+const HOSTED_APP_URL = 'https://rorohecker.github.io/resume-editor/';
+const HOSTED_ORIGIN = new URL(HOSTED_APP_URL).origin;
+
+type MigrationMessage =
+  | { type: 'resume-editor:migration-ready'; token: string }
+  | { type: 'resume-editor:migration-data'; token: string; payload: unknown }
+  | { type: 'resume-editor:migration-complete'; token: string; resumes: number }
+  | { type: 'resume-editor:migration-error'; token: string; message: string };
 
 // One banner handles both deployment modes.
 //
@@ -23,13 +32,15 @@ import { toast } from '@/hooks/useToast';
 //   pending edits, apply the waiting worker, and reload automatically.
 //
 // Single-file html (no service worker, often opened from file://)
-//   We poll the GitHub releases API and surface Download / Replace actions.
+//   We poll releases, then migrate local data into the hosted PWA and relaunch
+//   there. This avoids browser-mandated file pickers and enables future updates
+//   to apply automatically.
 
 export function UpdateBanner() {
   const [release, setRelease] = useState<ReleaseInfo | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
-  const [replacing, setReplacing] = useState(false);
+  const [migrating, setMigrating] = useState(false);
   const updateIntervalRef = useRef<number | null>(null);
 
   const {
@@ -48,6 +59,64 @@ export function UpdateBanner() {
   useEffect(() => {
     return () => {
       if (updateIntervalRef.current != null) window.clearInterval(updateIntervalRef.current);
+    };
+  }, []);
+
+  // Hosted receiver for one-click migration from the downloaded HTML build.
+  // The random token ties the payload to the window that initiated this launch.
+  useEffect(() => {
+    if (__APP_SINGLE_FILE__) return;
+    const query = window.location.hash.split('?')[1] ?? '';
+    const token = new URLSearchParams(query).get('migration');
+    if (!token || !window.opener) return;
+
+    let completed = false;
+    const announceReady = () => {
+      if (completed) return;
+      window.opener?.postMessage(
+        { type: 'resume-editor:migration-ready', token } satisfies MigrationMessage,
+        '*',
+      );
+    };
+
+    const onMessage = async (event: MessageEvent<MigrationMessage>) => {
+      if (event.source !== window.opener) return;
+      const message = event.data;
+      if (message?.type !== 'resume-editor:migration-data' || message.token !== token) return;
+      completed = true;
+      try {
+        if (!isFullAppBackup(message.payload)) {
+          throw new Error('The local data transfer was not a valid backup.');
+        }
+        const result = await importAllData(message.payload);
+        window.opener?.postMessage(
+          {
+            type: 'resume-editor:migration-complete',
+            token,
+            resumes: result.resumes,
+          } satisfies MigrationMessage,
+          '*',
+        );
+        window.setTimeout(() => window.location.replace(HOSTED_APP_URL), 250);
+      } catch (err) {
+        window.opener?.postMessage(
+          {
+            type: 'resume-editor:migration-error',
+            token,
+            message: err instanceof Error ? err.message : 'Migration failed.',
+          } satisfies MigrationMessage,
+          '*',
+        );
+      }
+    };
+
+    window.addEventListener('message', onMessage);
+    announceReady();
+    const readyTimer = window.setInterval(announceReady, 500);
+    return () => {
+      completed = true;
+      window.clearInterval(readyTimer);
+      window.removeEventListener('message', onMessage);
     };
   }, []);
 
@@ -120,29 +189,67 @@ export function UpdateBanner() {
     });
   };
 
-  const replaceLocal = async () => {
-    if (replacing) return;
-    setReplacing(true);
-    try {
-      const outcome = await replaceLocalFileWithLatest();
-      if (outcome.ok) {
-        toast(
-          `Replaced ${outcome.filename ?? 'your existing file'}. Close this tab and re-open the file to load the new version.`,
-          { tone: 'success', ttl: 6000 },
-        );
-        setDismissed(true);
-      } else if (outcome.cancelled) {
-        // No-op — the user dismissed the picker.
-      } else if (outcome.error) {
-        toast(outcome.error, { tone: 'warn', ttl: 5000 });
+  const migrateAndRelaunch = () => {
+    if (migrating) return;
+    setMigrating(true);
+    const token =
+      typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const migrationUrl = `${HOSTED_APP_URL}#/?migration=${encodeURIComponent(token)}`;
+    let popup: Window | null = null;
+    let sent = false;
+
+    const cleanup = () => {
+      window.clearTimeout(timeout);
+      window.removeEventListener('message', onMessage);
+      setMigrating(false);
+    };
+
+    const fail = (message: string) => {
+      cleanup();
+      popup?.close();
+      toast(message, { tone: 'danger', ttl: 6000 });
+    };
+
+    const onMessage = async (event: MessageEvent<MigrationMessage>) => {
+      if (event.origin !== HOSTED_ORIGIN || event.source !== popup) return;
+      const message = event.data;
+      if (!message || message.token !== token) return;
+
+      if (message.type === 'resume-editor:migration-ready' && !sent) {
+        sent = true;
+        try {
+          flushPendingSave();
+          const current = useStore.getState().currentResume;
+          if (current) await persistResumeNow(current);
+          const payload = await exportAllData();
+          popup?.postMessage(
+            { type: 'resume-editor:migration-data', token, payload } satisfies MigrationMessage,
+            HOSTED_ORIGIN,
+          );
+        } catch (err) {
+          fail(err instanceof Error ? err.message : 'Could not prepare local data for update.');
+        }
+      } else if (message.type === 'resume-editor:migration-complete') {
+        cleanup();
+        popup?.close();
+        // Relaunch this tab on the hosted PWA. Data is already restored there,
+        // and every future update can apply without another file picker.
+        window.location.assign(HOSTED_APP_URL);
+      } else if (message.type === 'resume-editor:migration-error') {
+        fail(message.message);
       }
-    } catch (err) {
-      toast(err instanceof Error ? err.message : 'Replace failed.', {
-        tone: 'danger',
-        ttl: 5000,
-      });
-    } finally {
-      setReplacing(false);
+    };
+
+    window.addEventListener('message', onMessage);
+    const timeout = window.setTimeout(() => {
+      fail('The online updater did not respond. Check your connection and try again.');
+    }, 20_000);
+
+    popup = window.open(migrationUrl, 'resume-editor-update', 'popup,width=720,height=760');
+    if (!popup) {
+      fail('Your browser blocked the updater window. Allow pop-ups and try again.');
     }
   };
 
@@ -157,8 +264,8 @@ export function UpdateBanner() {
             Version {release.name || release.version} is available
           </div>
           <p className="mt-1 text-xs text-ink-muted">
-            Update in place (Chrome / Edge) or download a fresh copy. The Replace button fetches the
-            latest build from the live site and overwrites the file you pick.
+            Move to the auto-updating web app and relaunch with all your resumes—no file picker or
+            old-version selection required.
           </p>
 
           {release.body && (
@@ -186,31 +293,16 @@ export function UpdateBanner() {
             <button type="button" onClick={downloadBackup} className="btn-secondary text-xs">
               Back up data
             </button>
-            {isFileSystemAccessSupported() ? (
-              <button
-                type="button"
-                onClick={() => void replaceLocal()}
-                disabled={replacing}
-                className="btn-primary text-xs"
-                title={`Fetches the latest build from ${LATEST_SINGLE_FILE_URL} and overwrites the local file you pick.`}
-              >
-                <Replace size={12} />
-                {replacing ? 'Replacing…' : 'Replace this file in place'}
-              </button>
-            ) : (
-              release.htmlAssetUrl && (
-                <a
-                  href={release.htmlAssetUrl}
-                  download={`resume-editor-${release.version}.html`}
-                  rel="noopener noreferrer"
-                  className="btn-primary text-xs"
-                >
-                  <Download size={12} />
-                  Download {release.version}
-                </a>
-              )
-            )}
-            {isFileSystemAccessSupported() && release.htmlAssetUrl && (
+            <button
+              type="button"
+              onClick={migrateAndRelaunch}
+              disabled={migrating}
+              className="btn-primary text-xs"
+            >
+              {migrating ? <Loader2 size={12} className="animate-spin" /> : <Rocket size={12} />}
+              {migrating ? 'Moving your data…' : 'Update & relaunch'}
+            </button>
+            {release.htmlAssetUrl && (
               <a
                 href={release.htmlAssetUrl}
                 download={`resume-editor-${release.version}.html`}
@@ -221,15 +313,6 @@ export function UpdateBanner() {
                 Download as new file
               </a>
             )}
-            <a
-              href="https://rorohecker.github.io/resume-editor/update.html"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn-ghost text-xs"
-              title="Hosted helper page that overwrites your local file. Works even if this version's Replace button is broken."
-            >
-              Stuck? Use the hosted updater
-            </a>
             {release.releaseUrl && (
               <a
                 href={release.releaseUrl}

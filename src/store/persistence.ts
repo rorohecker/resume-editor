@@ -307,7 +307,7 @@ export async function importAllData(payload: unknown): Promise<{ resumes: number
   for (const raw of Object.values(payload.resumes)) {
     const normalized = normalizeResume(raw);
     if (!normalized) continue;
-    saveResume(normalized);
+    await persistResumeNow(normalized);
     resumesRestored += 1;
   }
 
@@ -320,7 +320,7 @@ export async function importAllData(payload: unknown): Promise<{ resumes: number
       );
       if (cleaned.length === 0) continue;
       cache.snapshots.set(resumeId, cleaned.slice(0, MAX_SNAPSHOTS));
-      void writeSnapshotsCompressed(resumeId, cleaned.slice(0, MAX_SNAPSHOTS));
+      await writeSnapshotsCompressed(resumeId, cleaned.slice(0, MAX_SNAPSHOTS));
       snapshotsRestored += cleaned.length;
     }
   }
