@@ -28,6 +28,7 @@ interface UIState {
   stickyNotesOpen: boolean;
   importReferenceOpen: boolean;
   importReferenceAvailable: boolean;
+  importReferenceEpoch: number;
   pdfPreviewMode: boolean;
   anonymized: boolean;
   zoom: number;
@@ -61,6 +62,7 @@ interface Actions {
   setStickyNotesOpen: (open: boolean) => void;
   setImportReferenceOpen: (open: boolean) => void;
   setImportReferenceAvailable: (available: boolean) => void;
+  bumpImportReference: () => void;
   setPdfPreviewMode: (on: boolean) => void;
   setAnonymized: (on: boolean) => void;
   setZoom: (zoom: number) => void;
@@ -111,6 +113,7 @@ export const useStore = create<UIState & ResumeState & Actions>((set, get) => ({
   stickyNotesOpen: false,
   importReferenceOpen: false,
   importReferenceAvailable: false,
+  importReferenceEpoch: 0,
   pdfPreviewMode: false,
   anonymized: false,
   zoom: 1,
@@ -138,6 +141,12 @@ export const useStore = create<UIState & ResumeState & Actions>((set, get) => ({
   setStickyNotesOpen: (stickyNotesOpen) => set({ stickyNotesOpen }),
   setImportReferenceOpen: (importReferenceOpen) => set({ importReferenceOpen }),
   setImportReferenceAvailable: (importReferenceAvailable) => set({ importReferenceAvailable }),
+  bumpImportReference: () =>
+    set((state) => ({
+      importReferenceAvailable: true,
+      importReferenceOpen: true,
+      importReferenceEpoch: state.importReferenceEpoch + 1,
+    })),
   setPdfPreviewMode: (pdfPreviewMode) => set({ pdfPreviewMode }),
   setAnonymized: (anonymized) => set({ anonymized }),
   setZoom: (zoom) => set({ zoom: clamp(zoom, 0.5, 1.5) }),

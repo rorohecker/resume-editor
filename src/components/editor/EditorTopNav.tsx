@@ -261,6 +261,26 @@ export function EditorTopNav() {
         >
           <Upload size={16} />
         </button>
+        {importReferenceAvailable && (
+          <button
+            type="button"
+            className={`icon-btn ${importReferenceOpen ? 'bg-paper-tint text-ink' : ''}`}
+            title={
+              importReferenceOpen
+                ? t('importReference.hide')
+                : t('importReference.toggle')
+            }
+            aria-label={
+              importReferenceOpen
+                ? t('importReference.hide')
+                : t('importReference.toggle')
+            }
+            aria-pressed={importReferenceOpen}
+            onClick={() => setImportReferenceOpen(!importReferenceOpen)}
+          >
+            <PanelLeftOpen size={16} />
+          </button>
+        )}
         <button
           type="button"
           onClick={() => {
@@ -336,18 +356,6 @@ export function EditorTopNav() {
           >
             <GitCompare size={16} />
           </button>
-          {importReferenceAvailable && (
-            <button
-              type="button"
-              className={`icon-btn ${importReferenceOpen ? 'bg-paper-tint text-ink' : ''}`}
-              title={t('importReference.toggle')}
-              aria-label={t('importReference.toggle')}
-              aria-pressed={importReferenceOpen}
-              onClick={() => setImportReferenceOpen(!importReferenceOpen)}
-            >
-              <PanelLeftOpen size={16} />
-            </button>
-          )}
           <button
             type="button"
             className="icon-btn"
@@ -442,8 +450,7 @@ export function EditorTopNav() {
         if (meta?.sourceText.trim()) {
           try {
             await appendImportReference(resume.id, meta.sourceText, meta.sourceName);
-            useStore.getState().setImportReferenceAvailable(true);
-            setImportReferenceOpen(true);
+            useStore.getState().bumpImportReference();
           } catch {
             toast(t('importReference.saveFailed'), { tone: 'danger' });
           }

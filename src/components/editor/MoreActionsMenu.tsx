@@ -118,7 +118,9 @@ export function MoreActionsMenu() {
     },
     ...(importReferenceAvailable
       ? [{
-          label: t('importReference.toggle'),
+          label: importReferenceOpen
+            ? t('importReference.hide')
+            : t('importReference.toggle'),
           icon: PanelLeftOpen,
           active: importReferenceOpen,
           onClick: () => {

@@ -24,7 +24,23 @@ export function compareVersions(a: string, b: string): number {
   }
   if (aPre && !bPre) return -1;
   if (!aPre && bPre) return 1;
-  if (aPre && bPre) return aPre.localeCompare(bPre);
+  if (aPre && bPre) {
+    const aParts = aPre.split('.');
+    const bParts = bPre.split('.');
+    for (let i = 0; i < Math.max(aParts.length, bParts.length); i++) {
+      const aSeg = aParts[i] ?? '';
+      const bSeg = bParts[i] ?? '';
+      const aNum = Number.parseInt(aSeg, 10);
+      const bNum = Number.parseInt(bSeg, 10);
+      if (!Number.isNaN(aNum) && !Number.isNaN(bNum) && String(aNum) === aSeg && String(bNum) === bSeg) {
+        if (aNum !== bNum) return aNum - bNum;
+        continue;
+      }
+      const cmp = aSeg.localeCompare(bSeg);
+      if (cmp !== 0) return cmp;
+    }
+    return 0;
+  }
   return 0;
 }
 

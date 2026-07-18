@@ -2,12 +2,13 @@ import { get as idbGet, set as idbSet, del as idbDel, keys as idbKeys } from 'id
 import type { Resume, VersionSnapshot } from '@/types';
 import { normalizeResume } from '@/types/schema';
 import { makeId } from '@/utils/id';
-import { deleteStickyNotes, loadAllStickyNotes, copyStickyNotes } from '@/utils/stickyNotes';
 import {
   copyImportReference,
   deleteImportReference,
   loadAllImportReferences,
+  saveImportReference,
 } from '@/utils/importReference';
+import { deleteStickyNotes, loadAllStickyNotes, copyStickyNotes, saveStickyNotes } from '@/utils/stickyNotes';
 
 // Persistence strategy: IndexedDB is the source of truth, with a synchronous
 // in-memory write-through cache. Reads always hit the cache (instant, sync).
@@ -277,6 +278,88 @@ export async function exportAllData(): Promise<{
     stickyNotes: await loadAllStickyNotes(),
     importReferences: await loadAllImportReferences(),
   };
+}
+
+export function isFullAppBackup(value: unknown): value is {
+  resumes: Record<string, unknown>;
+  versions?: Record<string, unknown>;
+  stickyNotes?: Record<string, unknown>;
+  importReferences?: Record<string, unknown>;
+} {
+  return Boolean(
+    value &&
+      typeof value === 'object' &&
+      (value as { resumes?: unknown }).resumes &&
+      typeof (value as { resumes: unknown }).resumes === 'object' &&
+      !Array.isArray((value as { resumes: unknown }).resumes),
+  );
+}
+
+/** Restore a full-app JSON backup created by `exportAllData`. Merges into existing data. */
+export async function importAllData(payload: unknown): Promise<{ resumes: number; snapshots: number }> {
+  if (!isFullAppBackup(payload)) {
+    throw new Error('This file is not a Resume Editor backup.');
+  }
+
+  let resumesRestored = 0;
+  let snapshotsRestored = 0;
+
+  for (const raw of Object.values(payload.resumes)) {
+    const normalized = normalizeResume(raw);
+    if (!normalized) continue;
+    saveResume(normalized);
+    resumesRestored += 1;
+  }
+
+  if (payload.versions && typeof payload.versions === 'object') {
+    for (const [resumeId, snaps] of Object.entries(payload.versions)) {
+      if (!Array.isArray(snaps) || snaps.length === 0) continue;
+      const cleaned = snaps.filter(
+        (snap): snap is VersionSnapshot =>
+          Boolean(snap && typeof snap === 'object' && typeof (snap as VersionSnapshot).id === 'string'),
+      );
+      if (cleaned.length === 0) continue;
+      cache.snapshots.set(resumeId, cleaned.slice(0, MAX_SNAPSHOTS));
+      void writeSnapshotsCompressed(resumeId, cleaned.slice(0, MAX_SNAPSHOTS));
+      snapshotsRestored += cleaned.length;
+    }
+  }
+
+  if (payload.stickyNotes && typeof payload.stickyNotes === 'object') {
+    for (const [resumeId, notes] of Object.entries(payload.stickyNotes)) {
+      if (!Array.isArray(notes)) continue;
+      await saveStickyNotes(resumeId, notes as import('@/utils/stickyNotes').StickyNote[]);
+    }
+  }
+
+  if (payload.importReferences && typeof payload.importReferences === 'object') {
+    for (const [resumeId, reference] of Object.entries(payload.importReferences)) {
+      if (!reference || typeof reference !== 'object') continue;
+      const text = (reference as { text?: unknown }).text;
+      if (typeof text !== 'string' || !text.trim()) continue;
+      const sourceName = (reference as { sourceName?: unknown }).sourceName;
+      await saveImportReference(
+        resumeId,
+        text,
+        typeof sourceName === 'string' ? sourceName : undefined,
+      );
+    }
+  }
+
+  return { resumes: resumesRestored, snapshots: snapshotsRestored };
+}
+
+/** Await a durable write of the given resume (used before forced reloads). */
+export async function persistResumeNow(resume: Resume): Promise<void> {
+  cache.resumes.set(resume.id, resume);
+  try {
+    await idbSet(RESUME_PREFIX + resume.id, resume);
+    notifyPersistOk();
+    broadcast({ type: 'resume:save', resume });
+  } catch (err) {
+    notifyPersistError(err, RESUME_PREFIX + resume.id);
+    throw err;
+  }
 }
 
 export function importResumeData(resume: Resume): Resume {

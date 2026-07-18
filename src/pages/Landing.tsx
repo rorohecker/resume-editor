@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Copy, Download, FileText, Pencil, Plus, Trash2, Upload } from 'lucide-react';
@@ -33,6 +33,8 @@ import {
   deleteResume,
   duplicateResume,
   exportAllData,
+  importAllData,
+  isFullAppBackup,
   isHydrated,
   listResumes,
   loadResume,
@@ -53,6 +55,7 @@ export function LandingPage() {
   const [importOpen, setImportOpen] = useState(false);
   const [resumes, setResumes] = useState(() => (isHydrated() ? listResumes() : []));
   const [view, setView] = useState<View>('list');
+  const backupInputRef = useRef<HTMLInputElement>(null);
   const recents = resumes;
 
   const refresh = () => setResumes(listResumes());
@@ -88,6 +91,21 @@ export function LandingPage() {
       recordBackup();
       toast(t('landing.backupSaved'), { tone: 'success', ttl: 2000 });
     });
+  };
+
+  const restoreBackup = async (file: File) => {
+    try {
+      const parsed: unknown = JSON.parse(await file.text());
+      if (!isFullAppBackup(parsed)) {
+        toast(t('landing.restoreInvalid'), { tone: 'warn' });
+        return;
+      }
+      const result = await importAllData(parsed);
+      refresh();
+      toast(t('landing.restoreDone', { count: result.resumes }), { tone: 'success' });
+    } catch (err) {
+      toast(err instanceof Error ? err.message : t('landing.restoreFailed'), { tone: 'danger' });
+    }
   };
 
   const moveResumeStatus = (resumeId: string, status: ApplicationStatus) => {
@@ -178,6 +196,25 @@ export function LandingPage() {
                   <Download size={15} />
                   {t('landing.exportBackup')}
                 </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => backupInputRef.current?.click()}
+                >
+                  <Upload size={15} />
+                  {t('landing.restoreBackup')}
+                </button>
+                <input
+                  ref={backupInputRef}
+                  type="file"
+                  accept="application/json,.json"
+                  className="hidden"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = '';
+                    if (file) void restoreBackup(file);
+                  }}
+                />
               </div>
             </div>
 
@@ -344,8 +381,7 @@ export function LandingPage() {
           if (meta?.sourceText.trim()) {
             try {
               await saveImportReference(resume.id, meta.sourceText, meta.sourceName);
-              useStore.getState().setImportReferenceAvailable(true);
-              useStore.getState().setImportReferenceOpen(true);
+              useStore.getState().bumpImportReference();
             } catch {
               toast(t('importReference.saveFailed'), { tone: 'danger' });
             }

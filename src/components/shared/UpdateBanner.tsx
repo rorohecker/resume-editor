@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { ChevronDown, ChevronRight, Download, FileText, RefreshCcw, Replace, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ChevronDown, ChevronRight, Download, FileText, Replace, X } from 'lucide-react';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import {
   compareVersions,
@@ -7,7 +7,8 @@ import {
   recordBackup,
   type ReleaseInfo,
 } from '@/utils/updateCheck';
-import { exportAllData } from '@/store/persistence';
+import { exportAllData, persistResumeNow } from '@/store/persistence';
+import { flushPendingSave, useStore } from '@/store';
 import {
   isFileSystemAccessSupported,
   LATEST_SINGLE_FILE_URL,
@@ -18,23 +19,18 @@ import { toast } from '@/hooks/useToast';
 // One banner handles both deployment modes.
 //
 // Hosted (GitHub Pages with a service worker)
-//   useRegisterSW reports `needRefresh` when a new SW is waiting. We also try
-//   to fetch the matching release notes from the GitHub API so the user can
-//   preview what they're about to install before reloading.
+//   useRegisterSW reports `needRefresh` when a new SW is waiting. We flush
+//   pending edits, apply the waiting worker, and reload automatically.
 //
 // Single-file html (no service worker, often opened from file://)
-//   We poll the GitHub releases API and surface a Download link (always
-//   reliable — browser handles the navigation) plus an optional Replace flow
-//   for Chromium browsers. The Replace flow uses two File System Access
-//   pickers to do a pure file-to-file copy and never goes through fetch(), so
-//   it side-steps the CORS issue that bites file:// origins trying to fetch
-//   GitHub asset URLs.
+//   We poll the GitHub releases API and surface Download / Replace actions.
 
 export function UpdateBanner() {
   const [release, setRelease] = useState<ReleaseInfo | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
   const [replacing, setReplacing] = useState(false);
+  const updateIntervalRef = useRef<number | null>(null);
 
   const {
     needRefresh: [needRefresh],
@@ -42,11 +38,18 @@ export function UpdateBanner() {
   } = useRegisterSW({
     onRegisteredSW(_url, reg) {
       if (!reg) return;
-      window.setInterval(() => {
+      if (updateIntervalRef.current != null) window.clearInterval(updateIntervalRef.current);
+      updateIntervalRef.current = window.setInterval(() => {
         reg.update().catch(() => {});
       }, 60 * 60 * 1000);
     },
   });
+
+  useEffect(() => {
+    return () => {
+      if (updateIntervalRef.current != null) window.clearInterval(updateIntervalRef.current);
+    };
+  }, []);
 
   // Single-file path: poll the GitHub releases API.
   useEffect(() => {
@@ -67,28 +70,38 @@ export function UpdateBanner() {
     };
   }, []);
 
-  // Hosted path: when the SW reports an update is ready, also pull the
-  // matching release notes so the user gets a preview before reloading.
+  // Hosted path: flush pending edits, then apply the waiting SW and reload.
   useEffect(() => {
     if (__APP_SINGLE_FILE__) return;
     if (!needRefresh) return;
-    if (release) return;
     let cancelled = false;
-    void fetchLatestRelease().then((latest) => {
-      if (!cancelled && latest) setRelease(latest);
-    });
+
+    const run = async () => {
+      toast('Updating to the latest version…', { tone: 'info', ttl: 2000 });
+      flushPendingSave();
+      const current = useStore.getState().currentResume;
+      if (current) {
+        try {
+          await persistResumeNow(current);
+        } catch {
+          // Best-effort — still reload so the user gets the fix.
+        }
+      }
+      // Brief settle so any other queued IDB writes can finish.
+      await new Promise((resolve) => window.setTimeout(resolve, 350));
+      if (cancelled) return;
+      void updateServiceWorker(true);
+    };
+
+    void run();
     return () => {
       cancelled = true;
     };
-  }, [needRefresh, release]);
+  }, [needRefresh, updateServiceWorker]);
 
-  const kind: 'hosted' | 'singleFile' | null =
-    needRefresh && !__APP_SINGLE_FILE__
-      ? 'hosted'
-      : __APP_SINGLE_FILE__ && release
-        ? 'singleFile'
-        : null;
-  if (!kind || dismissed) return null;
+  // Hosted updates auto-reload; only keep the interactive banner for single-file.
+  if (!__APP_SINGLE_FILE__) return null;
+  if (!release || dismissed) return null;
 
   const downloadBackup = () => {
     void exportAllData().then((data) => {
@@ -107,9 +120,6 @@ export function UpdateBanner() {
     });
   };
 
-  // Single-picker replace: fetch the always-latest single-file html from
-  // GitHub Pages (CORS:* enabled), then ask the user once to pick their
-  // local file to overwrite. No manual download, no second picker.
   const replaceLocal = async () => {
     if (replacing) return;
     setReplacing(true);
@@ -136,29 +146,22 @@ export function UpdateBanner() {
     }
   };
 
-  const headline =
-    kind === 'hosted'
-      ? release
-        ? `Version ${release.name || release.version} is ready`
-        : 'A new version is ready'
-      : `Version ${release?.name || release?.version} is available`;
-
-  const summary =
-    kind === 'hosted'
-      ? 'Your local IndexedDB data survives the reload. Back up first if you want extra safety.'
-      : 'Update in place (Chrome / Edge) or download a fresh copy. The Replace button fetches the latest build from the live site and overwrites the file you pick.';
-
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex justify-center px-4">
       <div className="pointer-events-auto flex max-w-2xl items-start gap-3 rounded-lg border border-accent/40 bg-paper p-4 shadow-page">
         <div className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-accent/10 text-accent">
-          {kind === 'hosted' ? <RefreshCcw size={16} /> : <Download size={16} />}
+          <Download size={16} />
         </div>
         <div className="min-w-0 flex-1 text-sm">
-          <div className="font-semibold text-ink">{headline}</div>
-          <p className="mt-1 text-xs text-ink-muted">{summary}</p>
+          <div className="font-semibold text-ink">
+            Version {release.name || release.version} is available
+          </div>
+          <p className="mt-1 text-xs text-ink-muted">
+            Update in place (Chrome / Edge) or download a fresh copy. The Replace button fetches the
+            latest build from the live site and overwrites the file you pick.
+          </p>
 
-          {release?.body && (
+          {release.body && (
             <div className="mt-2 rounded border border-paper-edge bg-paper-tint">
               <button
                 type="button"
@@ -183,66 +186,51 @@ export function UpdateBanner() {
             <button type="button" onClick={downloadBackup} className="btn-secondary text-xs">
               Back up data
             </button>
-            {kind === 'hosted' ? (
+            {isFileSystemAccessSupported() ? (
               <button
                 type="button"
-                onClick={() => {
-                  void updateServiceWorker(true);
-                }}
+                onClick={() => void replaceLocal()}
+                disabled={replacing}
                 className="btn-primary text-xs"
+                title={`Fetches the latest build from ${LATEST_SINGLE_FILE_URL} and overwrites the local file you pick.`}
               >
-                <RefreshCcw size={12} />
-                Reload to update
+                <Replace size={12} />
+                {replacing ? 'Replacing…' : 'Replace this file in place'}
               </button>
             ) : (
-              <>
-                {isFileSystemAccessSupported() ? (
-                  <button
-                    type="button"
-                    onClick={() => void replaceLocal()}
-                    disabled={replacing}
-                    className="btn-primary text-xs"
-                    title={`Fetches the latest build from ${LATEST_SINGLE_FILE_URL} and overwrites the local file you pick.`}
-                  >
-                    <Replace size={12} />
-                    {replacing ? 'Replacing…' : 'Replace this file in place'}
-                  </button>
-                ) : (
-                  release?.htmlAssetUrl && (
-                    <a
-                      href={release.htmlAssetUrl}
-                      download={`resume-editor-${release.version}.html`}
-                      rel="noopener noreferrer"
-                      className="btn-primary text-xs"
-                    >
-                      <Download size={12} />
-                      Download {release.version}
-                    </a>
-                  )
-                )}
-                {isFileSystemAccessSupported() && release?.htmlAssetUrl && (
-                  <a
-                    href={release.htmlAssetUrl}
-                    download={`resume-editor-${release.version}.html`}
-                    rel="noopener noreferrer"
-                    className="btn-secondary text-xs"
-                  >
-                    <Download size={12} />
-                    Download as new file
-                  </a>
-                )}
+              release.htmlAssetUrl && (
                 <a
-                  href="https://rorohecker.github.io/resume-editor/update.html"
-                  target="_blank"
+                  href={release.htmlAssetUrl}
+                  download={`resume-editor-${release.version}.html`}
                   rel="noopener noreferrer"
-                  className="btn-ghost text-xs"
-                  title="Hosted helper page that overwrites your local file. Works even if this version's Replace button is broken."
+                  className="btn-primary text-xs"
                 >
-                  Stuck? Use the hosted updater
+                  <Download size={12} />
+                  Download {release.version}
                 </a>
-              </>
+              )
             )}
-            {release?.releaseUrl && (
+            {isFileSystemAccessSupported() && release.htmlAssetUrl && (
+              <a
+                href={release.htmlAssetUrl}
+                download={`resume-editor-${release.version}.html`}
+                rel="noopener noreferrer"
+                className="btn-secondary text-xs"
+              >
+                <Download size={12} />
+                Download as new file
+              </a>
+            )}
+            <a
+              href="https://rorohecker.github.io/resume-editor/update.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-ghost text-xs"
+              title="Hosted helper page that overwrites your local file. Works even if this version's Replace button is broken."
+            >
+              Stuck? Use the hosted updater
+            </a>
+            {release.releaseUrl && (
               <a
                 href={release.releaseUrl}
                 target="_blank"
