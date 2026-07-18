@@ -7,6 +7,7 @@ import {
   deleteImportReference,
   loadAllImportReferences,
   saveImportReference,
+  type ImportOriginalFile,
 } from '@/utils/importReference';
 import { deleteStickyNotes, loadAllStickyNotes, copyStickyNotes, saveStickyNotes } from '@/utils/stickyNotes';
 
@@ -342,11 +343,26 @@ export async function importAllData(payload: unknown): Promise<{ resumes: number
         resumeId,
         text,
         typeof sourceName === 'string' ? sourceName : undefined,
+        normalizeRestoredOriginal(reference),
       );
     }
   }
 
   return { resumes: resumesRestored, snapshots: snapshotsRestored };
+}
+
+function normalizeRestoredOriginal(reference: unknown): ImportOriginalFile | undefined {
+  if (!reference || typeof reference !== 'object') return undefined;
+  const original = (reference as { original?: unknown }).original;
+  if (!original || typeof original !== 'object') return undefined;
+  const raw = original as Partial<ImportOriginalFile>;
+  if (typeof raw.base64 !== 'string' || !raw.base64.trim()) return undefined;
+  if (typeof raw.mime !== 'string' || !raw.mime.trim()) return undefined;
+  return {
+    base64: raw.base64,
+    mime: raw.mime,
+    name: typeof raw.name === 'string' ? raw.name : undefined,
+  };
 }
 
 /** Await a durable write of the given resume (used before forced reloads). */

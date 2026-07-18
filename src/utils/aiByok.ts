@@ -10,6 +10,8 @@ export interface AiSettings {
   model: string;
   dailyLimit: number;
   minuteLimit: number;
+  /** Standing instructions the agent must follow when editing the resume. */
+  agentInstructions: string;
 }
 
 interface AiUsageRecord {
@@ -64,6 +66,8 @@ export function loadAiSettings(): AiSettings {
       model: typeof parsed.model === 'string' ? parsed.model : PROVIDER_MODELS[provider][0],
       dailyLimit: typeof parsed.dailyLimit === 'number' ? parsed.dailyLimit : 500,
       minuteLimit: typeof parsed.minuteLimit === 'number' ? parsed.minuteLimit : 50,
+      agentInstructions:
+        typeof parsed.agentInstructions === 'string' ? parsed.agentInstructions : '',
     };
   } catch {
     return {
@@ -72,6 +76,7 @@ export function loadAiSettings(): AiSettings {
       model: PROVIDER_MODELS.anthropic[0],
       dailyLimit: 500,
       minuteLimit: 50,
+      agentInstructions: '',
     };
   }
 }

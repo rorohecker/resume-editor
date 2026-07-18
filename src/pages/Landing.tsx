@@ -380,7 +380,12 @@ export function LandingPage() {
           setCurrentResume(resume);
           if (meta?.sourceText.trim()) {
             try {
-              await saveImportReference(resume.id, meta.sourceText, meta.sourceName);
+              await saveImportReference(
+                resume.id,
+                meta.sourceText,
+                meta.sourceName,
+                meta.original,
+              );
               useStore.getState().bumpImportReference();
             } catch {
               toast(t('importReference.saveFailed'), { tone: 'danger' });

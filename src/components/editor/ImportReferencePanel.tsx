@@ -7,12 +7,14 @@ import { formatDateRange } from '@/utils/dateFormat';
 import { parseResumeText } from '@/utils/importParser';
 import {
   deleteImportReference,
+  isPreviewableOriginal,
   loadImportReference,
   type ImportReference,
 } from '@/utils/importReference';
 import type { Resume, Section } from '@/types';
+import { OriginalDocumentPreview } from './OriginalDocumentPreview';
 
-type ViewMode = 'preview' | 'source';
+type ViewMode = 'preview' | 'layout' | 'source';
 
 export function ImportReferencePanel({ resumeId }: { resumeId: string }) {
   const { t } = useTranslation();
@@ -26,6 +28,7 @@ export function ImportReferencePanel({ resumeId }: { resumeId: string }) {
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<ViewMode>('preview');
   const lastErrorToastAt = useRef(0);
+  const hasOriginal = isPreviewableOriginal(reference?.original);
 
   const notifyLoadError = useCallback(() => {
     setLoadError(true);
@@ -55,6 +58,7 @@ export function ImportReferencePanel({ resumeId }: { resumeId: string }) {
       setReference(loaded);
       setAvailable(Boolean(loaded));
       if (!loaded) setOpen(false);
+      else setViewMode(isPreviewableOriginal(loaded.original) ? 'preview' : 'layout');
     });
 
     return () => {
@@ -163,13 +167,25 @@ export function ImportReferencePanel({ resumeId }: { resumeId: string }) {
         </div>
 
         <div className="flex shrink-0 gap-1 border-b border-paper-edge bg-paper-tint p-1.5">
+          {hasOriginal && (
+            <button
+              type="button"
+              className={`flex-1 rounded px-2 py-1 text-[11px] font-medium ${
+                viewMode === 'preview' ? 'bg-paper text-ink shadow-sm' : 'text-ink-muted hover:text-ink'
+              }`}
+              onClick={() => setViewMode('preview')}
+              aria-pressed={viewMode === 'preview'}
+            >
+              {t('importReference.viewOriginal')}
+            </button>
+          )}
           <button
             type="button"
             className={`flex-1 rounded px-2 py-1 text-[11px] font-medium ${
-              viewMode === 'preview' ? 'bg-paper text-ink shadow-sm' : 'text-ink-muted hover:text-ink'
+              viewMode === 'layout' ? 'bg-paper text-ink shadow-sm' : 'text-ink-muted hover:text-ink'
             }`}
-            onClick={() => setViewMode('preview')}
-            aria-pressed={viewMode === 'preview'}
+            onClick={() => setViewMode('layout')}
+            aria-pressed={viewMode === 'layout'}
           >
             {t('importReference.viewPreview')}
           </button>
@@ -186,7 +202,7 @@ export function ImportReferencePanel({ resumeId }: { resumeId: string }) {
         </div>
 
         <p className="shrink-0 border-b border-paper-edge px-3 py-2 text-[11px] text-ink-subtle">
-          {t('importReference.hint')}
+          {hasOriginal ? t('importReference.hintOriginal') : t('importReference.hint')}
         </p>
 
         {loadError ? (
@@ -201,7 +217,9 @@ export function ImportReferencePanel({ resumeId }: { resumeId: string }) {
             {t('editor.loading')}
           </div>
         ) : reference ? (
-          viewMode === 'preview' && parsedResume ? (
+          viewMode === 'preview' && reference.original && hasOriginal ? (
+            <OriginalDocumentPreview original={reference.original} />
+          ) : viewMode === 'layout' && parsedResume ? (
             <div className="min-h-0 flex-1 overflow-auto p-4">
               <RenderedImportResume resume={parsedResume} />
             </div>

@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AlertTriangle, Check, Copy, KeyRound, Languages, Search, Settings, Sparkles, Wand2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { checkGrammar, type GrammarHit } from '@/utils/grammar';
@@ -28,15 +28,24 @@ import {
   type AiProvider,
   type AiSettings,
 } from '@/utils/aiByok';
+import {
+  applyAgentPlan,
+  parseAgentPlan,
+  promptForAgentControl,
+  promptForReorganize,
+  type AgentPlan,
+} from '@/utils/aiAgent';
 import { wipeAllLocalData } from '@/utils/localData';
 import { collectBullets, replaceBulletContent } from '@/utils/resumeText';
 import { Drawer } from '@/components/shared/Modal';
 import { toast } from '@/hooks/useToast';
 
-type Tab = 'rewrite' | 'xyz' | 'weak' | 'grammar' | 'keywords' | 'summary' | 'verbs' | 'settings';
+type Tab = 'rewrite' | 'organize' | 'agent' | 'xyz' | 'weak' | 'grammar' | 'keywords' | 'summary' | 'verbs' | 'settings';
 
 const TABS: { id: Tab; labelKey: string }[] = [
   { id: 'rewrite', labelKey: 'ai.tabRewrite' },
+  { id: 'organize', labelKey: 'ai.tabOrganize' },
+  { id: 'agent', labelKey: 'ai.tabAgent' },
   { id: 'xyz', labelKey: 'ai.tabXyz' },
   { id: 'weak', labelKey: 'ai.tabWeak' },
   { id: 'grammar', labelKey: 'ai.tabGrammar' },
@@ -58,6 +67,9 @@ export function AIDrawer() {
   const [showKey, setShowKey] = useState(false);
   const [selectedBulletId, setSelectedBulletId] = useState('');
   const [instruction, setInstruction] = useState('');
+  const [organizeInstruction, setOrganizeInstruction] = useState('');
+  const [agentMessage, setAgentMessage] = useState('');
+  const [pendingPlan, setPendingPlan] = useState<AgentPlan | null>(null);
   const [jobDescription, setJobDescription] = useState('');
   const [copied, setCopied] = useState('');
   const [busy, setBusy] = useState('');
@@ -68,6 +80,14 @@ export function AIDrawer() {
   const [verbQuery, setVerbQuery] = useState('');
   const [grammarHits, setGrammarHits] = useState<GrammarHit[]>([]);
   const [grammarRan, setGrammarRan] = useState(false);
+
+  useEffect(() => {
+    setPendingPlan(null);
+  }, [resume?.id]);
+
+  useEffect(() => {
+    setPendingPlan(null);
+  }, [tab]);
 
   const bullets = useMemo(() => (resume ? collectBullets(resume) : []), [resume]);
   const selectedBullet = bullets.find((b) => b.bulletId === selectedBulletId) ?? bullets[0];
@@ -120,6 +140,42 @@ export function AIDrawer() {
       );
     });
 
+  const runOrganize = () =>
+    runCloud('organize', async () => {
+      if (!resume) return;
+      const text = await generateAiText(
+        settings,
+        promptForReorganize(resume, organizeInstruction, settings.agentInstructions),
+        1800,
+      );
+      setPendingPlan(parseAgentPlan(text));
+    });
+
+  const runAgent = () =>
+    runCloud('agent', async () => {
+      if (!resume || !agentMessage.trim()) return;
+      const text = await generateAiText(
+        settings,
+        promptForAgentControl(resume, agentMessage.trim(), settings.agentInstructions),
+        1800,
+      );
+      setPendingPlan(parseAgentPlan(text));
+    });
+
+  const applyPendingPlan = () => {
+    if (!pendingPlan) return;
+    updateResume((current) => {
+      const result = applyAgentPlan(current, pendingPlan);
+      if (result.applied === 0) {
+        toast(t('ai.agentNoChanges'), { tone: 'warn', ttl: 2500 });
+        return current;
+      }
+      toast(pendingPlan.summary || t('ai.agentApplied'), { tone: 'success', ttl: 2200 });
+      return result.resume;
+    });
+    setPendingPlan(null);
+  };
+
   const summaryText = cloudSummary || (resume ? generateSummary(resume) : '');
   const addSummary = () => {
     if (!resume || !summaryText) return;
@@ -162,7 +218,7 @@ export function AIDrawer() {
       maxWidth="xl"
     >
       <div className="border-b border-paper-edge px-3 py-2">
-        <div className="grid grid-cols-4 gap-1 sm:grid-cols-7">
+        <div className="grid grid-cols-4 gap-1 sm:grid-cols-5 lg:grid-cols-10">
           {TABS.map((item) => (
             <button
               key={item.id}
@@ -270,6 +326,62 @@ export function AIDrawer() {
                       ))}
                     </div>
                   </div>
+                )}
+              </Panel>
+            )}
+
+            {tab === 'organize' && (
+              <Panel title={t('ai.organizeTitle')} icon={<Wand2 size={15} />}>
+                <p className="mb-3 text-xs text-ink-subtle">{t('ai.organizeHint')}</p>
+                <textarea
+                  value={organizeInstruction}
+                  onChange={(e) => setOrganizeInstruction(e.target.value)}
+                  placeholder={t('ai.organizePlaceholder')}
+                  className="input mb-3 min-h-20 resize-y"
+                  spellCheck
+                />
+                <button
+                  type="button"
+                  className="btn-primary text-xs"
+                  disabled={!hasKey || busy === 'organize' || bullets.length === 0}
+                  onClick={() => void runOrganize()}
+                >
+                  {busy === 'organize' ? t('ai.agentPlanning') : t('ai.organizeRun')}
+                </button>
+                {pendingPlan && tab === 'organize' && (
+                  <AgentPlanPreview
+                    plan={pendingPlan}
+                    onApply={applyPendingPlan}
+                    onDismiss={() => setPendingPlan(null)}
+                  />
+                )}
+              </Panel>
+            )}
+
+            {tab === 'agent' && (
+              <Panel title={t('ai.agentTitle')} icon={<Sparkles size={15} />}>
+                <p className="mb-3 text-xs text-ink-subtle">{t('ai.agentHint')}</p>
+                <textarea
+                  value={agentMessage}
+                  onChange={(e) => setAgentMessage(e.target.value)}
+                  placeholder={t('ai.agentPlaceholder')}
+                  className="input mb-3 min-h-24 resize-y"
+                  spellCheck
+                />
+                <button
+                  type="button"
+                  className="btn-primary text-xs"
+                  disabled={!hasKey || busy === 'agent' || !agentMessage.trim()}
+                  onClick={() => void runAgent()}
+                >
+                  {busy === 'agent' ? t('ai.agentPlanning') : t('ai.agentRun')}
+                </button>
+                {pendingPlan && tab === 'agent' && (
+                  <AgentPlanPreview
+                    plan={pendingPlan}
+                    onApply={applyPendingPlan}
+                    onDismiss={() => setPendingPlan(null)}
+                  />
                 )}
               </Panel>
             )}
@@ -583,6 +695,18 @@ export function AIDrawer() {
                       ))}
                     </datalist>
                   </Field>
+                  <Field label={t('ai.agentInstructions')}>
+                    <textarea
+                      value={settings.agentInstructions}
+                      onChange={(e) =>
+                        persistSettings({ ...settings, agentInstructions: e.target.value })
+                      }
+                      className="input min-h-24 resize-y"
+                      placeholder={t('ai.agentInstructionsPlaceholder')}
+                      spellCheck
+                    />
+                    <p className="mt-1 text-[11px] text-ink-subtle">{t('ai.agentInstructionsHint')}</p>
+                  </Field>
                   <UsageDashboard settings={settings} />
                   {(settings.provider === 'openai' || settings.provider === 'gemini') && (
                     <p className="rounded-md border border-yellow-200 bg-yellow-50 px-3 py-2 text-xs text-warn">
@@ -686,6 +810,47 @@ export function AIDrawer() {
         )}
       </div>
     </Drawer>
+  );
+}
+
+function AgentPlanPreview({
+  plan,
+  onApply,
+  onDismiss,
+}: {
+  plan: AgentPlan;
+  onApply: () => void;
+  onDismiss: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="mt-4 space-y-3 rounded-md border border-paper-edge bg-paper-tint p-3">
+      <div>
+        <div className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+          {t('ai.agentPlan')}
+        </div>
+        <p className="mt-1 text-sm text-ink">{plan.summary}</p>
+      </div>
+      <ul className="max-h-40 space-y-1 overflow-auto text-xs text-ink-muted">
+        {plan.ops.map((op, index) => (
+          <li key={`${op.op}-${index}`} className="rounded bg-paper px-2 py-1 font-mono">
+            {op.op === 'replace_bullet' && `replace_bullet → ${op.content.slice(0, 72)}`}
+            {op.op === 'delete_bullet' && `delete_bullet → ${op.bulletId.slice(0, 8)}…`}
+            {op.op === 'set_entry_bullets' &&
+              `set_entry_bullets → ${op.bullets.length} bullet${op.bullets.length === 1 ? '' : 's'}`}
+            {op.op === 'reorder_sections' && `reorder_sections → ${op.sectionIds.length} sections`}
+          </li>
+        ))}
+      </ul>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className="btn-primary text-xs" onClick={onApply}>
+          {t('ai.agentApply')}
+        </button>
+        <button type="button" className="btn-ghost text-xs" onClick={onDismiss}>
+          {t('ai.agentDismiss')}
+        </button>
+      </div>
+    </div>
   );
 }
 

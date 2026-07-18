@@ -33,6 +33,29 @@ describe('imported resume reference persistence', () => {
     expect(loaded.reference?.sourceName).toBe('resume.pdf');
   });
 
+  it('persists original PDF/DOCX bytes for sidebar preview', async () => {
+    await saveImportReference('r1', 'Extracted text', 'resume.pdf', {
+      base64: btoa('%PDF-1.4 fake'),
+      mime: 'application/pdf',
+      name: 'resume.pdf',
+    });
+    const loaded = await loadImportReference('r1');
+    expect(loaded.reference?.original?.mime).toBe('application/pdf');
+    expect(loaded.reference?.original?.base64).toBe(btoa('%PDF-1.4 fake'));
+  });
+
+  it('keeps prior original when appending text-only import', async () => {
+    await saveImportReference('r1', 'First resume', 'one.pdf', {
+      base64: btoa('pdf-one'),
+      mime: 'application/pdf',
+      name: 'one.pdf',
+    });
+    await appendImportReference('r1', 'Second resume', 'two.txt');
+    const loaded = await loadImportReference('r1');
+    expect(loaded.reference?.original?.name).toBe('one.pdf');
+    expect(loaded.reference?.sourceName).toBe('one.pdf + two.txt');
+  });
+
   it('appends later merge imports without losing the original', async () => {
     await saveImportReference('r1', 'First resume', 'one.pdf');
     await appendImportReference('r1', 'Second resume', 'two.pdf');

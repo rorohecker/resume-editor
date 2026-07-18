@@ -60,7 +60,7 @@ export function sampleEntryForSection(section: Section) {
       return {
         id,
         title: 'Project Name',
-        subtitle: 'React, TypeScript, PostgreSQL',
+        subtitle: 'Spreadsheet tools, presentation design, CRM',
         startDate: 'Spring 2025',
         bullets: [
           { id: makeId(), content: 'Built a thing that solves a specific user pain point.', visible: true, order: 0 },
@@ -127,7 +127,7 @@ export function sampleEntryForSection(section: Section) {
         customFields: { venue: 'Journal of Things' },
       };
     case 'skills':
-      return { id, title: 'Languages', subtitle: 'Python, TypeScript, Go' };
+      return { id, title: 'Languages', subtitle: 'English, Spanish, Mandarin' };
     case 'summary':
       return {
         id,

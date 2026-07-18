@@ -18,6 +18,7 @@ import { toast } from '@/hooks/useToast';
 
 const HOSTED_APP_URL = 'https://rorohecker.github.io/resume-editor/';
 const HOSTED_ORIGIN = new URL(HOSTED_APP_URL).origin;
+const SW_UPDATE_MS = 15 * 60 * 1000;
 
 type MigrationMessage =
   | { type: 'resume-editor:migration-ready'; token: string }
@@ -28,13 +29,27 @@ type MigrationMessage =
 // One banner handles both deployment modes.
 //
 // Hosted (GitHub Pages with a service worker)
-//   useRegisterSW reports `needRefresh` when a new SW is waiting. We flush
-//   pending edits, apply the waiting worker, and reload automatically.
+//   registerType: 'autoUpdate' activates a waiting worker. We flush pending
+//   edits, then reload explicitly — vite-plugin-pwa no longer reloads from
+//   updateServiceWorker(true) alone.
 //
 // Single-file html (no service worker, often opened from file://)
 //   We poll releases, then migrate local data into the hosted PWA and relaunch
 //   there. This avoids browser-mandated file pickers and enables future updates
 //   to apply automatically.
+
+async function flushBeforeReload(): Promise<void> {
+  flushPendingSave();
+  const current = useStore.getState().currentResume;
+  if (current) {
+    try {
+      await persistResumeNow(current);
+    } catch {
+      // Best-effort — still reload so the user gets the fix.
+    }
+  }
+  await new Promise((resolve) => window.setTimeout(resolve, 250));
+}
 
 export function UpdateBanner() {
   const [release, setRelease] = useState<ReleaseInfo | null>(null);
@@ -42,23 +57,85 @@ export function UpdateBanner() {
   const [showNotes, setShowNotes] = useState(false);
   const [migrating, setMigrating] = useState(false);
   const updateIntervalRef = useRef<number | null>(null);
+  const registrationRef = useRef<ServiceWorkerRegistration | null>(null);
+  const reloadStartedRef = useRef(false);
+
+  const reloadToLatest = useRef(() => {
+    if (reloadStartedRef.current) return;
+    reloadStartedRef.current = true;
+    toast('Updating to the latest version…', { tone: 'info', ttl: 2000 });
+    void flushBeforeReload().finally(() => {
+      window.location.reload();
+    });
+  });
 
   const {
-    needRefresh: [needRefresh],
     updateServiceWorker,
   } = useRegisterSW({
+    immediate: true,
     onRegisteredSW(_url, reg) {
       if (!reg) return;
+      registrationRef.current = reg;
       if (updateIntervalRef.current != null) window.clearInterval(updateIntervalRef.current);
       updateIntervalRef.current = window.setInterval(() => {
         reg.update().catch(() => {});
-      }, 60 * 60 * 1000);
+      }, SW_UPDATE_MS);
+      // Catch updates that arrived while this tab was open.
+      void reg.update().catch(() => {});
+    },
+    // autoUpdate path: new SW activated — flush then hard-reload.
+    onNeedReload() {
+      reloadToLatest.current();
+    },
+    // prompt/fallback path: a waiting worker is ready — activate + reload.
+    onNeedRefresh() {
+      void (async () => {
+        await flushBeforeReload();
+        // Guarantee a reload even if workbox's controlling.isUpdate is false.
+        const onControllerChange = () => {
+          navigator.serviceWorker?.removeEventListener('controllerchange', onControllerChange);
+          if (!reloadStartedRef.current) {
+            reloadStartedRef.current = true;
+            window.location.reload();
+          }
+        };
+        navigator.serviceWorker?.addEventListener('controllerchange', onControllerChange);
+        try {
+          await updateServiceWorker();
+        } catch {
+          // fall through to timeout reload
+        }
+        window.setTimeout(() => {
+          navigator.serviceWorker?.removeEventListener('controllerchange', onControllerChange);
+          if (!reloadStartedRef.current) {
+            reloadStartedRef.current = true;
+            window.location.reload();
+          }
+        }, 1200);
+      })();
     },
   });
 
   useEffect(() => {
     return () => {
       if (updateIntervalRef.current != null) window.clearInterval(updateIntervalRef.current);
+    };
+  }, []);
+
+  // Check for a new SW when the tab becomes visible again (hourly alone was too slow).
+  useEffect(() => {
+    if (__APP_SINGLE_FILE__) return;
+    const check = () => {
+      void registrationRef.current?.update().catch(() => {});
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') check();
+    };
+    window.addEventListener('focus', check);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('focus', check);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, []);
 
@@ -138,35 +215,6 @@ export function UpdateBanner() {
       window.clearInterval(id);
     };
   }, []);
-
-  // Hosted path: flush pending edits, then apply the waiting SW and reload.
-  useEffect(() => {
-    if (__APP_SINGLE_FILE__) return;
-    if (!needRefresh) return;
-    let cancelled = false;
-
-    const run = async () => {
-      toast('Updating to the latest version…', { tone: 'info', ttl: 2000 });
-      flushPendingSave();
-      const current = useStore.getState().currentResume;
-      if (current) {
-        try {
-          await persistResumeNow(current);
-        } catch {
-          // Best-effort — still reload so the user gets the fix.
-        }
-      }
-      // Brief settle so any other queued IDB writes can finish.
-      await new Promise((resolve) => window.setTimeout(resolve, 350));
-      if (cancelled) return;
-      void updateServiceWorker(true);
-    };
-
-    void run();
-    return () => {
-      cancelled = true;
-    };
-  }, [needRefresh, updateServiceWorker]);
 
   // Hosted updates auto-reload; only keep the interactive banner for single-file.
   if (!__APP_SINGLE_FILE__) return null;

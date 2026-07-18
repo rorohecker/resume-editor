@@ -13,6 +13,7 @@ import { extractFromFile } from '@/utils/fileExtractors';
 import { enrichWithBYOK } from '@/utils/importEnrichment';
 import { isUnclassified } from '@/utils/importParser';
 import { loadAiSettings, PROVIDER_LABELS } from '@/utils/aiByok';
+import { captureImportOriginal } from '@/utils/importReference';
 import { Modal } from '@/components/shared/Modal';
 import { toast } from '@/hooks/useToast';
 import {
@@ -35,7 +36,7 @@ export function ImportResumeModal({
   onImported: (
     resume: Resume,
     mode: 'create' | 'replace' | 'merge',
-    meta?: { sourceText: string; sourceName?: string },
+    meta?: import('@/utils/importReference').ImportReferenceMeta,
   ) => void;
 }) {
   const { t } = useTranslation();
@@ -44,8 +45,12 @@ export function ImportResumeModal({
   // Remembers the last selection made inside the source pane so the
   // "Use selected text" helper works even after focus moves to a button.
   const sourceSelectionRef = useRef('');
+  const fileLoadGen = useRef(0);
   const [text, setText] = useState('');
   const [sourceName, setSourceName] = useState('');
+  const [originalFile, setOriginalFile] = useState<
+    import('@/utils/importReference').ImportOriginalFile | undefined
+  >(undefined);
   const [result, setResult] = useState<ImportParseResult | null>(null);
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
@@ -68,6 +73,7 @@ export function ImportResumeModal({
       setEnriching(false);
       setSelectedSectionIds(new Set());
       setSourceName('');
+      setOriginalFile(undefined);
       sourceSelectionRef.current = '';
     }
   }, [open]);
@@ -115,16 +121,22 @@ export function ImportResumeModal({
   };
 
   const handleFile = async (file: File) => {
+    const gen = ++fileLoadGen.current;
     setStatus(t('importer.reading'));
     setBusy(true);
     setWarning('');
     try {
-      const extraction = await extractFromFile(file);
+      const [extraction, original] = await Promise.all([
+        extractFromFile(file),
+        captureImportOriginal(file),
+      ]);
+      if (gen !== fileLoadGen.current) return;
       if (extraction.warnings?.length) {
         setWarning(extraction.warnings.join(' '));
       }
       setText(extraction.text);
       setSourceName(file.name);
+      setOriginalFile(original);
       parseText(extraction.text, file.name, extraction.hints);
       if (extraction.hints?.isLikelyLinkedIn) {
         toast(t('importer.linkedinDetected'), { tone: 'info', ttl: 2400 });
@@ -136,10 +148,11 @@ export function ImportResumeModal({
         });
       }
     } catch (err) {
+      if (gen !== fileLoadGen.current) return;
       setWarning(err instanceof Error ? err.message : t('importer.readFailed'));
       setStatus('');
     } finally {
-      setBusy(false);
+      if (gen === fileLoadGen.current) setBusy(false);
     }
   };
 
@@ -254,6 +267,7 @@ export function ImportResumeModal({
     const importMeta = {
       sourceText: text,
       sourceName: sourceName || undefined,
+      original: originalFile,
     };
     if (mode === 'merge') {
       const sections = result.resume.sections.filter((section) =>
@@ -291,6 +305,7 @@ export function ImportResumeModal({
               setResult(null);
               setText('');
               setSourceName('');
+              setOriginalFile(undefined);
               setStatus('');
               setWarning('');
               sourceSelectionRef.current = '';

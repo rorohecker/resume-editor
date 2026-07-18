@@ -1,9 +1,8 @@
 // Update detection for both deployment modes.
 //
 // Hosted (GitHub Pages with service worker):
-//   The PWA plugin registers a worker that pre-caches every chunk. With
-//   registerType: 'prompt' it does NOT auto-activate; instead a new worker
-//   sits in 'waiting' state. We watch for that and surface a reload prompt.
+//   registerType: 'autoUpdate' activates new workers and the app reloads after
+//   flushing pending edits (see UpdateBanner).
 //
 // Single-file html (no service worker):
 //   We poll the GitHub releases API on app load and once per hour. If the
