@@ -26,6 +26,7 @@ import { STATUS_META, STATUS_ORDER } from '@/components/jobs/jobStatus';
 import { useStatusLabel } from '@/components/jobs/statusLabels';
 import { toast } from '@/hooks/useToast';
 import { recordBackup } from '@/utils/updateCheck';
+import { saveImportReference } from '@/utils/importReference';
 import { useStore } from '@/store';
 import type { ApplicationStatus, Resume } from '@/types';
 import {
@@ -335,8 +336,20 @@ export function LandingPage() {
         open={importOpen}
         mode="create"
         onClose={() => setImportOpen(false)}
-        onImported={(resume) => {
+        onImported={async (resume, _mode, meta) => {
+          // Persist immediately (don't rely on the 1.5s debounced editor save)
+          // so a quick tab close after import can't drop the new resume.
+          saveResume(resume);
           setCurrentResume(resume);
+          if (meta?.sourceText.trim()) {
+            try {
+              await saveImportReference(resume.id, meta.sourceText, meta.sourceName);
+              useStore.getState().setImportReferenceAvailable(true);
+              useStore.getState().setImportReferenceOpen(true);
+            } catch {
+              toast(t('importReference.saveFailed'), { tone: 'danger' });
+            }
+          }
           refresh();
           navigate(`/editor/${resume.id}`);
         }}

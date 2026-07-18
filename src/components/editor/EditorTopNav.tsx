@@ -22,6 +22,7 @@ import {
   Check,
   Wand2,
   AlertTriangle,
+  PanelLeftOpen,
 } from 'lucide-react';
 import { useStore, onResumeSaved } from '@/store';
 import { ChangeTemplateMenu } from './ChangeTemplateMenu';
@@ -40,6 +41,7 @@ import {
 import { toast } from '@/hooks/useToast';
 import { lastBackupAt, recordBackup } from '@/utils/updateCheck';
 import { FileSyncControl } from './FileSyncControl';
+import { appendImportReference } from '@/utils/importReference';
 
 export function EditorTopNav() {
   const { t } = useTranslation();
@@ -64,6 +66,9 @@ export function EditorTopNav() {
   const setAnonymized = useStore((s) => s.setAnonymized);
   const aiOpen = useStore((s) => s.aiOpen);
   const tipsOpen = useStore((s) => s.tipsOpen);
+  const importReferenceOpen = useStore((s) => s.importReferenceOpen);
+  const importReferenceAvailable = useStore((s) => s.importReferenceAvailable);
+  const setImportReferenceOpen = useStore((s) => s.setImportReferenceOpen);
 
   const [editingName, setEditingName] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -331,6 +336,18 @@ export function EditorTopNav() {
           >
             <GitCompare size={16} />
           </button>
+          {importReferenceAvailable && (
+            <button
+              type="button"
+              className={`icon-btn ${importReferenceOpen ? 'bg-paper-tint text-ink' : ''}`}
+              title={t('importReference.toggle')}
+              aria-label={t('importReference.toggle')}
+              aria-pressed={importReferenceOpen}
+              onClick={() => setImportReferenceOpen(!importReferenceOpen)}
+            >
+              <PanelLeftOpen size={16} />
+            </button>
+          )}
           <button
             type="button"
             className="icon-btn"
@@ -409,7 +426,7 @@ export function EditorTopNav() {
       open={importOpen}
       mode="merge"
       onClose={() => setImportOpen(false)}
-      onImported={(imported) => {
+      onImported={async (imported, _mode, meta) => {
         updateResume((current) => ({
           ...current,
           sections: [
@@ -422,6 +439,15 @@ export function EditorTopNav() {
             })),
           ],
         }));
+        if (meta?.sourceText.trim()) {
+          try {
+            await appendImportReference(resume.id, meta.sourceText, meta.sourceName);
+            useStore.getState().setImportReferenceAvailable(true);
+            setImportReferenceOpen(true);
+          } catch {
+            toast(t('importReference.saveFailed'), { tone: 'danger' });
+          }
+        }
         toast(t('editor.importedSections', { count: imported.sections.length }), { tone: 'success' });
       }}
     />

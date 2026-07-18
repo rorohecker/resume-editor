@@ -12,6 +12,7 @@ import {
   Library,
   ListChecks,
   MoreHorizontal,
+  PanelLeftOpen,
   Printer,
   Share2,
   StickyNote,
@@ -37,6 +38,9 @@ export function MoreActionsMenu() {
   const setShortcutsOpen = useStore((s) => s.setShortcutsOpen);
   const stickyNotesOpen = useStore((s) => s.stickyNotesOpen);
   const setStickyNotesOpen = useStore((s) => s.setStickyNotesOpen);
+  const importReferenceOpen = useStore((s) => s.importReferenceOpen);
+  const importReferenceAvailable = useStore((s) => s.importReferenceAvailable);
+  const setImportReferenceOpen = useStore((s) => s.setImportReferenceOpen);
   const pdfPreviewMode = useStore((s) => s.pdfPreviewMode);
   const setPdfPreviewMode = useStore((s) => s.setPdfPreviewMode);
   const anonymized = useStore((s) => s.anonymized);
@@ -112,6 +116,17 @@ export function MoreActionsMenu() {
         setCompareOpen(true);
       },
     },
+    ...(importReferenceAvailable
+      ? [{
+          label: t('importReference.toggle'),
+          icon: PanelLeftOpen,
+          active: importReferenceOpen,
+          onClick: () => {
+            setOpen(false);
+            setImportReferenceOpen(!importReferenceOpen);
+          },
+        }]
+      : []),
     {
       label: t('editor.bulkEdit'),
       icon: ListChecks,

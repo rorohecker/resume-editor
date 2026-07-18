@@ -3,6 +3,11 @@ import type { Resume, VersionSnapshot } from '@/types';
 import { normalizeResume } from '@/types/schema';
 import { makeId } from '@/utils/id';
 import { deleteStickyNotes, loadAllStickyNotes, copyStickyNotes } from '@/utils/stickyNotes';
+import {
+  copyImportReference,
+  deleteImportReference,
+  loadAllImportReferences,
+} from '@/utils/importReference';
 
 // Persistence strategy: IndexedDB is the source of truth, with a synchronous
 // in-memory write-through cache. Reads always hit the cache (instant, sync).
@@ -223,6 +228,7 @@ export function deleteResume(id: string): void {
   queueDelete(RESUME_PREFIX + id);
   queueDelete(SNAPSHOTS_PREFIX + id);
   deleteStickyNotes(id);
+  deleteImportReference(id);
   broadcast({ type: 'resume:delete', id });
 }
 
@@ -253,6 +259,9 @@ export function duplicateResume(id: string): Resume | null {
   void copyStickyNotes(id, duplicate.id).catch((err) => {
     console.warn('Failed to copy sticky notes for duplicate', err);
   });
+  void copyImportReference(id, duplicate.id).catch((err) => {
+    console.warn('Failed to copy imported resume reference for duplicate', err);
+  });
   return duplicate;
 }
 
@@ -260,11 +269,13 @@ export async function exportAllData(): Promise<{
   resumes: Record<string, Resume>;
   versions: Record<string, VersionSnapshot[]>;
   stickyNotes: Record<string, import('@/utils/stickyNotes').StickyNote[]>;
+  importReferences: Record<string, import('@/utils/importReference').ImportReference>;
 }> {
   return {
     resumes: Object.fromEntries(cache.resumes),
     versions: Object.fromEntries(cache.snapshots),
     stickyNotes: await loadAllStickyNotes(),
+    importReferences: await loadAllImportReferences(),
   };
 }
 

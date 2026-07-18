@@ -32,7 +32,11 @@ export function ImportResumeModal({
   open: boolean;
   mode: 'create' | 'replace' | 'merge';
   onClose: () => void;
-  onImported: (resume: Resume, mode: 'create' | 'replace' | 'merge') => void;
+  onImported: (
+    resume: Resume,
+    mode: 'create' | 'replace' | 'merge',
+    meta?: { sourceText: string; sourceName?: string },
+  ) => void;
 }) {
   const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -41,6 +45,7 @@ export function ImportResumeModal({
   // "Use selected text" helper works even after focus moves to a button.
   const sourceSelectionRef = useRef('');
   const [text, setText] = useState('');
+  const [sourceName, setSourceName] = useState('');
   const [result, setResult] = useState<ImportParseResult | null>(null);
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
@@ -62,6 +67,7 @@ export function ImportResumeModal({
       setBusy(false);
       setEnriching(false);
       setSelectedSectionIds(new Set());
+      setSourceName('');
       sourceSelectionRef.current = '';
     }
   }, [open]);
@@ -118,6 +124,7 @@ export function ImportResumeModal({
         setWarning(extraction.warnings.join(' '));
       }
       setText(extraction.text);
+      setSourceName(file.name);
       parseText(extraction.text, file.name, extraction.hints);
       if (extraction.hints?.isLikelyLinkedIn) {
         toast(t('importer.linkedinDetected'), { tone: 'info', ttl: 2400 });
@@ -244,6 +251,10 @@ export function ImportResumeModal({
 
   const finish = () => {
     if (!result) return;
+    const importMeta = {
+      sourceText: text,
+      sourceName: sourceName || undefined,
+    };
     if (mode === 'merge') {
       const sections = result.resume.sections.filter((section) =>
         selectedSectionIds.has(section.id),
@@ -252,9 +263,9 @@ export function ImportResumeModal({
         toast(t('importer.selectAtLeastOne'), { tone: 'warn' });
         return;
       }
-      onImported({ ...result.resume, sections }, mode);
+      onImported({ ...result.resume, sections }, mode, importMeta);
     } else {
-      onImported(result.resume, mode);
+      onImported(result.resume, mode, importMeta);
     }
     onClose();
   };
@@ -279,6 +290,7 @@ export function ImportResumeModal({
             onClick={() => {
               setResult(null);
               setText('');
+              setSourceName('');
               setStatus('');
               setWarning('');
               sourceSelectionRef.current = '';

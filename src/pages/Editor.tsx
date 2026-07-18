@@ -28,6 +28,7 @@ import { GenerateVariantModal } from '@/components/library/GenerateVariantModal'
 import { ShareModal } from '@/components/editor/ShareModal';
 import { ShortcutsModal } from '@/components/editor/ShortcutsModal';
 import { StickyNotes } from '@/components/editor/StickyNotes';
+import { ImportReferencePanel } from '@/components/editor/ImportReferencePanel';
 import { getFocusedRichEditor } from '@/utils/focusedRichEditor';
 
 export function EditorPage() {
@@ -37,6 +38,7 @@ export function EditorPage() {
   const setCurrentResume = useStore((s) => s.setCurrentResume);
   const mobileTab = useStore((s) => s.mobileTab);
   const setMobileTab = useStore((s) => s.setMobileTab);
+  const importReferenceOpen = useStore((s) => s.importReferenceOpen);
   const saveNow = useStore((s) => s.saveNow);
   const undoResume = useStore((s) => s.undoResume);
   const redoResume = useStore((s) => s.redoResume);
@@ -198,10 +200,12 @@ export function EditorPage() {
       )}
 
       <div className="flex min-h-0 flex-1">
+        <ImportReferencePanel resumeId={resume.id} />
+
         <div
-          className={`w-full md:w-2/5 md:max-w-xl ${
-            isMobile && mobileTab !== 'edit' ? 'hidden' : 'block'
-          }`}
+          className={`min-w-0 w-full md:w-2/5 ${
+            importReferenceOpen ? 'md:max-w-md' : 'md:max-w-xl'
+          } ${isMobile && mobileTab !== 'edit' ? 'hidden' : 'block'}`}
           role={isMobile ? 'tabpanel' : undefined}
         >
           <EditorLeftPanel />
