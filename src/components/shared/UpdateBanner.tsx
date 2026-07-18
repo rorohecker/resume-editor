@@ -17,14 +17,16 @@ import { flushPendingSave, useStore } from '@/store';
 import { toast } from '@/hooks/useToast';
 
 const HOSTED_APP_URL = 'https://rorohecker.github.io/resume-editor/';
-const HOSTED_ORIGIN = new URL(HOSTED_APP_URL).origin;
 const SW_UPDATE_MS = 15 * 60 * 1000;
+/** Soft cap for window.name handoff; larger payloads get originals stripped first. */
+const MIGRATION_HANDOFF_MAX_CHARS = 4_500_000;
+const MIGRATION_HANDOFF_TYPE = 'resume-editor:migration-handoff';
 
-type MigrationMessage =
-  | { type: 'resume-editor:migration-ready'; token: string }
-  | { type: 'resume-editor:migration-data'; token: string; payload: unknown }
-  | { type: 'resume-editor:migration-complete'; token: string; resumes: number }
-  | { type: 'resume-editor:migration-error'; token: string; message: string };
+type MigrationHandoff = {
+  type: typeof MIGRATION_HANDOFF_TYPE;
+  token: string;
+  payload: unknown;
+};
 
 // One banner handles both deployment modes.
 //
@@ -34,9 +36,8 @@ type MigrationMessage =
 //   updateServiceWorker(true) alone.
 //
 // Single-file html (no service worker, often opened from file://)
-//   We poll releases, then migrate local data into the hosted PWA and relaunch
-//   there. This avoids browser-mandated file pickers and enables future updates
-//   to apply automatically.
+//   We poll releases, then migrate local data into the hosted PWA in the same
+//   tab via window.name (survives cross-origin navigation) and relaunch there.
 
 async function flushBeforeReload(): Promise<void> {
   flushPendingSave();
@@ -49,6 +50,39 @@ async function flushBeforeReload(): Promise<void> {
     }
   }
   await new Promise((resolve) => window.setTimeout(resolve, 250));
+}
+
+/** Drop heavy PDF/DOCX originals so the handoff fits in window.name. */
+function slimMigrationPayload(payload: Awaited<ReturnType<typeof exportAllData>>) {
+  const importReferences: Record<string, { text: string; sourceName?: string; importedAt?: string }> =
+    {};
+  for (const [id, reference] of Object.entries(payload.importReferences ?? {})) {
+    if (!reference || typeof reference !== 'object') continue;
+    const text = (reference as { text?: unknown }).text;
+    if (typeof text !== 'string' || !text.trim()) continue;
+    const sourceName = (reference as { sourceName?: unknown }).sourceName;
+    const importedAt = (reference as { importedAt?: unknown }).importedAt;
+    importReferences[id] = {
+      text,
+      sourceName: typeof sourceName === 'string' ? sourceName : undefined,
+      importedAt: typeof importedAt === 'string' ? importedAt : undefined,
+    };
+  }
+  return { ...payload, importReferences };
+}
+
+function readMigrationHandoff(token: string): MigrationHandoff | null {
+  try {
+    const raw = window.name;
+    if (!raw || !raw.includes(MIGRATION_HANDOFF_TYPE)) return null;
+    const parsed = JSON.parse(raw) as Partial<MigrationHandoff>;
+    if (parsed.type !== MIGRATION_HANDOFF_TYPE || parsed.token !== token) return null;
+    if (!parsed.payload) return null;
+    window.name = '';
+    return parsed as MigrationHandoff;
+  } catch {
+    return null;
+  }
 }
 
 export function UpdateBanner() {
@@ -139,61 +173,43 @@ export function UpdateBanner() {
     };
   }, []);
 
-  // Hosted receiver for one-click migration from the downloaded HTML build.
-  // The random token ties the payload to the window that initiated this launch.
+  // Hosted receiver for same-tab migration from the downloaded HTML build.
+  // window.name survives the cross-origin navigation from file:// → Pages.
   useEffect(() => {
     if (__APP_SINGLE_FILE__) return;
     const query = window.location.hash.split('?')[1] ?? '';
     const token = new URLSearchParams(query).get('migration');
-    if (!token || !window.opener) return;
+    if (!token) return;
 
-    let completed = false;
-    const announceReady = () => {
-      if (completed) return;
-      window.opener?.postMessage(
-        { type: 'resume-editor:migration-ready', token } satisfies MigrationMessage,
-        '*',
-      );
-    };
+    const handoff = readMigrationHandoff(token);
+    if (!handoff) return;
 
-    const onMessage = async (event: MessageEvent<MigrationMessage>) => {
-      if (event.source !== window.opener) return;
-      const message = event.data;
-      if (message?.type !== 'resume-editor:migration-data' || message.token !== token) return;
-      completed = true;
+    let cancelled = false;
+    toast('Restoring your resumes in the online app…', { tone: 'info', ttl: 2500 });
+    void (async () => {
       try {
-        if (!isFullAppBackup(message.payload)) {
+        if (!isFullAppBackup(handoff.payload)) {
           throw new Error('The local data transfer was not a valid backup.');
         }
-        const result = await importAllData(message.payload);
-        window.opener?.postMessage(
-          {
-            type: 'resume-editor:migration-complete',
-            token,
-            resumes: result.resumes,
-          } satisfies MigrationMessage,
-          '*',
-        );
-        window.setTimeout(() => window.location.replace(HOSTED_APP_URL), 250);
+        const result = await importAllData(handoff.payload);
+        if (cancelled) return;
+        toast(`Restored ${result.resumes} resume${result.resumes === 1 ? '' : 's'}.`, {
+          tone: 'success',
+          ttl: 2500,
+        });
+        window.setTimeout(() => window.location.replace(HOSTED_APP_URL), 400);
       } catch (err) {
-        window.opener?.postMessage(
-          {
-            type: 'resume-editor:migration-error',
-            token,
-            message: err instanceof Error ? err.message : 'Migration failed.',
-          } satisfies MigrationMessage,
-          '*',
-        );
+        if (cancelled) return;
+        window.name = '';
+        toast(err instanceof Error ? err.message : 'Migration failed.', {
+          tone: 'danger',
+          ttl: 6000,
+        });
       }
-    };
+    })();
 
-    window.addEventListener('message', onMessage);
-    announceReady();
-    const readyTimer = window.setInterval(announceReady, 500);
     return () => {
-      completed = true;
-      window.clearInterval(readyTimer);
-      window.removeEventListener('message', onMessage);
+      cancelled = true;
     };
   }, []);
 
@@ -240,65 +256,51 @@ export function UpdateBanner() {
   const migrateAndRelaunch = () => {
     if (migrating) return;
     setMigrating(true);
-    const token =
-      typeof crypto.randomUUID === 'function'
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const migrationUrl = `${HOSTED_APP_URL}#/?migration=${encodeURIComponent(token)}`;
-    let popup: Window | null = null;
-    let sent = false;
+    void (async () => {
+      try {
+        flushPendingSave();
+        const current = useStore.getState().currentResume;
+        if (current) await persistResumeNow(current);
+        const full = await exportAllData();
+        const token =
+          typeof crypto.randomUUID === 'function'
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-    const cleanup = () => {
-      window.clearTimeout(timeout);
-      window.removeEventListener('message', onMessage);
-      setMigrating(false);
-    };
-
-    const fail = (message: string) => {
-      cleanup();
-      popup?.close();
-      toast(message, { tone: 'danger', ttl: 6000 });
-    };
-
-    const onMessage = async (event: MessageEvent<MigrationMessage>) => {
-      if (event.origin !== HOSTED_ORIGIN || event.source !== popup) return;
-      const message = event.data;
-      if (!message || message.token !== token) return;
-
-      if (message.type === 'resume-editor:migration-ready' && !sent) {
-        sent = true;
-        try {
-          flushPendingSave();
-          const current = useStore.getState().currentResume;
-          if (current) await persistResumeNow(current);
-          const payload = await exportAllData();
-          popup?.postMessage(
-            { type: 'resume-editor:migration-data', token, payload } satisfies MigrationMessage,
-            HOSTED_ORIGIN,
-          );
-        } catch (err) {
-          fail(err instanceof Error ? err.message : 'Could not prepare local data for update.');
+        let payload: unknown = slimMigrationPayload(full);
+        let handoff: MigrationHandoff = {
+          type: MIGRATION_HANDOFF_TYPE,
+          token,
+          payload,
+        };
+        let serialized = JSON.stringify(handoff);
+        if (serialized.length > MIGRATION_HANDOFF_MAX_CHARS) {
+          // Last resort: resumes + snapshots only (no sticky notes / import refs).
+          payload = {
+            resumes: full.resumes,
+            versions: full.versions,
+          };
+          handoff = { type: MIGRATION_HANDOFF_TYPE, token, payload };
+          serialized = JSON.stringify(handoff);
         }
-      } else if (message.type === 'resume-editor:migration-complete') {
-        cleanup();
-        popup?.close();
-        // Relaunch this tab on the hosted PWA. Data is already restored there,
-        // and every future update can apply without another file picker.
-        window.location.assign(HOSTED_APP_URL);
-      } else if (message.type === 'resume-editor:migration-error') {
-        fail(message.message);
+        if (serialized.length > MIGRATION_HANDOFF_MAX_CHARS) {
+          throw new Error(
+            'Your data is too large to move in one click. Download a backup, open the online app, then use Restore backup.',
+          );
+        }
+
+        window.name = serialized;
+        toast('Opening the online app in this tab…', { tone: 'info', ttl: 2000 });
+        window.location.assign(`${HOSTED_APP_URL}#/?migration=${encodeURIComponent(token)}`);
+      } catch (err) {
+        setMigrating(false);
+        window.name = '';
+        toast(err instanceof Error ? err.message : 'Could not prepare local data for update.', {
+          tone: 'danger',
+          ttl: 6000,
+        });
       }
-    };
-
-    window.addEventListener('message', onMessage);
-    const timeout = window.setTimeout(() => {
-      fail('The online updater did not respond. Check your connection and try again.');
-    }, 20_000);
-
-    popup = window.open(migrationUrl, 'resume-editor-update', 'popup,width=720,height=760');
-    if (!popup) {
-      fail('Your browser blocked the updater window. Allow pop-ups and try again.');
-    }
+    })();
   };
 
   return (
@@ -312,8 +314,8 @@ export function UpdateBanner() {
             Version {release.name || release.version} is available
           </div>
           <p className="mt-1 text-xs text-ink-muted">
-            Move to the auto-updating web app and relaunch with all your resumes—no file picker or
-            old-version selection required.
+            Move to the auto-updating web app in this tab with all your resumes—no file picker or
+            separate window required.
           </p>
 
           {release.body && (
