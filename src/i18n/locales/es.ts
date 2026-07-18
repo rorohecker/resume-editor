@@ -638,6 +638,9 @@ export default {
     extractedText: 'Texto extraído',
     editExtracted: 'Editar texto extraído',
     parsedResult: 'Resultado procesado',
+    sourceText: 'Texto del currículum',
+    noSectionsParsed:
+      'No se detectaron secciones. Edita el texto del currículum a la izquierda y vuelve a procesar, o usa el asistente de contenido omitido abajo.',
     summary: 'Encontramos lo siguiente en tu currículum',
     contacts: 'Contactos',
     sections: 'Secciones',

@@ -633,6 +633,9 @@ export default {
     extractedText: 'Extracted text',
     editExtracted: 'Edit extracted text',
     parsedResult: 'Parsed result',
+    sourceText: 'Resume text',
+    noSectionsParsed:
+      'No sections were detected. Edit the resume text on the left and re-parse, or use the missed-content helper below.',
     summary: 'We found the following in your resume',
     contacts: 'Contacts',
     sections: 'Sections',

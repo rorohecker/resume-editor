@@ -529,7 +529,7 @@ function parseEntries(
     }
 
     if (!active || looksLikeEntryHeader(line)) {
-      const next = parseEntryHeader(type, line, sectionPath, entries.length, flags);
+      const next = parseEntryHeader(type, line);
 
       // Company line then role line (common PDF layout): title=role, subtitle=company.
       if (
@@ -629,6 +629,16 @@ function parseEntries(
           severity: 'medium',
           message: 'Entry title and date were both empty after parsing.',
         });
+      } else if (
+        !entry.startDate &&
+        (type === 'experience' || type === 'education' || type === 'projects')
+      ) {
+        // Flagged only now, after date-only lines have had a chance to attach.
+        flags.push({
+          path: `sections.${sectionPath}.entries.${index}.dates`,
+          severity: 'low',
+          message: 'No date range detected for this entry.',
+        });
       }
       return entry;
     });
@@ -688,13 +698,7 @@ function looksLikeSiblingRole(
   return Boolean(role.startDate) || looksLikeRoleTitle(role.title);
 }
 
-function parseEntryHeader(
-  type: SectionType,
-  line: string,
-  sectionPath: string,
-  index: number,
-  flags: ConfidenceFlag[],
-): Entry {
+function parseEntryHeader(type: SectionType, line: string): Entry {
   const dateMatch = line.match(DATE_PATTERN);
   const date = dateMatch?.[0] ?? '';
   const withoutDate = date
@@ -742,13 +746,10 @@ function parseEntryHeader(
     entry.endDate = normalizeDateToken(rangeParts[1] ?? '');
     entry.current = /present|current|now|ongoing/i.test(entry.endDate);
     if (entry.current) entry.endDate = 'Present';
-  } else if (type === 'experience' || type === 'education' || type === 'projects') {
-    flags.push({
-      path: `sections.${sectionPath}.entries.${index}.dates`,
-      severity: 'low',
-      message: 'No date range detected for this entry.',
-    });
   }
+  // Note: a "no date" flag is intentionally NOT added here. A date often lives
+  // on the following standalone line and is attached later; flagging now would
+  // produce false positives. Missing dates are flagged after assembly below.
   return entry;
 }
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, FileText, Loader2, Pencil, RefreshCw, Sparkles, Upload } from 'lucide-react';
+import { AlertTriangle, FileText, Loader2, Sparkles, Upload } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { Resume, Section, SectionLayout } from '@/types';
 import {
@@ -36,6 +36,10 @@ export function ImportResumeModal({
 }) {
   const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement>(null);
+  const sourceRef = useRef<HTMLTextAreaElement>(null);
+  // Remembers the last selection made inside the source pane so the
+  // "Use selected text" helper works even after focus moves to a button.
+  const sourceSelectionRef = useRef('');
   const [text, setText] = useState('');
   const [result, setResult] = useState<ImportParseResult | null>(null);
   const [status, setStatus] = useState('');
@@ -58,8 +62,21 @@ export function ImportResumeModal({
       setBusy(false);
       setEnriching(false);
       setSelectedSectionIds(new Set());
+      sourceSelectionRef.current = '';
     }
   }, [open]);
+
+  const captureSourceSelection = () => {
+    const el = sourceRef.current;
+    if (!el) return;
+    const value = el.value.slice(el.selectionStart ?? 0, el.selectionEnd ?? 0).trim();
+    if (value) sourceSelectionRef.current = value;
+  };
+
+  // Prefer a selection made in the editable source pane; fall back to any
+  // document-level selection (e.g. from the parsed result).
+  const getReferenceSelection = () =>
+    sourceSelectionRef.current || (window.getSelection()?.toString().trim() ?? '');
 
   // When a parse result arrives, default to selecting every section for merge.
   useEffect(() => {
@@ -242,12 +259,18 @@ export function ImportResumeModal({
     onClose();
   };
 
+  const parseSource = () => {
+    if (!text.trim()) return;
+    parseText(text, undefined, result?.hints);
+    toast(t('importer.reparseDone', { defaultValue: 'Parsed.' }), { tone: 'success', ttl: 1200 });
+  };
+
   return (
     <Modal
       open={open}
       onClose={onClose}
       title={mode === 'merge' ? t('importer.titleMerge') : t('importer.title')}
-      maxWidth="5xl"
+      maxWidth="7xl"
       footer={
         <div className="flex flex-wrap items-center justify-between gap-2">
           <button
@@ -258,6 +281,7 @@ export function ImportResumeModal({
               setText('');
               setStatus('');
               setWarning('');
+              sourceSelectionRef.current = '';
             }}
           >
             {t('importer.startFresh')}
@@ -280,116 +304,123 @@ export function ImportResumeModal({
         </div>
       }
     >
-      <div className="p-5">
-        <p className="mb-4 text-xs text-ink-subtle">
-          {t('importer.hint')}
-        </p>
-
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[0.9fr_1.1fr]">
-          <div className="space-y-4">
-            <div
-              className="rounded-lg border border-dashed border-paper-edge bg-paper-tint p-5 text-center"
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault();
-                const file = e.dataTransfer.files[0];
-                if (file) void handleFile(file);
-              }}
-            >
-              {busy ? (
-                <Loader2 className="mx-auto animate-spin text-ink-muted" size={24} />
-              ) : (
-                <Upload className="mx-auto text-ink-muted" size={24} />
-              )}
-              <p className="mt-2 text-sm font-medium text-ink">
+      <div className="flex h-full flex-col p-5">
+        {/* Toolbar: file source + options, kept compact so the split panes get the height. */}
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <div
+            className="flex flex-1 items-center gap-3 rounded-lg border border-dashed border-paper-edge bg-paper-tint px-3 py-2"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              const file = e.dataTransfer.files[0];
+              if (file) void handleFile(file);
+            }}
+          >
+            {busy ? (
+              <Loader2 className="animate-spin text-ink-muted" size={18} />
+            ) : (
+              <Upload className="text-ink-muted" size={18} />
+            )}
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs font-medium text-ink">
                 {busy ? t('importer.extracting') : t('importer.dropHere')}
               </p>
-              <p className="mt-1 text-xs text-ink-subtle">
-                {t('importer.accepts')}
-              </p>
-              <button
-                type="button"
-                className="btn-secondary mt-3"
-                onClick={() => inputRef.current?.click()}
-                disabled={busy}
-              >
-                {t('importer.chooseFile')}
-              </button>
-              <input
-                ref={inputRef}
-                type="file"
-                accept=".pdf,.docx,.txt,.json,.png,.jpg,.jpeg"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) void handleFile(file);
-                }}
-              />
+              <p className="truncate text-[11px] text-ink-subtle">{t('importer.accepts')}</p>
             </div>
+            <button
+              type="button"
+              className="btn-secondary shrink-0 text-xs"
+              onClick={() => inputRef.current?.click()}
+              disabled={busy}
+            >
+              {t('importer.chooseFile')}
+            </button>
+            <input
+              ref={inputRef}
+              type="file"
+              accept=".pdf,.docx,.txt,.json,.png,.jpg,.jpeg"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void handleFile(file);
+              }}
+            />
+          </div>
+          <label className="flex items-center gap-2 whitespace-nowrap text-xs text-ink-muted">
+            <input
+              type="checkbox"
+              checked={offlineOnly}
+              onChange={(e) => setOfflineOnly(e.target.checked)}
+              className="accent-ink"
+            />
+            {t('importer.offline')}
+          </label>
+          {!offlineOnly && result && (
+            <button
+              type="button"
+              className="btn-secondary text-xs"
+              disabled={!hasKey || enriching}
+              onClick={() => void runEnrichment()}
+            >
+              <Sparkles size={13} />
+              {enriching
+                ? t('importer.enriching')
+                : hasKey
+                ? t('importer.enrichBYOK')
+                : t('importer.addKeyHint')}
+            </button>
+          )}
+        </div>
 
-            <label className="flex items-center gap-2 text-xs text-ink-muted">
-              <input
-                type="checkbox"
-                checked={offlineOnly}
-                onChange={(e) => setOfflineOnly(e.target.checked)}
-                className="accent-ink"
-              />
-              {t('importer.offline')}
-            </label>
+        <p className="mb-2 text-[11px] text-ink-subtle">{t('importer.hint')}</p>
 
-            {!offlineOnly && result && (
+        {/* Split screen: left = source text to read/copy from, right = parsed review. */}
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="flex min-h-0 flex-col rounded-lg border border-paper-edge bg-paper">
+            <div className="flex items-center justify-between border-b border-paper-edge px-3 py-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                {t('importer.sourceText', { defaultValue: 'Resume text' })}
+              </span>
               <button
                 type="button"
-                className="btn-primary w-full text-xs"
-                disabled={!hasKey || enriching}
-                onClick={() => void runEnrichment()}
-              >
-                <Sparkles size={13} />
-                {enriching
-                  ? t('importer.enriching')
-                  : hasKey
-                  ? t('importer.enrichBYOK')
-                  : t('importer.addKeyHint')}
-              </button>
-            )}
-
-            <div>
-              <label className="mb-1 block text-xs font-medium text-ink-muted">
-                {t('importer.pasteLabel')}
-              </label>
-              <textarea
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                placeholder={t('importer.pastePlaceholder')}
-                className="input min-h-64 resize-y"
-                spellCheck
-              />
-              <button
-                type="button"
-                className="btn-primary mt-3"
+                className="btn-primary h-7 text-xs"
                 disabled={!text.trim()}
-                onClick={() => parseText(text)}
+                onClick={parseSource}
               >
-                <FileText size={14} />
-                {t('importer.parseThis')}
+                <FileText size={13} />
+                {result
+                  ? t('importer.reparse', { defaultValue: 'Re-parse' })
+                  : t('importer.parseThis')}
               </button>
             </div>
-
+            <textarea
+              ref={sourceRef}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onSelect={captureSourceSelection}
+              onKeyUp={captureSourceSelection}
+              onMouseUp={captureSourceSelection}
+              placeholder={t('importer.pastePlaceholder')}
+              className="min-h-0 flex-1 resize-none border-0 bg-paper p-3 font-mono text-xs leading-relaxed text-ink focus:outline-none"
+              spellCheck
+              aria-label={t('importer.sourceText', { defaultValue: 'Resume text' })}
+            />
             {(status || warning || result?.warnings.length) && (
-              <div className="space-y-2">
-                {status && <p className="text-xs text-ink-subtle">{status}</p>}
+              <div className="space-y-1 border-t border-paper-edge px-3 py-2">
+                {status && <p className="text-[11px] text-ink-subtle">{status}</p>}
                 {warning && <Warning>{warning}</Warning>}
                 {result?.warnings.map((item) => <Warning key={item}>{item}</Warning>)}
               </div>
             )}
           </div>
 
-          <div className="min-h-0">
+          <div className="flex min-h-0 flex-col">
             {result ? (
               <ReviewResult
                 result={result}
                 mode={mode}
                 selectedSectionIds={selectedSectionIds}
+                getReferenceSelection={getReferenceSelection}
                 onToggleSection={(sectionId) => {
                   setSelectedSectionIds((prev) => {
                     const next = new Set(prev);
@@ -405,11 +436,6 @@ export function ImportResumeModal({
                       ? new Set(result.resume.sections.map((section) => section.id))
                       : new Set(),
                   );
-                }}
-                onReparse={(edited) => {
-                  setText(edited);
-                  parseText(edited, undefined, result.hints);
-                  toast(t('importer.reparseDone'), { tone: 'success', ttl: 1500 });
                 }}
                 onReclassify={reclassifySection}
                 onAddManualSection={addManualSection}
@@ -457,9 +483,9 @@ function ReviewResult({
   result,
   mode,
   selectedSectionIds,
+  getReferenceSelection,
   onToggleSection,
   onToggleAll,
-  onReparse,
   onReclassify,
   onAddManualSection,
   onAppendManualBullets,
@@ -467,25 +493,19 @@ function ReviewResult({
   result: ImportParseResult;
   mode: 'create' | 'replace' | 'merge';
   selectedSectionIds: Set<string>;
+  getReferenceSelection: () => string;
   onToggleSection: (sectionId: string) => void;
   onToggleAll: (selectAll: boolean) => void;
-  onReparse: (rawText: string) => void;
   onReclassify: (sectionId: string, type: SectionType) => void;
   onAddManualSection: (type: SectionType, title: string, content: string) => void;
   onAppendManualBullets: (sectionId: string, content: string) => void;
 }) {
   const { t } = useTranslation();
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(result.rawText);
   const [manualText, setManualText] = useState('');
   const [manualType, setManualType] = useState<SectionType>('custom');
   const [manualTitle, setManualTitle] = useState('');
   const [targetSectionId, setTargetSectionId] = useState(result.resume.sections[0]?.id ?? '');
 
-  useEffect(() => {
-    setDraft(result.rawText);
-    setEditing(false);
-  }, [result.rawText]);
   const flagsByPath = useMemo(() => {
     const map = new Map<string, ConfidenceFlag>();
     for (const flag of result.flags) {
@@ -510,9 +530,9 @@ function ReviewResult({
   }, [result.resume.sections, targetSectionId]);
 
   const useSelectedReferenceText = () => {
-    const selected = window.getSelection()?.toString().trim();
+    const selected = getReferenceSelection();
     if (selected) {
-      setManualText(selected);
+      setManualText((prev) => (prev.trim() ? `${prev.trim()}\n${selected}` : selected));
       toast(t('importer.selectionCopied'), { tone: 'info', ttl: 1200 });
     } else {
       toast(t('importer.noSelection'), { tone: 'warn', ttl: 1500 });
@@ -533,10 +553,9 @@ function ReviewResult({
   };
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-lg border border-paper-edge bg-paper p-4">
-        <h3 className="text-sm font-semibold text-ink">{t('importer.summary')}</h3>
-        <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      <div className="rounded-lg border border-paper-edge bg-paper p-3">
+        <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
           <Stat
             label={t('editor.name')}
             value={result.resume.header.name || t('importer.verify')}
@@ -547,101 +566,52 @@ function ReviewResult({
           <Stat label={t('importer.bulletsLabel')} value={result.stats.bullets} />
         </div>
         {result.hints?.isLikelyLinkedIn && (
-          <p className="mt-3 rounded-md bg-paper-tint px-3 py-2 text-xs text-ink-muted">
+          <p className="mt-2 rounded-md bg-paper-tint px-3 py-1.5 text-[11px] text-ink-muted">
             {t('importer.linkedinDetected')}
           </p>
         )}
         {result.hints?.twoColumnDetected && (
-          <p className="mt-2 rounded-md bg-paper-tint px-3 py-2 text-xs text-ink-muted">
+          <p className="mt-2 rounded-md bg-paper-tint px-3 py-1.5 text-[11px] text-ink-muted">
             {t('importer.twoColumn')}
           </p>
         )}
         {result.hints?.ocrConfidence !== undefined && (
-          <p className="mt-2 rounded-md bg-paper-tint px-3 py-2 text-xs text-ink-muted">
+          <p className="mt-2 rounded-md bg-paper-tint px-3 py-1.5 text-[11px] text-ink-muted">
             {t('importer.ocrConfidence', { n: Math.round(result.hints.ocrConfidence) })}
           </p>
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[0.95fr_1.05fr]">
-        <div className="rounded-lg border border-paper-edge bg-paper">
-          <div className="flex items-center justify-between border-b border-paper-edge px-3 py-2">
-            <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
-              {editing ? t('importer.editExtracted') : t('importer.extractedText')}
-            </span>
-            <div className="flex gap-1">
-              {editing ? (
-                <>
-                  <button
-                    type="button"
-                    className="btn-ghost h-7 text-xs"
-                    onClick={() => {
-                      setDraft(result.rawText);
-                      setEditing(false);
-                    }}
-                  >
-                    {t('common.cancel')}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-primary h-7 text-xs"
-                    onClick={() => {
-                      onReparse(draft);
-                      setEditing(false);
-                    }}
-                  >
-                    <RefreshCw size={11} /> {t('importer.reparse')}
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  className="btn-ghost h-7 text-xs"
-                  onClick={() => setEditing(true)}
-                  title={t('importer.reparseHint')}
-                >
-                  <Pencil size={11} /> {t('importer.edit')}
-                </button>
-              )}
-            </div>
-          </div>
-          {editing ? (
-            <textarea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              className="block max-h-96 w-full resize-none border-0 bg-paper p-3 font-mono text-xs text-ink focus:outline-none"
-              style={{ minHeight: 360 }}
-              spellCheck
-              aria-label={t('importer.editExtracted')}
-            />
-          ) : (
-            <pre className="max-h-96 overflow-auto whitespace-pre-wrap p-3 text-xs text-ink-muted">
-              {result.rawText}
-            </pre>
+      <div className="flex min-h-0 flex-1 flex-col rounded-lg border border-paper-edge bg-paper">
+        <div className="flex items-center justify-between border-b border-paper-edge px-3 py-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+            {t('importer.parsedResult')}
+          </span>
+          {mode === 'merge' && (
+            <button
+              type="button"
+              className="btn-ghost h-7 text-xs"
+              onClick={() => onToggleAll(!allSelected)}
+            >
+              {allSelected ? t('importer.deselectAll') : t('importer.selectAll')}
+            </button>
           )}
         </div>
-        <div className="rounded-lg border border-paper-edge bg-paper">
-          <div className="flex items-center justify-between border-b border-paper-edge px-3 py-2">
-            <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
-              {t('importer.parsedResult')}
-            </span>
-            {mode === 'merge' && (
-              <button
-                type="button"
-                className="btn-ghost h-7 text-xs"
-                onClick={() => onToggleAll(!allSelected)}
-              >
-                {allSelected ? t('importer.deselectAll') : t('importer.selectAll')}
-              </button>
-            )}
-          </div>
-          <div className="max-h-96 space-y-2 overflow-auto p-3">
-            {mode === 'merge' && (
-              <p className="text-[11px] text-ink-subtle">
-                {t('importer.selectSectionsHint', { count: selectedSectionIds.size })}
-              </p>
-            )}
-            {result.resume.sections.map((section) => (
+        <div className="min-h-0 flex-1 space-y-2 overflow-auto p-3">
+          {mode === 'merge' && (
+            <p className="text-[11px] text-ink-subtle">
+              {t('importer.selectSectionsHint', { count: selectedSectionIds.size })}
+            </p>
+          )}
+          {result.resume.sections.length === 0 && (
+            <p className="rounded-md bg-yellow-50 px-3 py-2 text-xs text-warn">
+              {t('importer.noSectionsParsed', {
+                defaultValue:
+                  'No sections were detected. Edit the resume text on the left and re-parse, or use the missed-content helper below.',
+              })}
+            </p>
+          )}
+          {result.resume.sections.map((section) => (
               <details
                 key={section.id}
                 className="rounded-md border border-paper-edge p-2"
@@ -729,9 +699,8 @@ function ReviewResult({
             )}
           </div>
         </div>
-      </div>
 
-      <div className="rounded-lg border border-paper-edge bg-paper">
+      <div className="shrink-0 rounded-lg border border-paper-edge bg-paper">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-paper-edge px-3 py-2">
           <div>
             <div className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
