@@ -53,7 +53,7 @@ export async function enrichWithBYOK(
     const prompt =
       `${SYSTEM_PROMPT}\n\n--- RAW TEXT ---\n${base.rawText.slice(0, 8000)}\n\n` +
       `--- PRELIMINARY PARSE ---\n${JSON.stringify(condenseForPrompt(base), null, 2)}`;
-    const raw = await generateAiText(settings, prompt, 1800);
+    const raw = await generateAiText(settings, prompt, 2400);
     const json = extractJson(raw);
     if (!json) {
       return { result: base, applied: false, error: 'Provider response was not valid JSON.' };

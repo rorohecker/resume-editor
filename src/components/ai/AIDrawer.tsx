@@ -117,6 +117,12 @@ export function AIDrawer() {
     setPendingPlan(null);
   }, [tab]);
 
+  // Keep the active AI tab visible when the strip is horizontally scrolled.
+  useEffect(() => {
+    const active = document.querySelector<HTMLElement>('[data-ai-tab][aria-selected="true"]');
+    active?.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' });
+  }, [tab]);
+
   const bullets = useMemo(() => (resume ? collectBullets(resume) : []), [resume]);
   const selectedBullet = bullets.find((b) => b.bulletId === selectedBulletId) ?? bullets[0];
   const localRewriteOptions = selectedBullet ? rewriteBullet(selectedBullet.content, instruction) : [];
@@ -140,11 +146,13 @@ export function AIDrawer() {
     toast(t('ai.bulletReplaced'), { tone: 'success', ttl: 1500 });
   };
 
-  const runCloud = async (label: string, fn: () => Promise<void>) => {
+  const runCloud = async (label: string, fn: (live: AiSettings) => Promise<void>) => {
     setAiError('');
     setBusy(label);
     try {
-      await fn();
+      const live = loadAiSettings();
+      setSettings(live);
+      await fn(live);
     } catch (err) {
       setAiError(err instanceof Error ? err.message : t('ai.requestFailed'));
     } finally {
@@ -153,11 +161,12 @@ export function AIDrawer() {
   };
 
   const generateCloudRewrite = () =>
-    runCloud('rewrite', async () => {
+    runCloud('rewrite', async (live) => {
       if (!resume || !selectedBullet) return;
       const text = await generateAiText(
-        settings,
+        live,
         promptForRewrite(resume, selectedBullet.content, instruction),
+        1200,
       );
       setCloudRewriteOptions(
         text
@@ -169,23 +178,23 @@ export function AIDrawer() {
     });
 
   const runOrganize = () =>
-    runCloud('organize', async () => {
+    runCloud('organize', async (live) => {
       if (!resume) return;
       const text = await generateAiText(
-        settings,
-        promptForReorganize(resume, organizeInstruction, settings.agentInstructions),
-        1800,
+        live,
+        promptForReorganize(resume, organizeInstruction, live.agentInstructions),
+        3200,
       );
       setPendingPlan(parseAgentPlan(text));
     });
 
   const runAgent = () =>
-    runCloud('agent', async () => {
+    runCloud('agent', async (live) => {
       if (!resume || !agentMessage.trim()) return;
       const text = await generateAiText(
-        settings,
-        promptForAgentControl(resume, agentMessage.trim(), settings.agentInstructions),
-        1800,
+        live,
+        promptForAgentControl(resume, agentMessage.trim(), live.agentInstructions),
+        3200,
       );
       setPendingPlan(parseAgentPlan(text));
     });
@@ -245,37 +254,43 @@ export function AIDrawer() {
       title={t('ai.drawerTitle')}
       icon={<Sparkles size={16} className="text-accent" />}
       badge={
-        <span className="rounded-full bg-paper-tint px-2 py-0.5 text-xs text-ink-muted">
+        <span className="hidden truncate rounded-full bg-paper-tint px-2 py-0.5 text-xs text-ink-muted sm:inline">
           {hasKey ? PROVIDER_LABELS[settings.provider] : t('ai.localFallback')}
         </span>
       }
-      maxWidth="xl"
+      maxWidth="2xl"
     >
-      <div className="border-b border-paper-edge px-3 py-2">
-        <div className="grid grid-cols-4 gap-1 sm:grid-cols-5 lg:grid-cols-10">
+      <div className="sticky top-0 z-10 border-b border-paper-edge bg-paper/95 px-3 py-2 backdrop-blur-sm">
+        <div
+          role="tablist"
+          aria-label={t('ai.drawerTitle')}
+          className="flex gap-1 overflow-x-auto pb-0.5 [scrollbar-width:thin]"
+        >
           {TABS.map((item) => (
             <button
               key={item.id}
               type="button"
+              role="tab"
               onClick={() => setTab(item.id)}
-              className={`rounded-md px-2 py-1.5 text-xs font-medium ${
+              className={`shrink-0 whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
                 tab === item.id
                   ? 'bg-ink text-paper'
                   : 'text-ink-muted hover:bg-paper-tint hover:text-ink'
               }`}
-              aria-pressed={tab === item.id}
+              aria-selected={tab === item.id}
+              data-ai-tab
             >
               {t(item.labelKey)}
             </button>
           ))}
         </div>
-        <p className="mt-2 text-xs text-ink-subtle">
-          {t('ai.optionalNote')}
-        </p>
+        <p className="mt-2 text-xs leading-relaxed text-ink-subtle">{t('ai.optionalNote')}</p>
       </div>
 
       <div className="p-4 text-sm text-ink-muted">
-        {aiError && <div className="mb-3 rounded-md bg-red-50 px-3 py-2 text-danger">{aiError}</div>}
+        {aiError && (
+          <div className="mb-3 break-words rounded-md bg-red-50 px-3 py-2 text-danger">{aiError}</div>
+        )}
         {!resume ? (
           <p>{t('ai.openResume')}</p>
         ) : (
@@ -327,7 +342,7 @@ export function AIDrawer() {
                       className="input min-h-20 resize-y"
                       spellCheck
                     />
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
                         className="btn-primary text-xs"
@@ -349,7 +364,7 @@ export function AIDrawer() {
                         <button
                           key={option}
                           type="button"
-                          className="w-full rounded-md border border-paper-edge p-3 text-left text-ink hover:bg-paper-tint"
+                          className="w-full break-words rounded-md border border-paper-edge p-3 text-left text-ink hover:bg-paper-tint"
                           onClick={() => acceptRewrite(option)}
                         >
                           <span className="mb-1 flex items-center gap-2 text-xs font-semibold text-accent">
@@ -539,12 +554,12 @@ export function AIDrawer() {
                   className="btn-primary mt-3 text-xs"
                   disabled={!hasKey || !jobDescription.trim() || busy === 'ats'}
                   onClick={() =>
-                    void runCloud('ats', async () => {
+                    void runCloud('ats', async (live) => {
                       setCloudAts(
                         await generateAiText(
-                          settings,
+                          live,
                           promptForAtsKeywords(resume, jobDescription),
-                          900,
+                          1600,
                         ),
                       );
                     })
@@ -586,9 +601,9 @@ export function AIDrawer() {
                         className="btn-primary text-xs"
                         disabled={!hasKey || busy === 'summary'}
                         onClick={() =>
-                          void runCloud('summary', async () =>
+                          void runCloud('summary', async (live) =>
                             setCloudSummary(
-                              await generateAiText(settings, promptForSummary(resume), 240),
+                              await generateAiText(live, promptForSummary(resume), 1000),
                             ),
                           )
                         }
@@ -684,12 +699,12 @@ export function AIDrawer() {
                     </select>
                   </Field>
                   <Field label={t('ai.apiKey')}>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
                       <input
                         type={showKey ? 'text' : 'password'}
                         value={settings.apiKey}
                         onChange={(e) => persistSettings({ ...settings, apiKey: e.target.value })}
-                        className="input"
+                        className="input min-w-0 flex-1 basis-40"
                         placeholder={t('ai.apiKeyPlaceholder')}
                         autoComplete="off"
                         spellCheck={false}
@@ -697,7 +712,7 @@ export function AIDrawer() {
                       />
                       <button
                         type="button"
-                        className="btn-secondary text-xs"
+                        className="btn-secondary flex-shrink-0 text-xs"
                         onClick={() => setShowKey(!showKey)}
                         aria-label={showKey ? t('ai.hideKey') : t('ai.showKey')}
                       >
@@ -705,7 +720,7 @@ export function AIDrawer() {
                       </button>
                       <button
                         type="button"
-                        className="btn-secondary text-xs"
+                        className="btn-secondary flex-shrink-0 text-xs"
                         onClick={() =>
                           void readClipboard().then((apiKey) => {
                             if (apiKey == null) {
@@ -786,7 +801,7 @@ export function AIDrawer() {
                       {import.meta.env.DEV ? t('ai.corsDevHint') : t('ai.corsWarning')}
                     </p>
                   )}
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <Field label={t('ai.callsPerMinute')}>
                       <input
                         type="number"
@@ -825,8 +840,8 @@ export function AIDrawer() {
                       className="btn-primary"
                       disabled={!hasKey || busy === 'test'}
                       onClick={() =>
-                        void runCloud('test', async () => {
-                          const result = await testAiConnection(settings);
+                        void runCloud('test', async (live) => {
+                          const result = await testAiConnection(live);
                           toast(t('ai.connectionOk', { result: result || 'OK' }), {
                             tone: 'success',
                             ttl: 3000,
@@ -904,16 +919,16 @@ function AgentPlanPreview({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="mt-4 space-y-3 rounded-md border border-paper-edge bg-paper-tint p-3">
-      <div>
+    <div className="mt-4 min-w-0 space-y-3 rounded-md border border-paper-edge bg-paper-tint p-3">
+      <div className="min-w-0">
         <div className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
           {t('ai.agentPlan')}
         </div>
-        <p className="mt-1 text-sm text-ink">{plan.summary}</p>
+        <p className="mt-1 break-words text-sm text-ink">{plan.summary}</p>
       </div>
       <ul className="max-h-40 space-y-1 overflow-auto text-xs text-ink-muted">
         {plan.ops.map((op, index) => (
-          <li key={`${op.op}-${index}`} className="rounded bg-paper px-2 py-1 font-mono">
+          <li key={`${op.op}-${index}`} className="break-all rounded bg-paper px-2 py-1 font-mono">
             {op.op === 'replace_bullet' && `replace_bullet → ${op.content.slice(0, 72)}`}
             {op.op === 'delete_bullet' && `delete_bullet → ${op.bulletId.slice(0, 8)}…`}
             {op.op === 'set_entry_bullets' &&
@@ -936,12 +951,12 @@ function AgentPlanPreview({
 
 function Panel({ title, icon, children }: { title: string; icon: ReactNode; children: ReactNode }) {
   return (
-    <section>
-      <div className="mb-3 flex items-center gap-2 text-ink">
-        {icon}
-        <h3 className="font-semibold">{title}</h3>
+    <section className="min-w-0">
+      <div className="mb-3 flex min-w-0 items-center gap-2 text-ink">
+        <span className="flex-shrink-0">{icon}</span>
+        <h3 className="min-w-0 truncate font-semibold">{title}</h3>
       </div>
-      {children}
+      <div className="min-w-0">{children}</div>
     </section>
   );
 }
@@ -958,7 +973,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 function ResultCard({ good, children }: { good: boolean; children: ReactNode }) {
   return (
     <div
-      className={`mt-3 rounded-md border px-3 py-2 ${
+      className={`mt-3 min-w-0 break-words rounded-md border px-3 py-2 ${
         good ? 'border-green-200 bg-green-50' : 'border-yellow-200 bg-yellow-50'
       }`}
     >

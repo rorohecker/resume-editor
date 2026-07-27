@@ -25,8 +25,9 @@ export function CoverLetterModal() {
     if (!resume) return;
     setBusy(true);
     try {
-      const text = hasKey
-        ? await generateAiText(settings, promptForCoverLetter(resume, jobDescription), 900)
+      const live = loadAiSettings();
+      const text = live.apiKey.trim()
+        ? await generateAiText(live, promptForCoverLetter(resume, jobDescription), 1600)
         : generateCoverLetter(resume, jobDescription);
       setLetter(text);
     } catch (err) {

@@ -86,7 +86,7 @@ export function BulkEditDrawer({ open, onClose }: { open: boolean; onClose: () =
         const text = await generateAiText(
           settings,
           promptForRewrite(resume, bullet.content, 'make it stronger and add a metric if natural'),
-          280,
+          900,
         );
         const firstOption = text
           .split('\n')
@@ -114,11 +114,11 @@ export function BulkEditDrawer({ open, onClose }: { open: boolean; onClose: () =
       maxWidth="lg"
     >
       <div className="space-y-3 p-4 text-sm">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <select
             value={filter}
             onChange={(e) => setFilter(e.target.value as 'all' | 'weak')}
-            className="input h-8 w-auto text-xs"
+            className="input h-8 min-w-0 flex-1 basis-40 text-xs sm:flex-none sm:w-auto"
           >
             <option value="all">{t('bulk.allFilter', { count: bullets.length })}</option>
             <option value="weak">{t('bulk.weakFilter', { count: weakIds.size })}</option>

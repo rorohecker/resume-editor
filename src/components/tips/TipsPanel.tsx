@@ -119,9 +119,11 @@ export function TipsPanel() {
 
 function TipCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-md border border-paper-edge bg-paper px-3 py-3">
-      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink">{title}</h3>
-      <div>{children}</div>
+    <section className="min-w-0 rounded-md border border-paper-edge bg-paper px-3 py-3">
+      <h3 className="mb-2 break-words text-xs font-semibold uppercase tracking-wide text-ink">
+        {title}
+      </h3>
+      <div className="min-w-0 break-words">{children}</div>
     </section>
   );
 }

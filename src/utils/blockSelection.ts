@@ -91,10 +91,26 @@ export function fitToPages(
   //   bullet cost     ~= one bullet line height
   // We mirror that with `lineHeight = body * bullet`.
   const lookupEntryParent = new Map<string, string>();
-  const entryRecord = new Map<string, { hasSubtitle: boolean }>();
+  const entryRecord = new Map<
+    string,
+    {
+      hasSubtitle: boolean;
+      needsBullets: boolean;
+      bullets: Bullet[];
+    }
+  >();
   for (const section of resume.sections) {
+    const needsBullets =
+      section.type === 'experience' ||
+      section.type === 'projects' ||
+      section.type === 'leadership' ||
+      section.type === 'research';
     for (const entry of section.entries) {
-      entryRecord.set(entry.id, { hasSubtitle: Boolean(entry.subtitle || entry.location) });
+      entryRecord.set(entry.id, {
+        hasSubtitle: Boolean(entry.subtitle || entry.location),
+        needsBullets,
+        bullets: entry.bullets ?? [],
+      });
       for (const bullet of entry.bullets ?? []) lookupEntryParent.set(bullet.id, entry.id);
     }
   }
@@ -113,10 +129,26 @@ export function fitToPages(
   const entryCost = (id: string): number => {
     const rec = entryRecord.get(id);
     if (!rec) return lineCost;
-    const titleCost = (resume.styles.fontSize.entryTitle * resume.styles.spacing.bullet) /
-      Math.max(1, (resume.styles.paperSize === 'a4' ? 11.69 : 11) - resume.styles.margins.top - resume.styles.margins.bottom) /
-      72 * 100;
-    return titleCost + (rec.hasSubtitle ? lineCost : 0) + resume.styles.spacing.entry / Math.max(1, ((resume.styles.paperSize === 'a4' ? 11.69 : 11) - resume.styles.margins.top - resume.styles.margins.bottom) * 72) * 100;
+    const pageHeightIn = resume.styles.paperSize === 'a4' ? 11.69 : 11;
+    const usableIn = Math.max(
+      1,
+      pageHeightIn - resume.styles.margins.top - resume.styles.margins.bottom,
+    );
+    const usablePt = usableIn * 72;
+    const titleCost =
+      ((resume.styles.fontSize.entryTitle * resume.styles.spacing.bullet) / usablePt) * 100;
+    return (
+      titleCost +
+      (rec.hasSubtitle ? lineCost : 0) +
+      (resume.styles.spacing.entry / usablePt) * 100
+    );
+  };
+
+  const preferredBulletsFor = (entryId: string): Bullet[] => {
+    const rec = entryRecord.get(entryId);
+    if (!rec || rec.bullets.length === 0) return [];
+    const preferred = rec.bullets.filter((b) => b.visible);
+    return (preferred.length > 0 ? preferred : rec.bullets).slice(0, 3);
   };
 
   const sorted = [...scores].sort((a, b) => b.score - a.score);
@@ -124,29 +156,116 @@ export function fitToPages(
   for (const score of sorted) {
     let costDelta = 0;
     if (score.bulletId) {
-      const parent = lookupEntryParent.get(score.bulletId);
-      if (parent && !visibility.entries[parent]) costDelta += entryCost(parent);
-      if (!visibility.bullets[score.bulletId]) costDelta += lineCost;
-      if (usage + costDelta >= cap) break;
-      if (parent) visibility.entries[parent] = true;
+      // Skip orphan bullet IDs the model invented or hallucinated.
+      if (!lookupEntryParent.has(score.bulletId)) continue;
+      if (visibility.bullets[score.bulletId]) continue;
+      const parent = lookupEntryParent.get(score.bulletId)!;
+      if (!visibility.entries[parent]) costDelta += entryCost(parent);
+      costDelta += lineCost;
+      // Skip this item if it doesn't fit — keep packing later (cheaper) ones.
+      if (usage + costDelta >= cap) continue;
+      visibility.entries[parent] = true;
       visibility.bullets[score.bulletId] = true;
+      usage += costDelta;
     } else {
+      if (!entryRecord.has(score.entryId)) continue;
       if (visibility.entries[score.entryId]) continue;
-      costDelta = entryCost(score.entryId);
-      if (usage + costDelta >= cap) break;
-      visibility.entries[score.entryId] = true;
+      const rec = entryRecord.get(score.entryId)!;
+      // Never pack a naked experience/project shell: it burns the page budget,
+      // then the cleanup pass strips it when no bullets fit → empty variants.
+      if (rec.needsBullets && rec.bullets.length > 0) {
+        const attach = preferredBulletsFor(score.entryId).filter(
+          (b) => !visibility.bullets[b.id],
+        );
+        costDelta = entryCost(score.entryId);
+        const accepted: string[] = [];
+        for (const bullet of attach) {
+          if (usage + costDelta + lineCost >= cap) break;
+          costDelta += lineCost;
+          accepted.push(bullet.id);
+        }
+        if (accepted.length === 0) continue;
+        visibility.entries[score.entryId] = true;
+        for (const id of accepted) visibility.bullets[id] = true;
+        usage += costDelta;
+      } else {
+        costDelta = entryCost(score.entryId);
+        if (usage + costDelta >= cap) continue;
+        visibility.entries[score.entryId] = true;
+        usage += costDelta;
+      }
     }
-    usage += costDelta;
   }
 
-  // Clean up dangling entries: if any entry is visible but every bullet under
-  // it is hidden AND the entry's section requires bullets, drop the entry.
+  // If an included entry has bullets but none were scored/selected, keep its
+  // best existing visible bullets (or first few) so experience sections don't
+  // get wiped by entry-only AI scores.
   for (const section of resume.sections) {
-    if (section.type === 'experience' || section.type === 'projects' || section.type === 'leadership' || section.type === 'research') {
+    const needsBullets =
+      section.type === 'experience' ||
+      section.type === 'projects' ||
+      section.type === 'leadership' ||
+      section.type === 'research';
+    if (!needsBullets) continue;
+    for (const entry of section.entries) {
+      if (!visibility.entries[entry.id]) continue;
+      const bullets = entry.bullets ?? [];
+      if (bullets.length === 0) continue;
+      const anyVisible = bullets.some((bullet) => visibility.bullets[bullet.id]);
+      if (anyVisible) continue;
+      const fallback = preferredBulletsFor(entry.id);
+      for (const bullet of fallback) {
+        if (usage + lineCost >= cap) break;
+        visibility.bullets[bullet.id] = true;
+        usage += lineCost;
+      }
+      const stillEmpty = !bullets.some((bullet) => visibility.bullets[bullet.id]);
+      if (stillEmpty) visibility.entries[entry.id] = false;
+    }
+  }
+
+  // Last resort: if nothing fit under the cap (huge header/summary, tiny page),
+  // force-include the single highest-scoring block so the feature never yields
+  // an empty variant when the resume has scorable content.
+  if (
+    Object.values(visibility.entries).every((v) => !v) &&
+    Object.values(visibility.bullets).every((v) => !v) &&
+    scores.length > 0
+  ) {
+    for (const score of sorted) {
+      if (score.bulletId) {
+        const parent = lookupEntryParent.get(score.bulletId);
+        if (!parent || !entryRecord.has(parent)) continue;
+        visibility.entries[parent] = true;
+        visibility.bullets[score.bulletId] = true;
+        break;
+      }
+      if (!entryRecord.has(score.entryId)) continue;
+      const rec = entryRecord.get(score.entryId)!;
+      visibility.entries[score.entryId] = true;
+      if (rec.needsBullets && rec.bullets.length > 0) {
+        const first = preferredBulletsFor(score.entryId)[0];
+        if (first) visibility.bullets[first.id] = true;
+        else visibility.entries[score.entryId] = false;
+      }
+      if (visibility.entries[score.entryId]) break;
+    }
+  }
+
+  // Clean up dangling entries: visible entry with every bullet hidden.
+  for (const section of resume.sections) {
+    if (
+      section.type === 'experience' ||
+      section.type === 'projects' ||
+      section.type === 'leadership' ||
+      section.type === 'research'
+    ) {
       for (const entry of section.entries) {
         if (!visibility.entries[entry.id]) continue;
         const hasAnyVisibleBullet = (entry.bullets ?? []).some((bullet) => visibility.bullets[bullet.id]);
-        if (!hasAnyVisibleBullet) visibility.entries[entry.id] = false;
+        if (!hasAnyVisibleBullet && (entry.bullets?.length ?? 0) > 0) {
+          visibility.entries[entry.id] = false;
+        }
       }
     }
   }

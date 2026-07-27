@@ -146,12 +146,16 @@ function sectionContentHeight(
   }
 
   if (section.type === 'summary' || section.layout === 'text-block') {
-    const text = section.entries[0]?.title ?? '';
+    const entry = section.entries[0];
+    if (!entry || entry.visible === false) return 0;
+    const text = entry.title ?? '';
     return Math.max(text.trim() ? 1 : 0, wrapLines(text, cpl)) * bodyLine;
   }
 
   if (section.layout === 'bullet-list') {
-    return bulletsHeight(section.entries[0]?.bullets ?? [], cpl, bodyLine);
+    const entry = section.entries[0];
+    if (!entry || entry.visible === false) return 0;
+    return bulletsHeight(entry.bullets ?? [], cpl, bodyLine);
   }
 
   const { styles } = resume;
@@ -215,11 +219,15 @@ function visibleCustomFieldCount(entry: Entry): number {
 function sectionHasContent(section: Section): boolean {
   if (section.type === 'page-break') return true;
   if (section.type === 'summary' || section.layout === 'text-block') {
-    return Boolean(section.entries[0]?.title?.trim());
+    const entry = section.entries[0];
+    if (!entry || entry.visible === false) return false;
+    return Boolean(entry.title?.trim());
   }
   if (section.layout === 'bullet-list') {
+    const entry = section.entries[0];
+    if (!entry || entry.visible === false) return false;
     return Boolean(
-      section.entries[0]?.bullets?.some((bullet) => bullet.visible && stripHtml(bullet.content)),
+      entry.bullets?.some((bullet) => bullet.visible && stripHtml(bullet.content)),
     );
   }
   return section.entries.some(entryHasContent);

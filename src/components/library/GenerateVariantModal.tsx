@@ -6,7 +6,11 @@ import { Modal } from '@/components/shared/Modal';
 import { useStore } from '@/store';
 import { toast } from '@/hooks/useToast';
 import { loadAiSettings } from '@/utils/aiByok';
-import { scoreBlocksWithAi } from '@/utils/aiVariant';
+import {
+  rewriteVariantBulletsWithAi,
+  scoreBlocksWithAi,
+  type VariantBulletRewrite,
+} from '@/utils/aiVariant';
 import {
   applyVisibility,
   fitToPages,
@@ -14,7 +18,10 @@ import {
   type BlockScore,
   type VisibilityMap,
 } from '@/utils/blockSelection';
+import { replaceBulletContent, stripHtml } from '@/utils/resumeText';
 import { estimatePageUsage } from '@/utils/styleChecks';
+
+type ProgressPhase = 'idle' | 'scoring' | 'rewriting' | 'done';
 
 export function GenerateVariantModal() {
   const { t } = useTranslation();
@@ -24,25 +31,29 @@ export function GenerateVariantModal() {
   const createVariantFrom = useStore((s) => s.createVariantFrom);
   const navigate = useNavigate();
   const [job, setJob] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [phase, setPhase] = useState<ProgressPhase>('idle');
   const [scores, setScores] = useState<BlockScore[] | null>(null);
   const [maxPages, setMaxPages] = useState(1);
   const [variantName, setVariantName] = useState('');
   const [useAi, setUseAi] = useState(true);
+  const [rewriteBullets, setRewriteBullets] = useState(true);
+  const [rewrites, setRewrites] = useState<VariantBulletRewrite[]>([]);
+  /** Bullet IDs whose rewrite the user wants applied. */
+  const [acceptedRewriteIds, setAcceptedRewriteIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!open) {
       setJob('');
       setScores(null);
-      setBusy(false);
+      setPhase('idle');
       setVariantName('');
+      setRewrites([]);
+      setAcceptedRewriteIds(new Set());
     }
   }, [open]);
 
   useEffect(() => {
     if (open && resume) {
-      // Try to auto-derive a useful name from the tracked application; fall
-      // back to a generic tailored suffix.
       const role = resume.application?.targetRole?.trim();
       const company = resume.application?.companyName?.trim();
       if (role && company) setVariantName(t('variant.defaultNameRoleCompany', { name: resume.name, role, company }));
@@ -52,24 +63,96 @@ export function GenerateVariantModal() {
     }
   }, [open, resume, t]);
 
+  // Re-read settings whenever the modal opens so a key added in AI settings applies.
   const settings = useMemo(() => loadAiSettings(), [open]);
   const hasKey = Boolean(settings.apiKey.trim());
+  const busy = phase === 'scoring' || phase === 'rewriting';
+  const canRewrite = hasKey && useAi;
+  const needsJob = (useAi && hasKey) || (rewriteBullets && canRewrite);
 
   const generate = async () => {
     if (!resume) return;
-    setBusy(true);
+    // Always load the latest key/model — settings can change while this modal stays mounted.
+    const liveSettings = loadAiSettings();
+    const liveHasKey = Boolean(liveSettings.apiKey.trim());
+    const liveUseAi = useAi && liveHasKey;
+    const liveCanRewrite = rewriteBullets && liveUseAi;
+    if ((liveUseAi || liveCanRewrite) && !job.trim()) {
+      toast(t('variant.jobRequired'), { tone: 'warn' });
+      return;
+    }
+    if (resume.sections.every((s) => s.entries.length === 0)) {
+      toast(t('variant.emptyResume'), { tone: 'warn' });
+      return;
+    }
+    setPhase('scoring');
+    setRewrites([]);
+    setAcceptedRewriteIds(new Set());
     try {
-      const computed = useAi && hasKey
-        ? await scoreBlocksWithAi(settings, resume, job)
-        : localScoreBlocks(resume, job);
+      let computed: BlockScore[];
+      let allowRewrite = liveCanRewrite;
+      if (liveUseAi) {
+        try {
+          computed = await scoreBlocksWithAi(liveSettings, resume, job);
+        } catch (aiErr) {
+          // Fall back to local ranking so the feature still works if the API fails.
+          computed = localScoreBlocks(resume, job);
+          allowRewrite = false;
+          toast(
+            aiErr instanceof Error
+              ? t('variant.aiFallback', { message: aiErr.message })
+              : t('variant.aiFallback', { message: t('variant.failed') }),
+            { tone: 'warn', ttl: 5000 },
+          );
+        }
+      } else {
+        computed = localScoreBlocks(resume, job);
+      }
       setScores(computed);
-      toast(useAi && hasKey ? t('variant.scored') : t('variant.scoredLocal'), {
-        tone: 'success',
-      });
+
+      const fitResult = fitToPages(resume, computed, { maxPages });
+      if (fitResult.includedEntries + fitResult.includedBullets === 0) {
+        throw new Error(t('variant.emptyFit'));
+      }
+
+      const includedBulletIds = Object.entries(fitResult.visibility.bullets)
+        .filter(([, visible]) => visible)
+        .map(([id]) => id);
+
+      if (allowRewrite && includedBulletIds.length > 0) {
+        setPhase('rewriting');
+        try {
+          const nextRewrites = await rewriteVariantBulletsWithAi(
+            liveSettings,
+            resume,
+            job,
+            includedBulletIds,
+          );
+          setRewrites(nextRewrites);
+          setAcceptedRewriteIds(new Set(nextRewrites.map((item) => item.bulletId)));
+          toast(
+            nextRewrites.length > 0
+              ? t('variant.rewrote', { count: nextRewrites.length })
+              : t('variant.rewroteNone'),
+            { tone: 'success' },
+          );
+        } catch (rewriteErr) {
+          // Keep the scored preview even if keyword rewrite fails.
+          toast(
+            rewriteErr instanceof Error ? rewriteErr.message : t('variant.rewriteFailed'),
+            { tone: 'warn' },
+          );
+        }
+      } else {
+        toast(liveUseAi ? t('variant.scored') : t('variant.scoredLocal'), {
+          tone: 'success',
+        });
+      }
+      setPhase('done');
     } catch (err) {
+      setPhase('idle');
+      setScores(null);
       toast(err instanceof Error ? err.message : t('variant.failed'), { tone: 'danger' });
-    } finally {
-      setBusy(false);
     }
   };
 
@@ -80,16 +163,34 @@ export function GenerateVariantModal() {
 
   const previewResume = useMemo(() => {
     if (!resume) return null;
-    if (!fit) return resume;
-    return applyVisibility(resume, fit.visibility);
-  }, [resume, fit]);
+    let next = fit ? applyVisibility(resume, fit.visibility) : resume;
+    for (const rewrite of rewrites) {
+      if (!acceptedRewriteIds.has(rewrite.bulletId)) continue;
+      next = replaceBulletContent(next, rewrite.bulletId, rewrite.rewritten);
+    }
+    return next;
+  }, [resume, fit, rewrites, acceptedRewriteIds]);
 
   const previewUsage = previewResume ? estimatePageUsage(previewResume) : 0;
 
+  const toggleRewrite = (bulletId: string) => {
+    setAcceptedRewriteIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(bulletId)) next.delete(bulletId);
+      else next.add(bulletId);
+      return next;
+    });
+  };
+
   const create = () => {
-    if (!resume || !fit) return;
+    if (!resume || !fit || !previewResume) return;
     const baseVisibility: VisibilityMap = fit.visibility;
-    const next = applyVisibility(resume, baseVisibility);
+    // Apply visibility from the scored fit, then keyword rewrites the user accepted.
+    let next = applyVisibility(resume, baseVisibility);
+    for (const rewrite of rewrites) {
+      if (!acceptedRewriteIds.has(rewrite.bulletId)) continue;
+      next = replaceBulletContent(next, rewrite.bulletId, rewrite.rewritten);
+    }
     const variant = createVariantFrom(
       next,
       variantName.trim() || `${resume.name} variant`,
@@ -100,6 +201,17 @@ export function GenerateVariantModal() {
     });
     setOpen(false);
   };
+
+  const statusLabel =
+    phase === 'scoring'
+      ? t('variant.scoring')
+      : phase === 'rewriting'
+        ? t('variant.rewriting')
+        : phase === 'done' && rewrites.length > 0
+          ? t('variant.statusDoneRewrites', { count: acceptedRewriteIds.size })
+          : phase === 'done'
+            ? t('variant.statusDone')
+            : null;
 
   return (
     <Modal
@@ -117,7 +229,7 @@ export function GenerateVariantModal() {
             <button
               type="button"
               className="btn-primary"
-              disabled={!resume || !fit}
+              disabled={!resume || !fit || busy}
               title={!fit ? t('variant.scoreFirst') : undefined}
               onClick={create}
             >
@@ -128,7 +240,7 @@ export function GenerateVariantModal() {
       }
     >
       <div className="grid h-full grid-cols-1 gap-4 p-5 lg:grid-cols-[0.9fr_1.1fr]">
-        <div className="space-y-3">
+        <div className="min-w-0 space-y-3">
           <p className="text-xs text-ink-muted">{t('variant.hint')}</p>
 
           <label className="block text-xs">
@@ -159,17 +271,20 @@ export function GenerateVariantModal() {
               value={job}
               onChange={(e) => setJob(e.target.value)}
               placeholder={t('variant.jobPlaceholder')}
-              className="input min-h-48 resize-y"
+              className="input min-h-40 resize-y"
               spellCheck
             />
           </label>
 
-          <label className="flex items-center gap-2 text-xs text-ink-muted">
+          <label className="flex items-start gap-2 text-xs text-ink-muted">
             <input
               type="checkbox"
               checked={useAi}
-              onChange={(e) => setUseAi(e.target.checked)}
-              className="accent-ink"
+              onChange={(e) => {
+                setUseAi(e.target.checked);
+                if (!e.target.checked) setRewriteBullets(false);
+              }}
+              className="mt-0.5 accent-ink"
               disabled={!hasKey}
             />
             <span>
@@ -177,21 +292,125 @@ export function GenerateVariantModal() {
             </span>
           </label>
 
+          <label className="flex items-start gap-2 text-xs text-ink-muted">
+            <input
+              type="checkbox"
+              checked={rewriteBullets && canRewrite}
+              onChange={(e) => setRewriteBullets(e.target.checked)}
+              className="mt-0.5 accent-ink"
+              disabled={!canRewrite}
+            />
+            <span>
+              <span className="font-medium text-ink">{t('variant.rewriteOption')}</span>
+              <span className="mt-0.5 block text-ink-subtle">
+                {canRewrite ? t('variant.rewriteOptionHint') : t('variant.rewriteNeedsAi')}
+              </span>
+            </span>
+          </label>
+
+          {statusLabel && (
+            <div
+              className={`rounded-md border px-3 py-2 text-xs ${
+                busy
+                  ? 'border-accent/30 bg-accent/5 text-ink'
+                  : 'border-paper-edge bg-paper-tint text-ink-muted'
+              }`}
+              role="status"
+              aria-live="polite"
+            >
+              {busy && <span className="mr-2 inline-block h-2 w-2 animate-pulse rounded-full bg-accent" />}
+              {statusLabel}
+            </div>
+          )}
+
           <button
             type="button"
             className="btn-primary w-full"
-            disabled={busy || !resume}
+            disabled={busy || !resume || (needsJob && !job.trim())}
             onClick={() => void generate()}
           >
             {useAi && hasKey ? <Sparkles size={14} /> : <Wand2 size={14} />}
-            {busy ? t('variant.scoring') : useAi && hasKey ? t('variant.scoreAi') : t('variant.scoreLocal')}
+            {busy
+              ? statusLabel
+              : rewriteBullets && canRewrite
+                ? t('variant.scoreAndRewrite')
+                : useAi && hasKey
+                  ? t('variant.scoreAi')
+                  : t('variant.scoreLocal')}
           </button>
+
+          {rewrites.length > 0 && (
+            <div className="space-y-2 rounded-md border border-paper-edge p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-ink">
+                  {t('variant.rewriteReview')}
+                </h3>
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    className="btn-ghost text-[11px]"
+                    onClick={() => setAcceptedRewriteIds(new Set(rewrites.map((r) => r.bulletId)))}
+                  >
+                    {t('variant.acceptAll')}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-ghost text-[11px]"
+                    onClick={() => setAcceptedRewriteIds(new Set())}
+                  >
+                    {t('variant.acceptNone')}
+                  </button>
+                </div>
+              </div>
+              <p className="text-[11px] text-ink-subtle">{t('variant.rewriteReviewHint')}</p>
+              <ul className="max-h-56 space-y-2 overflow-y-auto">
+                {rewrites.map((rewrite) => {
+                  const accepted = acceptedRewriteIds.has(rewrite.bulletId);
+                  return (
+                    <li
+                      key={rewrite.bulletId}
+                      className={`rounded-md border p-2 text-[11px] ${
+                        accepted ? 'border-accent/40 bg-accent/5' : 'border-paper-edge bg-paper'
+                      }`}
+                    >
+                      <label className="flex cursor-pointer items-start gap-2">
+                        <input
+                          type="checkbox"
+                          checked={accepted}
+                          onChange={() => toggleRewrite(rewrite.bulletId)}
+                          className="mt-0.5 accent-ink"
+                        />
+                        <span className="min-w-0 flex-1 space-y-1">
+                          <span className="block text-ink-subtle line-through decoration-ink-subtle/60">
+                            {rewrite.original}
+                          </span>
+                          <span className="block font-medium text-ink">{rewrite.rewritten}</span>
+                          {rewrite.keywordsUsed.length > 0 && (
+                            <span className="flex flex-wrap gap-1 pt-0.5">
+                              {rewrite.keywordsUsed.map((kw) => (
+                                <span
+                                  key={kw}
+                                  className="rounded-full bg-paper-tint px-1.5 py-0.5 text-[10px] text-ink-muted"
+                                >
+                                  {kw}
+                                </span>
+                              ))}
+                            </span>
+                          )}
+                        </span>
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
         </div>
 
-        <div className="overflow-y-auto rounded-md border border-paper-edge bg-paper-tint">
+        <div className="min-w-0 overflow-y-auto rounded-md border border-paper-edge bg-paper-tint">
           {!fit ? (
-            <div className="flex h-full min-h-72 items-center justify-center text-center text-sm text-ink-subtle">
-              {t('variant.awaitingScore')}
+            <div className="flex h-full min-h-72 items-center justify-center px-4 text-center text-sm text-ink-subtle">
+              {busy ? statusLabel : t('variant.awaitingScore')}
             </div>
           ) : (
             <div className="space-y-3 p-3 text-xs">
@@ -222,9 +441,22 @@ export function GenerateVariantModal() {
                                 </div>
                                 {usedBullets.length > 0 && (
                                   <ul className="ml-3 list-disc text-ink-muted">
-                                    {usedBullets.map((bullet) => (
-                                      <li key={bullet.id}>{bullet.content.replace(/<[^>]*>/g, '')}</li>
-                                    ))}
+                                    {usedBullets.map((bullet) => {
+                                      const rewritten = acceptedRewriteIds.has(bullet.id);
+                                      return (
+                                        <li
+                                          key={bullet.id}
+                                          className={rewritten ? 'text-ink' : undefined}
+                                        >
+                                          {stripHtml(bullet.content)}
+                                          {rewritten && (
+                                            <span className="ml-1 rounded-full bg-accent/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-accent">
+                                              {t('variant.rewrittenBadge')}
+                                            </span>
+                                          )}
+                                        </li>
+                                      );
+                                    })}
                                   </ul>
                                 )}
                               </li>

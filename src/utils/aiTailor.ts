@@ -81,7 +81,7 @@ export async function generateTailoring(
     `--- BULLET INVENTORY (use these exact ids in bulletRewrites) ---\n` +
     JSON.stringify(bulletInventory, null, 2);
 
-  const raw = await generateAiText(settings, prompt, 2400);
+  const raw = await generateAiText(settings, prompt, 3600);
   const json = parseLooseJson(raw) as RawShape | null;
   if (!json) throw new Error('Provider returned malformed JSON.');
 

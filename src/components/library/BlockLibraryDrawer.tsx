@@ -171,8 +171,8 @@ export function BlockLibraryDrawer() {
           </button>
         </div>
 
-        <div className="flex items-center gap-2 rounded-md border border-paper-edge bg-paper px-2 py-1.5">
-          <Search size={14} className="text-ink-muted" />
+        <div className="flex min-w-0 items-center gap-2 rounded-md border border-paper-edge bg-paper px-2 py-1.5">
+          <Search size={14} className="flex-shrink-0 text-ink-muted" />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}

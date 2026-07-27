@@ -47,13 +47,18 @@ export function Modal({ open, onClose, title, children, footer, maxWidth = 'lg',
         role="dialog"
         aria-label={ariaLabel ?? title}
       >
-        <div className="flex items-center justify-between border-b border-paper-edge px-5 py-4">
-          <h2 className="text-base font-semibold text-ink">{title}</h2>
-          <button type="button" onClick={onClose} className="icon-btn" aria-label={t('common.close')}>
+        <div className="flex flex-shrink-0 items-center justify-between gap-2 border-b border-paper-edge px-5 py-4">
+          <h2 className="min-w-0 truncate text-base font-semibold text-ink">{title}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="icon-btn flex-shrink-0"
+            aria-label={t('common.close')}
+          >
             <X size={16} />
           </button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{children}</div>
         {footer && <div className="border-t border-paper-edge px-5 py-3">{footer}</div>}
       </div>
     </div>
@@ -67,7 +72,7 @@ interface DrawerProps {
   icon?: ReactNode;
   badge?: ReactNode;
   side?: 'right' | 'left';
-  maxWidth?: 'sm' | 'md' | 'lg' | 'xl';
+  maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl';
   children: ReactNode;
   ariaLabel?: string;
 }
@@ -77,6 +82,7 @@ const DRAWER_WIDTH: Record<NonNullable<DrawerProps['maxWidth']>, string> = {
   md: 'max-w-md',
   lg: 'max-w-lg',
   xl: 'max-w-xl',
+  '2xl': 'max-w-2xl',
 };
 
 export function Drawer({
@@ -104,21 +110,26 @@ export function Drawer({
       <div className="fixed inset-0 z-40 bg-ink/20" onClick={onClose} aria-hidden />
       <aside
         ref={drawerRef}
-        className={`fixed top-0 z-50 flex h-full w-full ${DRAWER_WIDTH[maxWidth]} flex-col bg-paper shadow-page ${sideClass} border-paper-edge`}
+        className={`fixed inset-y-0 z-50 flex h-full w-full ${DRAWER_WIDTH[maxWidth]} flex-col bg-paper shadow-page ${sideClass} border-paper-edge`}
         role="dialog"
         aria-label={ariaLabel ?? title}
       >
-        <div className="flex items-center justify-between border-b border-paper-edge px-4 py-3">
-          <div className="flex items-center gap-2">
-            {icon}
-            <h2 className="text-sm font-semibold text-ink">{title}</h2>
-            {badge}
+        <div className="flex flex-shrink-0 items-center justify-between gap-2 border-b border-paper-edge px-4 py-3">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            {icon ? <span className="flex-shrink-0">{icon}</span> : null}
+            <h2 className="truncate text-sm font-semibold text-ink">{title}</h2>
+            {badge ? <span className="min-w-0 flex-shrink">{badge}</span> : null}
           </div>
-          <button type="button" onClick={onClose} className="icon-btn" aria-label={t('common.close')}>
+          <button
+            type="button"
+            onClick={onClose}
+            className="icon-btn flex-shrink-0"
+            aria-label={t('common.close')}
+          >
             <X size={16} />
           </button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{children}</div>
       </aside>
     </>
   );

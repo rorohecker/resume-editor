@@ -2,7 +2,15 @@
 export function tooltipProps(
   label: string,
   align: 'center' | 'start' | 'end' = 'center',
-): { 'data-tooltip': string; 'data-tooltip-align'?: 'start' | 'end' } {
-  if (align === 'center') return { 'data-tooltip': label };
-  return { 'data-tooltip': label, 'data-tooltip-align': align };
+  side: 'bottom' | 'top' = 'bottom',
+): {
+  'data-tooltip': string;
+  'data-tooltip-align'?: 'start' | 'end';
+  'data-tooltip-side'?: 'top';
+} {
+  return {
+    'data-tooltip': label,
+    ...(align !== 'center' ? { 'data-tooltip-align': align } : {}),
+    ...(side === 'top' ? { 'data-tooltip-side': 'top' as const } : {}),
+  };
 }

@@ -161,9 +161,10 @@ export async function testAiConnection(settings: AiSettings): Promise<string> {
 export async function generateAiText(settings: AiSettings, prompt: string, maxTokens = 700): Promise<string> {
   const cacheKey = await hashKey(`${settings.provider}|${settings.model}|${maxTokens}|${prompt}`);
   const cached = await getCached(cacheKey);
-  if (cached !== null) return cached;
+  // Never reuse empty/whitespace cache entries (poisoned by truncated reasoning replies).
+  if (cached !== null && cached.trim()) return cached;
   const result = await callByokAi(settings, prompt, maxTokens);
-  void setCached(cacheKey, result);
+  if (result.trim()) void setCached(cacheKey, result);
   return result;
 }
 
@@ -293,9 +294,9 @@ async function callAnthropic(settings: AiSettings, prompt: string, maxTokens: nu
 }
 
 async function callOpenAi(settings: AiSettings, prompt: string, maxTokens: number): Promise<string> {
-  // GPT-5.x reasoning burns output budget before visible text. Floor the budget
-  // so connection tests and short rewrites still get a message item back.
-  const maxOutputTokens = Math.max(maxTokens, 1024);
+  // GPT-5.x reasoning burns output budget before visible text. Floor high enough
+  // for JSON scoring/rewrite replies, not just short chat.
+  const maxOutputTokens = Math.max(maxTokens, 2048);
   const body: Record<string, unknown> = {
     model: settings.model,
     input: prompt,
@@ -304,8 +305,9 @@ async function callOpenAi(settings: AiSettings, prompt: string, maxTokens: numbe
     text: { format: { type: 'text' } },
   };
   // Only GPT-5+ Responses models accept reasoning.effort; older IDs reject it.
+  // Prefer minimal effort for resume tooling so tokens go to the visible reply.
   if (/^gpt-5/i.test(settings.model)) {
-    body.reasoning = { effort: 'low' };
+    body.reasoning = { effort: 'none' };
   }
 
   const response = await fetchWithTimeout(providerEndpoint('openai', '/v1/responses'), {
@@ -320,18 +322,17 @@ async function callOpenAi(settings: AiSettings, prompt: string, maxTokens: numbe
   if (!response.ok) throw new Error(formatProviderError('openai', data, response.status));
 
   const text = extractOpenAiText(data);
-  if (
-    !text &&
-    data &&
-    typeof data === 'object' &&
-    (data as { status?: string }).status === 'incomplete'
-  ) {
+  if (!text) {
+    const status = data && typeof data === 'object' ? (data as { status?: string }).status : undefined;
     const reason =
-      (data as { incomplete_details?: { reason?: string } }).incomplete_details?.reason ??
-      'incomplete';
-    throw new Error(
-      `OpenAI stopped early (${reason}). Raise max tokens or pick gpt-5.6-luna for lighter reasoning.`,
-    );
+      data && typeof data === 'object'
+        ? (data as { incomplete_details?: { reason?: string } }).incomplete_details?.reason
+        : undefined;
+    if (status === 'incomplete' || reason) {
+      throw new Error(
+        `OpenAI stopped early (${reason ?? status ?? 'incomplete'}). Raise max tokens or pick gpt-5.6-luna.`,
+      );
+    }
   }
   return text;
 }
