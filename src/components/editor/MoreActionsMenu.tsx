@@ -22,6 +22,7 @@ import {
 import { useStore } from '@/store';
 import { toast } from '@/hooks/useToast';
 import { resumeToPlainText } from '@/utils/resumeText';
+import { tooltipProps } from '@/components/shared/tooltipProps';
 
 // Secondary editor actions. Visible as icon buttons on wide screens; collapsed
 // into this overflow menu when there's not enough horizontal room in the top
@@ -201,7 +202,7 @@ export function MoreActionsMenu() {
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={t('editor.moreActions')}
-        title={t('editor.moreActions')}
+        {...tooltipProps(t('editor.moreActions'), 'end')}
       >
         <MoreHorizontal size={16} />
         <ChevronDown size={10} className="-ml-1" />

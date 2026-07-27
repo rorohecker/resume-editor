@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { ApplicationStatus, JobApplication, Resume } from '@/types';
 import { STATUS_META, STATUS_ORDER } from './jobStatus';
 import { useStatusLabel } from './statusLabels';
+import { tooltipProps } from '@/components/shared/tooltipProps';
 
 interface Props {
   resume: Resume;
@@ -31,6 +32,7 @@ export function ApplicationEditor({ resume, onChange, compact }: Props) {
         onChange={(e) => patch({ status: e.target.value as ApplicationStatus })}
         className={`rounded-md border px-2 py-1 text-xs font-medium ${STATUS_META[app.status].chip}`}
         aria-label={t('jobs.status')}
+        {...tooltipProps(t('jobs.statusTip'))}
       >
         {STATUS_ORDER.map((s) => (
           <option key={s} value={s}>

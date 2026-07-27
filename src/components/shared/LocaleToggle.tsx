@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Check, ChevronDown, Globe } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { SUPPORTED_LOCALES } from '@/i18n';
+import { tooltipProps } from '@/components/shared/tooltipProps';
 
 export function LocaleToggle() {
   const { i18n, t } = useTranslation();
@@ -33,6 +34,7 @@ export function LocaleToggle() {
         type="button"
         className="inline-flex h-8 items-center gap-2 rounded-md border border-paper-edge bg-paper px-2.5 text-xs font-medium text-ink shadow-sm transition-colors hover:bg-paper-tint focus:outline-none focus:ring-2 focus:ring-accent/30"
         aria-label={t('common.language')}
+        {...tooltipProps(t('common.language'), 'end')}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}

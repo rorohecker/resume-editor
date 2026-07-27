@@ -793,10 +793,11 @@ function downloadBlob(content: BlobPart | Blob, fileName: string, type: string):
   }, 4000);
 }
 
-function fileBaseName(resume: Resume): string {
-  const headerName = resume.header.name.trim();
-  const name = headerName || resume.name || 'Resume';
-  return `${name.replace(/\s+/g, '_').replace(/[^a-z0-9_-]/gi, '')}_Resume`;
+/** Safe download basename from the resume's gallery/editor name. */
+export function fileBaseName(resume: Resume): string {
+  const name = (resume.name || resume.header.name || 'Resume').trim() || 'Resume';
+  const safe = name.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_-]/g, '').replace(/_+/g, '_');
+  return safe || 'Resume';
 }
 
 function twipsFromPt(value: number): number {

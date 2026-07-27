@@ -4,6 +4,7 @@ import { ChevronDown, Check, LayoutTemplate } from 'lucide-react';
 import { useStore } from '@/store';
 import { TEMPLATES } from '@/components/templates/registry';
 import type { TemplateId } from '@/types';
+import { tooltipProps } from '@/components/shared/tooltipProps';
 
 export function ChangeTemplateMenu() {
   const { t } = useTranslation();
@@ -35,7 +36,8 @@ export function ChangeTemplateMenu() {
         type="button"
         onClick={() => setOpen(!open)}
         className="btn-ghost text-xs"
-        title={t('template.changeTemplate')}
+        aria-label={t('template.changeTemplate')}
+        {...tooltipProps(t('template.changeTemplate'))}
         aria-haspopup="menu"
         aria-expanded={open}
       >

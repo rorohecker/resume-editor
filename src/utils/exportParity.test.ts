@@ -73,3 +73,68 @@ describe('export parity (text)', () => {
     expect(stats.percent).toBeGreaterThan(0);
   });
 });
+
+describe('page usage estimate', () => {
+  it('reports a near-empty resume as a single low-usage page', () => {
+    const resume = createResumeFromTemplate('general');
+    const stats = estimatePageStats(resume);
+    expect(stats.estimatedPages).toBe(1);
+    expect(stats.percent).toBeLessThan(60);
+  });
+
+  it('counts a page break as forcing a second page', () => {
+    const resume = createResumeFromTemplate('general');
+    const withBreak = {
+      ...resume,
+      sections: [
+        ...resume.sections,
+        {
+          id: 'pb1',
+          type: 'page-break' as const,
+          title: 'Page Break',
+          visible: true,
+          order: resume.sections.length,
+          entries: [],
+          layout: 'entry-based' as const,
+        },
+      ],
+    };
+    expect(estimatePageStats(withBreak).estimatedPages).toBeGreaterThanOrEqual(2);
+  });
+
+  it('measures sidebar columns side by side rather than stacked', () => {
+    const twoCol = createResumeFromTemplate('sidebar-professional');
+    const bulletsFor = (n: number) =>
+      Array.from({ length: n }, (_, i) => ({
+        id: `b${i}`,
+        content: 'Delivered measurable results across a cross-functional initiative.',
+        visible: true,
+        order: i,
+      }));
+    const withContent = {
+      ...twoCol,
+      header: { ...twoCol.header, name: 'Sam Taylor' },
+      sections: twoCol.sections.map((section) =>
+        section.type === 'experience' || section.type === 'skills'
+          ? {
+              ...section,
+              entries: [
+                {
+                  id: `${section.id}-e`,
+                  title: 'Role',
+                  subtitle: 'Company',
+                  bullets: bulletsFor(4),
+                },
+              ],
+            }
+          : section,
+      ),
+    };
+    // Same section content laid out in a single column must be at least as tall
+    // as the two-column version (columns pack side by side).
+    const single = { ...withContent, template: 'general' as const };
+    expect(estimatePageStats(withContent).percent).toBeLessThanOrEqual(
+      estimatePageStats(single).percent,
+    );
+  });
+});

@@ -4,6 +4,7 @@ import { Copy, Download, FileText, Sparkles } from 'lucide-react';
 import { useStore } from '@/store';
 import { generateCoverLetter } from '@/utils/aiAssist';
 import { generateAiText, loadAiSettings, promptForCoverLetter } from '@/utils/aiByok';
+import { fileBaseName } from '@/utils/exportFiles';
 import { Modal } from '@/components/shared/Modal';
 import { toast } from '@/hooks/useToast';
 import { CoverLetterEditor } from './CoverLetterEditor';
@@ -37,7 +38,7 @@ export function CoverLetterModal() {
 
   const downloadText = async (format: 'pdf' | 'docx' | 'txt') => {
     if (!letter || !resume) return;
-    const base = `${(resume.header.name || resume.name).replace(/\s+/g, '_').replace(/[^a-z0-9_-]/gi, '')}_CoverLetter`;
+    const base = `${fileBaseName(resume)}_CoverLetter`;
     try {
       if (format === 'txt') {
         downloadBlob(new Blob([letter], { type: 'text/plain;charset=utf-8' }), `${base}.txt`);

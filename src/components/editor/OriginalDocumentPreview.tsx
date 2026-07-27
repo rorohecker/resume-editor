@@ -57,7 +57,10 @@ export function OriginalDocumentPreview({ original }: { original: ImportOriginal
     return () => {
       cancelled = true;
     };
-  }, [original, kind, t]);
+    // `t` is intentionally excluded: it changes identity on every language
+    // switch and would otherwise re-parse the whole PDF/DOCX for nothing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [original, kind]);
 
   if (loading) {
     return (

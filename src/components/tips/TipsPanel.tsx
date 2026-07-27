@@ -1,7 +1,7 @@
 import { Lightbulb } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useStore } from '@/store';
-import { estimatePageUsage } from '@/utils/styleChecks';
+import { estimatePageStats } from '@/utils/styleChecks';
 import { computeHealthScore } from '@/utils/healthScore';
 import { Drawer } from '@/components/shared/Modal';
 
@@ -10,7 +10,8 @@ export function TipsPanel() {
   const open = useStore((s) => s.tipsOpen);
   const setOpen = useStore((s) => s.setTipsOpen);
   const resume = useStore((s) => s.currentResume);
-  const pageUsage = resume ? estimatePageUsage(resume) : 0;
+  const pageStats = resume ? estimatePageStats(resume) : null;
+  const pageUsage = pageStats?.percent ?? 0;
   const health = resume ? computeHealthScore(resume) : null;
 
   return (
@@ -57,7 +58,7 @@ export function TipsPanel() {
                   pageUsage > 100 ? 'text-danger' : pageUsage >= 90 ? 'text-warn' : 'text-ok'
                 }
               >
-                {pageUsage}%
+                {pageUsage}% · {t('editor.pageCountEstimate', { count: pageStats?.estimatedPages ?? 1, defaultValue: '~{{count}} pg' })}
               </span>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-paper-edge">

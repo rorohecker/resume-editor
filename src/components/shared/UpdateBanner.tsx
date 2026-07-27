@@ -237,20 +237,26 @@ export function UpdateBanner() {
   if (!release || dismissed) return null;
 
   const downloadBackup = () => {
-    void exportAllData().then((data) => {
-      const blob = new Blob([JSON.stringify(data, null, 2)], {
-        type: 'application/json;charset=utf-8',
+    void exportAllData()
+      .then((data) => {
+        const blob = new Blob([JSON.stringify(data, null, 2)], {
+          type: 'application/json;charset=utf-8',
+        });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `resume-editor-backup-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        // Defer revocation — revoking synchronously can cancel the download in
+        // some browsers before it has actually started saving the blob.
+        window.setTimeout(() => URL.revokeObjectURL(url), 4000);
+        recordBackup();
+      })
+      .catch((err) => {
+        toast(err instanceof Error ? err.message : 'Could not create backup.', { tone: 'danger' });
       });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `resume-editor-backup-${new Date().toISOString().slice(0, 10)}.json`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-      recordBackup();
-    });
   };
 
   const migrateAndRelaunch = () => {

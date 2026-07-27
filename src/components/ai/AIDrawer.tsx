@@ -23,6 +23,7 @@ import {
   promptForAtsKeywords,
   promptForRewrite,
   promptForSummary,
+  resetAiUsage,
   saveAiSettings,
   testAiConnection,
   type AiProvider,
@@ -39,6 +40,7 @@ import { wipeAllLocalData } from '@/utils/localData';
 import { collectBullets, replaceBulletContent } from '@/utils/resumeText';
 import { Drawer } from '@/components/shared/Modal';
 import { toast } from '@/hooks/useToast';
+import { copyToClipboard, readClipboard } from '@/utils/clipboard';
 
 type Tab = 'rewrite' | 'organize' | 'agent' | 'xyz' | 'weak' | 'grammar' | 'keywords' | 'summary' | 'verbs' | 'settings';
 
@@ -54,6 +56,14 @@ const TABS: { id: Tab; labelKey: string }[] = [
   { id: 'verbs', labelKey: 'ai.tabVerbs' },
   { id: 'settings', labelKey: 'ai.tabSettings' },
 ];
+
+// Keep numeric rate-limit inputs valid: an empty/invalid field would otherwise
+// persist NaN and break the usage checks that gate AI calls.
+function clampInt(raw: string, min: number, max: number, fallback: number): number {
+  const parsed = Number.parseInt(raw, 10);
+  if (Number.isNaN(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
 
 export function AIDrawer() {
   const { t } = useTranslation();
@@ -80,10 +90,28 @@ export function AIDrawer() {
   const [verbQuery, setVerbQuery] = useState('');
   const [grammarHits, setGrammarHits] = useState<GrammarHit[]>([]);
   const [grammarRan, setGrammarRan] = useState(false);
+  const [customModelMode, setCustomModelMode] = useState(false);
 
+  // Switching resumes must not leave another resume's AI output on screen.
   useEffect(() => {
     setPendingPlan(null);
+    setCloudRewriteOptions([]);
+    setCloudSummary('');
+    setCloudAts('');
+    setGrammarHits([]);
+    setGrammarRan(false);
+    setAiError('');
+    setSelectedBulletId('');
   }, [resume?.id]);
+
+  // Re-load settings when the drawer opens so migrations / other tabs stay in sync.
+  useEffect(() => {
+    if (open) {
+      const loaded = loadAiSettings();
+      setSettings(loaded);
+      setCustomModelMode(!PROVIDER_MODELS[loaded.provider].includes(loaded.model));
+    }
+  }, [open]);
 
   useEffect(() => {
     setPendingPlan(null);
@@ -187,7 +215,13 @@ export function AIDrawer() {
   };
 
   const copyText = async (label: string, value: string) => {
-    await navigator.clipboard.writeText(value);
+    const ok = await copyToClipboard(value);
+    if (!ok) {
+      toast(t('editor.copyFailed', { defaultValue: 'Could not copy to clipboard' }), {
+        tone: 'danger',
+      });
+      return;
+    }
     setCopied(label);
     window.setTimeout(() => setCopied(''), 1200);
   };
@@ -639,6 +673,7 @@ export function AIDrawer() {
                       value={settings.provider}
                       onChange={(e) => {
                         const provider = e.target.value as AiProvider;
+                        setCustomModelMode(false);
                         persistSettings({ ...settings, provider, model: PROVIDER_MODELS[provider][0] });
                       }}
                       className="input"
@@ -672,9 +707,15 @@ export function AIDrawer() {
                         type="button"
                         className="btn-secondary text-xs"
                         onClick={() =>
-                          void navigator.clipboard
-                            .readText()
-                            .then((apiKey) => persistSettings({ ...settings, apiKey }))
+                          void readClipboard().then((apiKey) => {
+                            if (apiKey == null) {
+                              toast(t('editor.copyFailed', { defaultValue: 'Clipboard unavailable' }), {
+                                tone: 'danger',
+                              });
+                              return;
+                            }
+                            persistSettings({ ...settings, apiKey });
+                          })
                         }
                       >
                         {t('ai.paste')}
@@ -682,18 +723,42 @@ export function AIDrawer() {
                     </div>
                   </Field>
                   <Field label={t('ai.model')}>
-                    <input
-                      list="ai-model-options"
-                      value={settings.model}
-                      onChange={(e) => persistSettings({ ...settings, model: e.target.value })}
+                    <select
+                      value={
+                        customModelMode || !PROVIDER_MODELS[settings.provider].includes(settings.model)
+                          ? '__custom__'
+                          : settings.model
+                      }
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (value === '__custom__') {
+                          setCustomModelMode(true);
+                          return;
+                        }
+                        setCustomModelMode(false);
+                        persistSettings({ ...settings, model: value });
+                      }}
                       className="input"
                       aria-label={t('ai.model')}
-                    />
-                    <datalist id="ai-model-options">
+                    >
                       {PROVIDER_MODELS[settings.provider].map((m) => (
-                        <option key={m} value={m} />
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
                       ))}
-                    </datalist>
+                      <option value="__custom__">{t('ai.modelCustom')}</option>
+                    </select>
+                    {(customModelMode ||
+                      !PROVIDER_MODELS[settings.provider].includes(settings.model)) && (
+                      <input
+                        value={settings.model}
+                        onChange={(e) => persistSettings({ ...settings, model: e.target.value })}
+                        className="input mt-2"
+                        placeholder={t('ai.modelCustomPlaceholder')}
+                        spellCheck={false}
+                        aria-label={t('ai.modelCustom')}
+                      />
+                    )}
                   </Field>
                   <Field label={t('ai.agentInstructions')}>
                     <textarea
@@ -707,10 +772,18 @@ export function AIDrawer() {
                     />
                     <p className="mt-1 text-[11px] text-ink-subtle">{t('ai.agentInstructionsHint')}</p>
                   </Field>
-                  <UsageDashboard settings={settings} />
+                  <UsageDashboard
+                    settings={settings}
+                    onReset={() => {
+                      resetAiUsage();
+                      toast(t('ai.usageReset'), { tone: 'info', ttl: 2000 });
+                      // Force a re-render so bars clear immediately.
+                      setSettings({ ...loadAiSettings() });
+                    }}
+                  />
                   {(settings.provider === 'openai' || settings.provider === 'gemini') && (
                     <p className="rounded-md border border-yellow-200 bg-yellow-50 px-3 py-2 text-xs text-warn">
-                      {t('ai.corsWarning')}
+                      {import.meta.env.DEV ? t('ai.corsDevHint') : t('ai.corsWarning')}
                     </p>
                   )}
                   <div className="grid grid-cols-2 gap-3">
@@ -721,7 +794,10 @@ export function AIDrawer() {
                         max={500}
                         value={settings.minuteLimit}
                         onChange={(e) =>
-                          persistSettings({ ...settings, minuteLimit: Number(e.target.value) })
+                          persistSettings({
+                            ...settings,
+                            minuteLimit: clampInt(e.target.value, 1, 500, settings.minuteLimit),
+                          })
                         }
                         className="input"
                       />
@@ -733,12 +809,16 @@ export function AIDrawer() {
                         max={5000}
                         value={settings.dailyLimit}
                         onChange={(e) =>
-                          persistSettings({ ...settings, dailyLimit: Number(e.target.value) })
+                          persistSettings({
+                            ...settings,
+                            dailyLimit: clampInt(e.target.value, 1, 5000, settings.dailyLimit),
+                          })
                         }
                         className="input"
                       />
                     </Field>
                   </div>
+                  <p className="text-[11px] text-ink-subtle">{t('ai.localLimitsHint')}</p>
                   <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
@@ -887,7 +967,13 @@ function ResultCard({ good, children }: { good: boolean; children: ReactNode }) 
   );
 }
 
-function UsageDashboard({ settings }: { settings: AiSettings }) {
+function UsageDashboard({
+  settings,
+  onReset,
+}: {
+  settings: AiSettings;
+  onReset: () => void;
+}) {
   const { t } = useTranslation();
   // Re-read every render so the dashboard stays current when the user makes
   // calls without leaving the panel. Cheap localStorage read.
@@ -896,8 +982,13 @@ function UsageDashboard({ settings }: { settings: AiSettings }) {
   const minutePct = Math.min(100, (usage.minuteCalls / Math.max(1, settings.minuteLimit)) * 100);
   return (
     <div className="rounded-md border border-paper-edge bg-paper-tint p-3 text-xs">
-      <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
-        {t('ai.usageDashboard')}
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
+          {t('ai.usageDashboard')}
+        </div>
+        <button type="button" className="btn-ghost text-[11px]" onClick={onReset}>
+          {t('ai.resetUsage')}
+        </button>
       </div>
       <div className="space-y-2">
         <UsageBar

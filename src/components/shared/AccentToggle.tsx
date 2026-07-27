@@ -11,6 +11,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useAccent, type AccentTheme } from '@/hooks/useAccent';
+import { tooltipProps } from '@/components/shared/tooltipProps';
 
 const OPTIONS: {
   value: AccentTheme;
@@ -97,7 +98,7 @@ export function AccentToggle({ compact = false }: { compact?: boolean }) {
           open ? 'ring-2 ring-accent/30' : ''
         }`}
         aria-label={`Theme: ${active.label}`}
-        title={`Theme: ${active.label}`}
+        {...tooltipProps(`Theme: ${active.label}`, 'end')}
         aria-haspopup="menu"
         aria-expanded={open}
       >

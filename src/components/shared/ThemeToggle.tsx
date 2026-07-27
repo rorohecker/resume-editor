@@ -1,6 +1,7 @@
 import { Monitor, Moon, Sun } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useTheme, type Theme } from '@/hooks/useTheme';
+import { tooltipProps } from '@/components/shared/tooltipProps';
 
 const OPTIONS: { value: Theme; labelKey: string; Icon: typeof Sun }[] = [
   { value: 'light', labelKey: 'theme.light', Icon: Sun },
@@ -27,7 +28,7 @@ export function ThemeToggle({ compact = false }: { compact?: boolean }) {
             role="radio"
             aria-checked={active}
             aria-label={label}
-            title={label}
+            {...tooltipProps(label)}
             onClick={() => setTheme(value)}
             className={`inline-flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
               active

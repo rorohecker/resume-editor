@@ -42,6 +42,7 @@ import { toast } from '@/hooks/useToast';
 import { lastBackupAt, recordBackup } from '@/utils/updateCheck';
 import { FileSyncControl } from './FileSyncControl';
 import { appendImportReference } from '@/utils/importReference';
+import { tooltipProps } from '@/components/shared/tooltipProps';
 
 export function EditorTopNav() {
   const { t } = useTranslation();
@@ -95,12 +96,13 @@ export function EditorTopNav() {
 
   return (
     <>
-    <header className="flex h-14 flex-shrink-0 items-center justify-between border-b border-paper-edge bg-paper px-4">
+    <header className="relative z-50 flex h-14 flex-shrink-0 items-center justify-between border-b border-paper-edge bg-paper px-4">
       <div className="flex items-center gap-3 min-w-0">
         <Link
           to="/"
           className="flex items-center gap-2 text-ink hover:text-ink-soft"
-          title={t('editor.backToGallery')}
+          aria-label={t('editor.backToGallery')}
+          {...tooltipProps(t('editor.backToGallery'), 'start')}
         >
           <div className="flex h-8 w-8 items-center justify-center rounded-md bg-ink text-paper">
             <FileText size={16} />
@@ -127,20 +129,22 @@ export function EditorTopNav() {
             <button
               type="button"
               onClick={() => setEditingName(true)}
-              className="truncate rounded px-2 py-1 text-sm font-medium text-ink hover:bg-paper-tint"
-              title={t('editor.rename')}
+              className="min-w-0 rounded px-2 py-1 text-left text-sm font-medium text-ink hover:bg-paper-tint"
+              aria-label={t('editor.rename')}
+              {...tooltipProps(t('editor.rename'))}
             >
-              {resume.name}
+              <span className="block truncate">{resume.name}</span>
             </button>
           )}
           {persistError ? (
             <button
               type="button"
-              className="ml-2 inline-flex max-w-[12rem] items-center gap-1 truncate text-xs text-danger"
-              title={persistError}
+              className="ml-2 inline-flex max-w-[12rem] items-center gap-1 text-xs text-danger"
+              {...tooltipProps(persistError)}
               onClick={() => saveNow()}
             >
-              <AlertTriangle size={12} /> {t('editor.saveFailed')}
+              <AlertTriangle size={12} className="flex-shrink-0" />
+              <span className="truncate">{t('editor.saveFailed')}</span>
             </button>
           ) : savedHint ? (
             <span className="ml-2 inline-flex items-center gap-1 text-xs text-ink-subtle" role="status">
@@ -163,8 +167,8 @@ export function EditorTopNav() {
         <button
           type="button"
           className="icon-btn"
-          title={`${t('editor.undo')} (Ctrl+Z)`}
           aria-label={t('editor.undo')}
+          {...tooltipProps(`${t('editor.undo')} (Ctrl+Z)`)}
           disabled={past.length === 0}
           onClick={undoResume}
         >
@@ -173,8 +177,8 @@ export function EditorTopNav() {
         <button
           type="button"
           className="icon-btn"
-          title={`${t('editor.redo')} (Ctrl+Shift+Z)`}
           aria-label={t('editor.redo')}
+          {...tooltipProps(`${t('editor.redo')} (Ctrl+Shift+Z)`)}
           disabled={future.length === 0}
           onClick={redoResume}
         >
@@ -184,8 +188,8 @@ export function EditorTopNav() {
           <button
             type="button"
             className={`icon-btn ${historyOpen ? 'bg-paper-tint text-ink' : ''}`}
-            title={t('editor.history')}
             aria-label={t('editor.history')}
+            {...tooltipProps(t('editor.history'))}
             aria-expanded={historyOpen}
             onClick={() => setHistoryOpen(!historyOpen)}
           >
@@ -256,8 +260,8 @@ export function EditorTopNav() {
           type="button"
           onClick={() => setImportOpen(true)}
           className="icon-btn"
-          title={t('editor.importMerge')}
           aria-label={t('editor.importMerge')}
+          {...tooltipProps(t('editor.importMergeTip'))}
         >
           <Upload size={16} />
         </button>
@@ -265,16 +269,16 @@ export function EditorTopNav() {
           <button
             type="button"
             className={`icon-btn ${importReferenceOpen ? 'bg-paper-tint text-ink' : ''}`}
-            title={
-              importReferenceOpen
-                ? t('importReference.hide')
-                : t('importReference.toggle')
-            }
             aria-label={
               importReferenceOpen
                 ? t('importReference.hide')
                 : t('importReference.toggle')
             }
+            {...tooltipProps(
+              importReferenceOpen
+                ? t('importReference.hide')
+                : t('importReference.toggle'),
+            )}
             aria-pressed={importReferenceOpen}
             onClick={() => setImportReferenceOpen(!importReferenceOpen)}
           >
@@ -301,8 +305,8 @@ export function EditorTopNav() {
             });
           }}
           className="icon-btn"
-          title={t('editor.backupNow', { defaultValue: 'Back up all resumes (JSON)' })}
-          aria-label={t('editor.backupNow', { defaultValue: 'Back up all resumes (JSON)' })}
+          aria-label={t('editor.backupNow')}
+          {...tooltipProps(t('editor.backupNow'))}
         >
           <HardDriveDownload size={16} />
         </button>
@@ -310,8 +314,8 @@ export function EditorTopNav() {
         <button
           type="button"
           className="icon-btn"
-          title={t('editor.saveSnapshot')}
           aria-label={t('editor.saveSnapshot')}
+          {...tooltipProps(t('editor.saveSnapshotTip'))}
           onClick={() => setSnapshotOpen(true)}
         >
           <Bookmark size={16} />
@@ -322,8 +326,8 @@ export function EditorTopNav() {
             type="button"
             data-tour="library-button"
             className="icon-btn"
-            title={t('library.title')}
             aria-label={t('library.title')}
+            {...tooltipProps(t('library.tooltip'))}
             onClick={() => setLibraryOpen(true)}
           >
             <Library size={16} />
@@ -331,8 +335,8 @@ export function EditorTopNav() {
           <button
             type="button"
             className="icon-btn"
-            title={t('variant.title')}
             aria-label={t('variant.title')}
+            {...tooltipProps(t('variant.tooltip'))}
             onClick={() => setVariantOpen(true)}
           >
             <Layers size={16} />
@@ -341,8 +345,8 @@ export function EditorTopNav() {
             type="button"
             data-tour="tailor-button"
             className="icon-btn"
-            title={t('editor.tailorToJob')}
             aria-label={t('editor.tailorToJob')}
+            {...tooltipProps(t('editor.tailorToJobTip'))}
             onClick={() => setTailorOpen(true)}
           >
             <Wand2 size={16} />
@@ -350,8 +354,8 @@ export function EditorTopNav() {
           <button
             type="button"
             className="icon-btn"
-            title={t('editor.compare')}
             aria-label={t('editor.compare')}
+            {...tooltipProps(t('editor.compare'))}
             onClick={() => setCompareOpen(true)}
           >
             <GitCompare size={16} />
@@ -359,8 +363,8 @@ export function EditorTopNav() {
           <button
             type="button"
             className="icon-btn"
-            title={t('editor.bulkEdit')}
             aria-label={t('editor.bulkEdit')}
+            {...tooltipProps(t('editor.bulkEdit'))}
             onClick={() => setBulkEditOpen(true)}
           >
             <ListChecks size={16} />
@@ -368,8 +372,8 @@ export function EditorTopNav() {
           <button
             type="button"
             className={`icon-btn ${pdfPreviewMode ? 'bg-paper-tint text-ink' : ''}`}
-            title={pdfPreviewMode ? t('editor.pdfPreviewOn') : t('editor.pdfPreviewOff')}
             aria-label={t('editor.togglePdfPreview')}
+            {...tooltipProps(pdfPreviewMode ? t('editor.pdfPreviewOn') : t('editor.pdfPreviewOff'))}
             aria-pressed={pdfPreviewMode}
             onClick={() => setPdfPreviewMode(!pdfPreviewMode)}
           >
@@ -378,8 +382,8 @@ export function EditorTopNav() {
           <button
             type="button"
             className={`icon-btn ${anonymized ? 'bg-paper-tint text-ink' : ''}`}
-            title={anonymized ? t('editor.anonymizeOn') : t('editor.anonymizeOff')}
             aria-label={anonymized ? t('editor.anonymizeOn') : t('editor.anonymizeOff')}
+            {...tooltipProps(anonymized ? t('editor.anonymizeOn') : t('editor.anonymizeOff'), 'end')}
             aria-pressed={anonymized}
             onClick={() => setAnonymized(!anonymized)}
           >
@@ -396,8 +400,8 @@ export function EditorTopNav() {
           type="button"
           onClick={() => setTipsOpen(!tipsOpen)}
           className={`icon-btn ${tipsOpen ? 'bg-paper-tint text-ink' : ''}`}
-          title={t('editor.tips')}
           aria-label={t('editor.tips')}
+          {...tooltipProps(t('editor.tipsTip'), 'end')}
           aria-pressed={tipsOpen}
         >
           <Lightbulb size={16} />
@@ -406,8 +410,8 @@ export function EditorTopNav() {
           type="button"
           onClick={() => setAiOpen(!aiOpen)}
           className={`icon-btn ${aiOpen ? 'bg-paper-tint text-ink' : ''}`}
-          title={t('editor.aiAssistant')}
           aria-label={t('editor.aiAssistant')}
+          {...tooltipProps(t('editor.aiAssistantTip'), 'end')}
           aria-pressed={aiOpen}
         >
           <Sparkles size={16} />
@@ -424,6 +428,7 @@ export function EditorTopNav() {
           onClick={() => setExportOpen(true)}
           className="btn-primary ml-2"
           aria-label={t('editor.export')}
+          {...tooltipProps(t('editor.exportTip'), 'end')}
         >
           <Download size={14} />
           {t('editor.export')}
@@ -494,6 +499,7 @@ export function EditorTopNav() {
 // Stays muted and quiet until we're more than a day stale, then gets a
 // gentle nudge color. Disappears the moment a save indicator is showing.
 function BackupHint() {
+  const { t } = useTranslation();
   const [, force] = useState(0);
   // Re-render on a slow interval so "5 minutes ago" becomes "an hour ago".
   useEffect(() => {
@@ -503,22 +509,25 @@ function BackupHint() {
   const ts = lastBackupAt();
   if (!ts) {
     return (
-      <span className="ml-2 hidden text-xs text-ink-subtle md:inline" title="No JSON backup has been saved yet">
-        · Not backed up
+      <span
+        className="ml-2 hidden text-xs text-ink-subtle md:inline"
+        {...tooltipProps(t('editor.notBackedUpTip'))}
+      >
+        · {t('editor.notBackedUp')}
       </span>
     );
   }
   const minutes = (Date.now() - ts) / 60_000;
   const stale = minutes > 60 * 24 * 7;
   const text =
-    minutes < 1 ? 'Backed up just now'
-    : minutes < 60 ? `Backed up ${Math.floor(minutes)}m ago`
-    : minutes < 60 * 24 ? `Backed up ${Math.floor(minutes / 60)}h ago`
-    : `Backed up ${Math.floor(minutes / 60 / 24)}d ago`;
+    minutes < 1 ? t('editor.backedUpJustNow')
+    : minutes < 60 ? t('editor.backedUpMinutes', { n: Math.floor(minutes) })
+    : minutes < 60 * 24 ? t('editor.backedUpHours', { n: Math.floor(minutes / 60) })
+    : t('editor.backedUpDays', { n: Math.floor(minutes / 60 / 24) });
   return (
     <span
       className={`ml-2 hidden text-xs md:inline ${stale ? 'text-warn' : 'text-ink-subtle'}`}
-      title={new Date(ts).toLocaleString()}
+      {...tooltipProps(new Date(ts).toLocaleString())}
     >
       · {text}
     </span>

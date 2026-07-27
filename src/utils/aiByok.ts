@@ -24,10 +24,40 @@ interface AiUsageRecord {
 const SETTINGS_KEY = 'resume-editor:ai-byok-settings:v1';
 const USAGE_KEY = 'resume-editor:ai-byok-usage:v1';
 
+/** Suggested model IDs (first = default). Keep aliases current with provider docs. */
 export const PROVIDER_MODELS: Record<AiProvider, string[]> = {
-  anthropic: ['claude-3-5-haiku-latest', 'claude-sonnet-4-5', 'claude-opus-4-1'],
-  openai: ['gpt-5.1', 'gpt-5.1-mini', 'gpt-4.1-mini'],
-  gemini: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-1.5-flash'],
+  anthropic: ['claude-haiku-4-5', 'claude-sonnet-5', 'claude-opus-5'],
+  openai: ['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6'],
+  gemini: ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-2.5-pro'],
+};
+
+/**
+ * Known-stale IDs from earlier app versions → current replacements.
+ * Applied on load so existing localStorage settings keep working.
+ */
+export const LEGACY_MODEL_MAP: Record<string, string> = {
+  'claude-3-5-haiku-latest': 'claude-haiku-4-5',
+  'claude-3-5-haiku-20241022': 'claude-haiku-4-5',
+  'claude-3-5-sonnet-latest': 'claude-sonnet-5',
+  'claude-3-5-sonnet-20241022': 'claude-sonnet-5',
+  'claude-3-opus-20240229': 'claude-opus-5',
+  'claude-sonnet-4-5': 'claude-sonnet-5',
+  'claude-sonnet-4-5-20250929': 'claude-sonnet-5',
+  'claude-opus-4-1': 'claude-opus-5',
+  'claude-opus-4-1-20250805': 'claude-opus-5',
+  'gpt-5.1': 'gpt-5.6',
+  'gpt-5.1-mini': 'gpt-5.6-luna',
+  'gpt-5-mini': 'gpt-5.6-luna',
+  'gpt-5-nano': 'gpt-5.6-luna',
+  'gpt-4.1-mini': 'gpt-5.6-luna',
+  'gpt-4o-mini': 'gpt-5.6-luna',
+  'gpt-4o': 'gpt-5.6-terra',
+  'gpt-3.5-turbo': 'gpt-5.6-luna',
+  'gemini-pro': 'gemini-3.6-flash',
+  'gemini-1.5-flash': 'gemini-3.6-flash',
+  'gemini-1.5-pro': 'gemini-2.5-pro',
+  'gemini-2.0-flash': 'gemini-3.6-flash',
+  'gemini-2.5-flash': 'gemini-3.6-flash',
 };
 
 export const PROVIDER_LABELS: Record<AiProvider, string> = {
@@ -41,6 +71,15 @@ export const KEY_LINKS: Record<AiProvider, string> = {
   openai: 'https://platform.openai.com/api-keys',
   gemini: 'https://aistudio.google.com/app/apikey',
 };
+
+export const BILLING_LINKS: Record<AiProvider, string> = {
+  anthropic: 'https://console.anthropic.com/settings/billing',
+  openai: 'https://platform.openai.com/settings/organization/billing',
+  gemini: 'https://aistudio.google.com/plan_information',
+};
+
+const DEFAULT_DAILY_LIMIT = 500;
+const DEFAULT_MINUTE_LIMIT = 50;
 
 export function loadCurrentUsage(): { dailyCalls: number; minuteCalls: number } {
   try {
@@ -56,26 +95,50 @@ export function loadCurrentUsage(): { dailyCalls: number; minuteCalls: number } 
   }
 }
 
+export function resetAiUsage(): void {
+  localStorage.removeItem(USAGE_KEY);
+}
+
+export function sanitizeLimit(value: unknown, fallback: number, min: number, max: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < min) return fallback;
+  return Math.min(max, Math.floor(value));
+}
+
+export function resolveModel(provider: AiProvider, model: unknown): string {
+  const raw = typeof model === 'string' ? model.trim() : '';
+  if (!raw) return PROVIDER_MODELS[provider][0];
+  return LEGACY_MODEL_MAP[raw] ?? raw;
+}
+
 export function loadAiSettings(): AiSettings {
   try {
     const parsed = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') as Partial<AiSettings>;
     const provider = isProvider(parsed.provider) ? parsed.provider : 'anthropic';
-    return {
+    const settings: AiSettings = {
       provider,
       apiKey: typeof parsed.apiKey === 'string' ? parsed.apiKey : '',
-      model: typeof parsed.model === 'string' ? parsed.model : PROVIDER_MODELS[provider][0],
-      dailyLimit: typeof parsed.dailyLimit === 'number' ? parsed.dailyLimit : 500,
-      minuteLimit: typeof parsed.minuteLimit === 'number' ? parsed.minuteLimit : 50,
+      model: resolveModel(provider, parsed.model),
+      dailyLimit: sanitizeLimit(parsed.dailyLimit, DEFAULT_DAILY_LIMIT, 1, 5000),
+      minuteLimit: sanitizeLimit(parsed.minuteLimit, DEFAULT_MINUTE_LIMIT, 1, 500),
       agentInstructions:
         typeof parsed.agentInstructions === 'string' ? parsed.agentInstructions : '',
     };
+    // Persist migrations (stale models / broken 0 limits) so the UI reflects reality.
+    if (
+      settings.model !== parsed.model ||
+      settings.dailyLimit !== parsed.dailyLimit ||
+      settings.minuteLimit !== parsed.minuteLimit
+    ) {
+      saveAiSettings(settings);
+    }
+    return settings;
   } catch {
     return {
       provider: 'anthropic',
       apiKey: '',
       model: PROVIDER_MODELS.anthropic[0],
-      dailyLimit: 500,
-      minuteLimit: 50,
+      dailyLimit: DEFAULT_DAILY_LIMIT,
+      minuteLimit: DEFAULT_MINUTE_LIMIT,
       agentInstructions: '',
     };
   }
@@ -91,7 +154,8 @@ export function clearAiSettings(): void {
 }
 
 export async function testAiConnection(settings: AiSettings): Promise<string> {
-  return callByokAi(settings, 'Reply with exactly: OK', 16);
+  // Reasoning models need headroom above the visible reply; don't use a tiny budget.
+  return callByokAi(settings, 'Reply with exactly: OK', 256);
 }
 
 export async function generateAiText(settings: AiSettings, prompt: string, maxTokens = 700): Promise<string> {
@@ -144,6 +208,25 @@ export function promptForAtsKeywords(resume: Resume, jobDescription: string): st
 // Hard cap so a hung provider request can't freeze the UI forever.
 const AI_REQUEST_TIMEOUT_MS = 60_000;
 
+/**
+ * In Vite dev (and optional VITE_BYOK_PROXY=1 builds), same-origin `/byok/*`
+ * proxies strip CORS for OpenAI/Gemini. Default production static builds still
+ * call providers directly (Claude works; others may need a proxy).
+ */
+export function useByokProxy(): boolean {
+  return Boolean(import.meta.env.DEV) || import.meta.env.VITE_BYOK_PROXY === '1';
+}
+
+export function providerEndpoint(provider: AiProvider, path: string): string {
+  const clean = path.startsWith('/') ? path : `/${path}`;
+  if (useByokProxy() && (provider === 'openai' || provider === 'gemini')) {
+    return `/byok/${provider}${clean}`;
+  }
+  if (provider === 'openai') return `https://api.openai.com${clean}`;
+  if (provider === 'gemini') return `https://generativelanguage.googleapis.com${clean}`;
+  return `https://api.anthropic.com${clean}`;
+}
+
 async function fetchWithTimeout(input: string, init: RequestInit): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), AI_REQUEST_TIMEOUT_MS);
@@ -157,7 +240,7 @@ async function fetchWithTimeout(input: string, init: RequestInit): Promise<Respo
     const message = error instanceof Error ? error.message : String(error);
     if (/failed to fetch|networkerror|load failed|cors/i.test(message)) {
       throw new Error(
-        'Browser blocked this AI request (likely CORS). Claude (Anthropic) works in-browser; OpenAI/Gemini may need a small backend proxy — see api/README.md.',
+        'Browser blocked this AI request (likely CORS). Claude works in-browser; for OpenAI/Gemini run `npm run dev` (local proxy), set VITE_BYOK_PROXY=1 with a /byok reverse proxy, or see api/README.md.',
       );
     }
     throw error instanceof Error
@@ -179,12 +262,18 @@ async function callByokAi(settings: AiSettings, prompt: string, maxTokens: numbe
   else if (settings.provider === 'openai') result = await callOpenAi(settings, prompt, maxTokens);
   else result = await callGemini(settings, prompt, maxTokens);
 
+  if (!result.trim()) {
+    throw new Error(
+      'The provider returned an empty reply. Try a higher token budget, a cheaper model (Haiku / Luna / Flash), or Test connection again.',
+    );
+  }
+
   recordUsage();
   return result;
 }
 
 async function callAnthropic(settings: AiSettings, prompt: string, maxTokens: number): Promise<string> {
-  const response = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
+  const response = await fetchWithTimeout(providerEndpoint('anthropic', '/v1/messages'), {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -199,37 +288,74 @@ async function callAnthropic(settings: AiSettings, prompt: string, maxTokens: nu
     }),
   });
   const data = await response.json();
-  if (!response.ok) throw new Error(extractError(data, 'Claude request failed.'));
+  if (!response.ok) throw new Error(formatProviderError('anthropic', data, response.status));
   return data.content?.map((part: { text?: string }) => part.text ?? '').join('').trim() ?? '';
 }
 
 async function callOpenAi(settings: AiSettings, prompt: string, maxTokens: number): Promise<string> {
-  const response = await fetchWithTimeout('https://api.openai.com/v1/responses', {
+  // GPT-5.x reasoning burns output budget before visible text. Floor the budget
+  // so connection tests and short rewrites still get a message item back.
+  const maxOutputTokens = Math.max(maxTokens, 1024);
+  const body: Record<string, unknown> = {
+    model: settings.model,
+    input: prompt,
+    max_output_tokens: maxOutputTokens,
+    store: false,
+    text: { format: { type: 'text' } },
+  };
+  // Only GPT-5+ Responses models accept reasoning.effort; older IDs reject it.
+  if (/^gpt-5/i.test(settings.model)) {
+    body.reasoning = { effort: 'low' };
+  }
+
+  const response = await fetchWithTimeout(providerEndpoint('openai', '/v1/responses'), {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
       authorization: `Bearer ${settings.apiKey}`,
     },
-    body: JSON.stringify({
-      model: settings.model,
-      input: prompt,
-      max_output_tokens: maxTokens,
-      store: false,
-    }),
+    body: JSON.stringify(body),
   });
   const data = await response.json();
-  if (!response.ok) throw new Error(extractError(data, 'OpenAI request failed.'));
-  if (typeof data.output_text === 'string') return data.output_text.trim();
-  return data.output
-    ?.flatMap((item: { content?: { text?: string }[] }) => item.content ?? [])
-    .map((content: { text?: string }) => content.text ?? '')
+  if (!response.ok) throw new Error(formatProviderError('openai', data, response.status));
+
+  const text = extractOpenAiText(data);
+  if (
+    !text &&
+    data &&
+    typeof data === 'object' &&
+    (data as { status?: string }).status === 'incomplete'
+  ) {
+    const reason =
+      (data as { incomplete_details?: { reason?: string } }).incomplete_details?.reason ??
+      'incomplete';
+    throw new Error(
+      `OpenAI stopped early (${reason}). Raise max tokens or pick gpt-5.6-luna for lighter reasoning.`,
+    );
+  }
+  return text;
+}
+
+function extractOpenAiText(data: unknown): string {
+  if (!data || typeof data !== 'object') return '';
+  const record = data as {
+    output_text?: unknown;
+    output?: { type?: string; content?: { type?: string; text?: string }[] }[];
+  };
+  if (typeof record.output_text === 'string' && record.output_text.trim()) {
+    return record.output_text.trim();
+  }
+  if (!Array.isArray(record.output)) return '';
+  return record.output
+    .flatMap((item) => item.content ?? [])
+    .map((part) => (typeof part.text === 'string' ? part.text : ''))
     .join('')
-    .trim() ?? '';
+    .trim();
 }
 
 async function callGemini(settings: AiSettings, prompt: string, maxTokens: number): Promise<string> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(settings.model)}:generateContent`;
-  const response = await fetchWithTimeout(url, {
+  const path = `/v1beta/models/${encodeURIComponent(settings.model)}:generateContent`;
+  const response = await fetchWithTimeout(providerEndpoint('gemini', path), {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -237,11 +363,15 @@ async function callGemini(settings: AiSettings, prompt: string, maxTokens: numbe
     },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { maxOutputTokens: maxTokens },
+      generationConfig: { maxOutputTokens: Math.max(maxTokens, 256) },
     }),
   });
   const data = await response.json();
-  if (!response.ok) throw new Error(extractError(data, 'Gemini request failed.'));
+  if (!response.ok) throw new Error(formatProviderError('gemini', data, response.status));
+  const blockReason = data?.promptFeedback?.blockReason;
+  if (typeof blockReason === 'string' && blockReason) {
+    throw new Error(`Gemini blocked the prompt (${blockReason}).`);
+  }
   return data.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text ?? '').join('').trim() ?? '';
 }
 
@@ -251,12 +381,18 @@ function enforceUsageLimit(settings: AiSettings): void {
   const record = loadUsage();
   const dailyCalls = record.day === today ? record.dailyCalls : 0;
   const minuteCalls = record.minuteWindow === minuteWindow ? record.minuteCalls : 0;
+  const dailyLimit = sanitizeLimit(settings.dailyLimit, DEFAULT_DAILY_LIMIT, 1, 5000);
+  const minuteLimit = sanitizeLimit(settings.minuteLimit, DEFAULT_MINUTE_LIMIT, 1, 500);
 
-  if (dailyCalls >= settings.dailyLimit) {
-    throw new Error(`Daily BYOK call limit reached (${settings.dailyLimit}). Raise the limit in settings if you want to continue.`);
+  if (dailyCalls >= dailyLimit) {
+    throw new Error(
+      `Local app call limit reached for today (${dailyLimit}). This is not your provider bill — raise “Calls per day” or reset usage in AI settings.`,
+    );
   }
-  if (minuteCalls >= settings.minuteLimit) {
-    throw new Error(`Per-minute BYOK call limit reached (${settings.minuteLimit}). Wait a minute or raise the limit in settings.`);
+  if (minuteCalls >= minuteLimit) {
+    throw new Error(
+      `Local per-minute call limit reached (${minuteLimit}). Wait a minute, or raise “Calls per minute” in AI settings.`,
+    );
   }
 }
 
@@ -289,17 +425,69 @@ function loadUsage(): AiUsageRecord {
   }
 }
 
-function extractError(data: unknown, fallback: string): string {
-  if (data && typeof data === 'object') {
-    const record = data as Record<string, unknown>;
-    const error = record.error;
-    if (error && typeof error === 'object') {
-      const message = (error as Record<string, unknown>).message;
-      if (typeof message === 'string') return message;
+export function formatProviderError(provider: AiProvider, data: unknown, status?: number): string {
+  const raw = extractErrorMessage(data);
+  const code = extractErrorCode(data);
+  const lower = `${raw} ${code}`.toLowerCase();
+
+  if (
+    /insufficient_quota|exceeded your current quota|billing_not_active|payment.?required/i.test(lower) ||
+    status === 402
+  ) {
+    const link = BILLING_LINKS[provider];
+    if (provider === 'openai') {
+      return `OpenAI API billing/quota rejected this key (not ChatGPT Plus). Add API credits at ${link}`;
     }
-    if (typeof record.message === 'string') return record.message;
+    return `${PROVIDER_LABELS[provider]} billing/quota rejected this key. Check ${link}`;
   }
-  return fallback;
+
+  if (/invalid.?api.?key|incorrect api key|authentication|unauthorized|api_key_invalid/i.test(lower) || status === 401) {
+    return `Invalid ${PROVIDER_LABELS[provider]} API key. Create a new key at ${KEY_LINKS[provider]}`;
+  }
+
+  if (/model.?not.?found|does not exist|invalid model|not_found_error/i.test(lower) || status === 404) {
+    return `Model not available for this key. Pick one of: ${PROVIDER_MODELS[provider].join(', ')}`;
+  }
+
+  if (/rate.?limit|too many requests|resource_exhausted/i.test(lower) || status === 429) {
+    return `${PROVIDER_LABELS[provider]} rate-limited this request. Wait a moment and try again.`;
+  }
+
+  if (raw) {
+    return status ? `${PROVIDER_LABELS[provider]} error (${status}): ${raw}` : raw;
+  }
+  return status
+    ? `${PROVIDER_LABELS[provider]} request failed (${status}).`
+    : `${PROVIDER_LABELS[provider]} request failed.`;
+}
+
+function extractErrorMessage(data: unknown): string {
+  if (!data || typeof data !== 'object') return '';
+  const record = data as Record<string, unknown>;
+  const error = record.error;
+  if (error && typeof error === 'object') {
+    const message = (error as Record<string, unknown>).message;
+    if (typeof message === 'string' && message.trim()) return message.trim();
+  }
+  if (typeof record.message === 'string' && record.message.trim()) return record.message.trim();
+  // Gemini sometimes nests under error.status / error.message already handled;
+  // also surface top-level status strings.
+  if (typeof record.status === 'string' && /error|fail|invalid/i.test(record.status)) {
+    return record.status;
+  }
+  return '';
+}
+
+function extractErrorCode(data: unknown): string {
+  if (!data || typeof data !== 'object') return '';
+  const error = (data as Record<string, unknown>).error;
+  if (!error || typeof error !== 'object') return '';
+  const record = error as Record<string, unknown>;
+  for (const key of ['code', 'type', 'status'] as const) {
+    const value = record[key];
+    if (typeof value === 'string' || typeof value === 'number') return String(value);
+  }
+  return '';
 }
 
 function isProvider(value: unknown): value is AiProvider {

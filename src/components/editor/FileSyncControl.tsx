@@ -13,6 +13,7 @@ import {
 } from '@/utils/fileSync';
 import { recordBackup } from '@/utils/updateCheck';
 import { toast } from '@/hooks/useToast';
+import { tooltipProps } from '@/components/shared/tooltipProps';
 
 // Topnav control for "Auto-save to file" via the File System Access API.
 // Hidden entirely on browsers that don't expose showSaveFilePicker (Firefox,
@@ -135,10 +136,8 @@ export function FileSyncControl() {
         type="button"
         onClick={enable}
         className="icon-btn"
-        title={t('editor.fileSyncOff', {
-          defaultValue: 'Auto-save to a file on disk (Chrome / Edge)',
-        })}
-        aria-label="Enable auto-save to file"
+        aria-label={t('editor.fileSyncOff')}
+        {...tooltipProps(t('editor.fileSyncOff'))}
       >
         <FolderSync size={16} />
       </button>
@@ -151,11 +150,8 @@ export function FileSyncControl() {
         type="button"
         onClick={regrant}
         className="icon-btn bg-warn/10 text-warn"
-        title={t('editor.fileSyncResume', {
-          defaultValue: `Re-grant access to ${handle.name}`,
-          name: handle.name,
-        })}
-        aria-label="Re-grant file access"
+        aria-label={t('editor.fileSyncResume', { name: handle.name })}
+        {...tooltipProps(t('editor.fileSyncResume', { name: handle.name }))}
       >
         <FolderSync size={16} />
       </button>
@@ -167,11 +163,8 @@ export function FileSyncControl() {
       type="button"
       onClick={disable}
       className="icon-btn bg-paper-tint text-ink"
-      title={t('editor.fileSyncOn', {
-        defaultValue: `Auto-saving to ${handle.name}. Click to turn off.`,
-        name: handle.name,
-      })}
-      aria-label="Disable auto-save to file"
+      aria-label={t('editor.fileSyncOn', { name: handle.name })}
+      {...tooltipProps(t('editor.fileSyncOn', { name: handle.name }))}
       aria-pressed
     >
       <FolderSync size={16} />

@@ -94,6 +94,34 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: false,
+    // Same-origin BYOK proxies so OpenAI/Gemini work from the browser in `npm run dev`
+    // without CORS failures. Keys still come from the client (true BYOK).
+    proxy: {
+      '/byok/openai': {
+        target: 'https://api.openai.com',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/byok\/openai/, ''),
+      },
+      '/byok/gemini': {
+        target: 'https://generativelanguage.googleapis.com',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/byok\/gemini/, ''),
+      },
+    },
+  },
+  preview: {
+    proxy: {
+      '/byok/openai': {
+        target: 'https://api.openai.com',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/byok\/openai/, ''),
+      },
+      '/byok/gemini': {
+        target: 'https://generativelanguage.googleapis.com',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/byok\/gemini/, ''),
+      },
+    },
   },
   build: {
     chunkSizeWarningLimit: 1600,

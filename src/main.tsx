@@ -4,6 +4,7 @@ import { RouterProvider } from 'react-router-dom';
 import { router } from './router';
 import { UpdateBanner } from './components/shared/UpdateBanner';
 import { BackupNag } from './components/shared/BackupNag';
+import { CosmicBackground } from './components/shared/CosmicBackground';
 import { hydratePersistence } from './store/persistence';
 import { applyStoredTheme } from './hooks/useTheme';
 import { applyStoredAccent } from './hooks/useAccent';
@@ -41,6 +42,7 @@ void hydratePersistence();
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <RouterProvider router={router} />
+    <CosmicBackground />
     <UpdateBanner />
     <BackupNag />
   </StrictMode>,
