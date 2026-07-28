@@ -100,7 +100,11 @@ App steps:
 2. Drop unknown IDs and unusable scores.
 3. Fill skipped bullet rows with conservative local relevance.
 4. Calibrate clustered or over-generous scores.
-5. Pack with strict selectivity so weak details are hidden.
+5. Bypass the AI response cache for scoring so one malformed response cannot
+   poison future attempts.
+6. Retry once with a compact JSON-only prompt if the first response is
+   malformed or wrapped in prose.
+7. Pack with strict selectivity so weak details are hidden.
 
 Acceptance checks:
 
@@ -284,7 +288,7 @@ Run this after any AI prompt, provider, or parser change:
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
 | Variant keeps almost everything | Model returned clustered/high scores, or old build | Update and rerun; score calibration and strict packing should now cull aggressively. |
-| AI scoring falls back to local | Key, CORS, unavailable model, unsupported schema, or malformed JSON | Test connection, use built-in model IDs, and run `npm run dev` for OpenAI/Gemini. |
+| AI scoring falls back to local | Key, CORS, unavailable model, unsupported schema, or malformed JSON after retry | Test connection, use built-in model IDs, and run `npm run dev` for OpenAI/Gemini. |
 | Claude returns 400 on generation | Unsupported request parameter on newer Claude model | Do not send temperature/top_p/top_k; app now omits Claude temperature. |
 | Empty provider reply | Output budget too low or reasoning consumed visible tokens | Retry with Haiku/Luna/Flash or increase token budget for that feature. |
 | OpenAI quota error | API credits missing; ChatGPT Plus is separate | Add API credits in OpenAI platform billing. |

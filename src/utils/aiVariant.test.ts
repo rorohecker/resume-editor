@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { getTemplateDemoResume } from '@/components/templates/templateDemos';
 import { makeId } from '@/utils/id';
-import { calibrateAiBlockScores } from './aiVariant';
+import { calibrateAiBlockScores, parseLooseJsonArray } from './aiVariant';
 import { fitToPages, listAllBlocks, type BlockScore } from './blockSelection';
 import type { Resume } from '@/types';
 
@@ -75,5 +75,36 @@ describe('calibrateAiBlockScores', () => {
     ];
 
     expect(calibrateAiBlockScores(scores, resume, 'SQL analyst')).toEqual(scores);
+  });
+});
+
+describe('parseLooseJsonArray', () => {
+  it('extracts scores from a fenced object response', () => {
+    const parsed = parseLooseJsonArray(
+      [
+        'Here are the scores:',
+        '```json',
+        '{"scores":[{"entryId":"entry-1","bulletId":"","score":8,"reason":""}]}',
+        '```',
+      ].join('\n'),
+    );
+
+    expect(parsed).toEqual([{ entryId: 'entry-1', bulletId: '', score: 8, reason: '' }]);
+  });
+
+  it('combines nested entry and bullet score arrays', () => {
+    const parsed = parseLooseJsonArray(
+      JSON.stringify({
+        scores: {
+          entryScores: [{ entry_id: 'entry-1', score: '7' }],
+          bulletScores: [{ entry_id: 'entry-1', bullet_id: 'bullet-1', relevanceScore: 9 }],
+        },
+      }),
+    );
+
+    expect(parsed).toEqual([
+      { entry_id: 'entry-1', score: '7' },
+      { entry_id: 'entry-1', bullet_id: 'bullet-1', relevanceScore: 9 },
+    ]);
   });
 });

@@ -116,6 +116,7 @@ export async function generateTailoring(
   );
 
   const raw = await generateAiText(settings, prompt, 3600, {
+    cache: false,
     jsonSchema: { name: 'resume_tailoring', schema: TAILOR_SCHEMA },
   });
   const json = parseLooseJson(raw) as RawShape | null;

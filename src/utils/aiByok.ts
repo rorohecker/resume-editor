@@ -18,6 +18,8 @@ export interface AiSettings {
 export type JsonSchema = Record<string, unknown>;
 
 export interface AiRequestOptions {
+  /** Skip response cache for calls whose output must be validated by the caller. */
+  cache?: boolean;
   jsonSchema?: {
     name: string;
     schema: JsonSchema;
@@ -176,11 +178,13 @@ export async function generateAiText(
   const cacheKey = await hashKey(
     `${settings.provider}|${settings.model}|${maxTokens}|${prompt}|${JSON.stringify(options.jsonSchema ?? null)}`,
   );
-  const cached = await getCached(cacheKey);
-  // Never reuse empty/whitespace cache entries (poisoned by truncated reasoning replies).
-  if (cached !== null && cached.trim()) return cached;
+  if (options.cache !== false) {
+    const cached = await getCached(cacheKey);
+    // Never reuse empty/whitespace cache entries (poisoned by truncated reasoning replies).
+    if (cached !== null && cached.trim()) return cached;
+  }
   const result = await callByokAi(settings, prompt, maxTokens, options);
-  if (result.trim()) void setCached(cacheKey, result);
+  if (options.cache !== false && result.trim()) void setCached(cacheKey, result);
   return result;
 }
 

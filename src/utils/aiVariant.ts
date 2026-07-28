@@ -121,35 +121,50 @@ export async function scoreBlocksWithAi(
   );
 
   // Large JSON inventories need headroom, especially on reasoning models.
-  const raw = await generateAiText(settings, prompt, 4500, {
-    jsonSchema: { name: 'resume_variant_scores', schema: SCORE_SCHEMA },
-  });
-  const parsed = parseLooseJsonArray(raw);
-  if (!parsed) throw new Error('Provider returned malformed JSON. Try again or switch models.');
+  let raw: string;
+  try {
+    raw = await generateAiText(settings, prompt, 4500, {
+      cache: false,
+      jsonSchema: { name: 'resume_variant_scores', schema: SCORE_SCHEMA },
+    });
+  } catch (error) {
+    if (!isStructuredOutputCompatibilityError(error)) throw error;
+    raw = await generateAiText(settings, prompt, 4500, { cache: false });
+  }
+  let parsed = parseLooseJsonArray(raw);
+  if (!parsed) {
+    raw = await generateAiText(settings, retryScorePrompt(jobDescription, inventory), 4500, {
+      cache: false,
+    });
+    parsed = parseLooseJsonArray(raw);
+  }
+  if (!parsed) {
+    throw new Error(
+      'Provider returned malformed scoring JSON twice. Local scoring was used for this run.',
+    );
+  }
 
   const knownEntries = new Set(blocks.entries.map(({ entry }) => entry.id));
   const knownBullets = new Set(blocks.bullets.map(({ bullet }) => bullet.id));
+  const bulletParent = new Map(blocks.bullets.map(({ entry, bullet }) => [bullet.id, entry.id]));
 
   const scores: BlockScore[] = [];
   for (const item of parsed) {
     if (!item || typeof item !== 'object') continue;
-    const entry = item as Record<string, unknown>;
-    const entryId = typeof entry.entryId === 'string' ? entry.entryId : '';
+    const row = item as Record<string, unknown>;
+    const bulletIdRaw = readString(row, 'bulletId', 'bullet_id', 'bulletID', 'bullet');
+    const bulletId = bulletIdRaw && knownBullets.has(bulletIdRaw) ? bulletIdRaw : undefined;
+    const entryId =
+      readString(row, 'entryId', 'entry_id', 'entryID', 'entry', 'blockId', 'block_id') ||
+      (bulletId ? (bulletParent.get(bulletId) ?? '') : '');
     if (!entryId || !knownEntries.has(entryId)) continue;
-    const scoreNum =
-      typeof entry.score === 'number'
-        ? entry.score
-        : typeof entry.score === 'string'
-          ? Number(entry.score)
-          : NaN;
+    const scoreNum = readNumber(row, 'score', 'relevanceScore', 'relevance_score', 'rating', 'fit', 'fitScore');
     if (!Number.isFinite(scoreNum)) continue;
-    const bulletId = typeof entry.bulletId === 'string' ? entry.bulletId : undefined;
-    if (bulletId && !knownBullets.has(bulletId)) continue;
     scores.push({
       entryId,
       bulletId,
       score: Math.max(0, Math.min(10, scoreNum)),
-      reason: typeof entry.reason === 'string' ? entry.reason : undefined,
+      reason: readString(row, 'reason', 'rationale', 'explanation') || undefined,
     });
   }
 
@@ -223,6 +238,7 @@ export async function rewriteVariantBulletsWithAi(
   );
 
   const raw = await generateAiText(settings, prompt, 4000, {
+    cache: false,
     jsonSchema: { name: 'resume_variant_rewrites', schema: REWRITE_SCHEMA },
   });
   const parsed = parseLooseJsonArray(raw);
@@ -251,6 +267,26 @@ export async function rewriteVariantBulletsWithAi(
     });
   }
   return out;
+}
+
+function retryScorePrompt(jobDescription: string, inventory: unknown): string {
+  return buildFeaturePrompt(
+    'variant-score',
+    'Your last scoring response could not be parsed by JSON.parse.',
+    'Return ONLY compact valid JSON now. No markdown, no comments, no prose.',
+    'Required shape: {"scores":[{"entryId":"...","bulletId":"","score":0,"reason":""}]}',
+    'For entry rows, use empty strings for bulletId and reason.',
+    'For bullet rows, use the exact bulletId from the inventory.',
+    `--- JOB DESCRIPTION ---\n${jobDescription}`,
+    `--- BLOCK INVENTORY ---\n${JSON.stringify(inventory, null, 2)}`,
+  );
+}
+
+function isStructuredOutputCompatibilityError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /json_schema|response_schema|output_config|structured output|unsupported.*schema|invalid.*schema|invalid.*parameter/i.test(
+    message,
+  );
 }
 
 /**
@@ -345,35 +381,137 @@ function clampScore(score: number): number {
   return Math.max(0, Math.min(10, Math.round(score * 10) / 10));
 }
 
-function parseLooseJsonArray(text: string): unknown[] | null {
+function readString(row: Record<string, unknown>, ...keys: string[]): string {
+  for (const key of keys) {
+    const value = row[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return '';
+}
+
+function readNumber(row: Record<string, unknown>, ...keys: string[]): number {
+  for (const key of keys) {
+    const value = row[key];
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string' && value.trim()) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return NaN;
+}
+
+export function parseLooseJsonArray(text: string): unknown[] | null {
   const trimmed = text.trim();
   if (!trimmed) return null;
-  const candidates = [
-    trimmed,
-    trimmed.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, ''),
-  ];
-  const start = trimmed.indexOf('[');
-  const end = trimmed.lastIndexOf(']');
-  if (start !== -1 && end !== -1 && end > start) candidates.push(trimmed.slice(start, end + 1));
-  const objStart = trimmed.indexOf('{');
-  const objEnd = trimmed.lastIndexOf('}');
-  if (objStart !== -1 && objEnd !== -1 && objEnd > objStart) {
-    candidates.push(trimmed.slice(objStart, objEnd + 1));
-  }
-  for (const candidate of candidates) {
+  for (const candidate of jsonCandidates(trimmed)) {
     try {
-      const data = JSON.parse(candidate);
-      if (Array.isArray(data)) return data;
-      if (data && typeof data === 'object') {
-        const record = data as Record<string, unknown>;
-        for (const key of ['scores', 'blocks', 'items', 'results', 'rewrites', 'bullets']) {
-          const value = record[key];
-          if (Array.isArray(value)) return value;
-        }
-      }
+      const extracted = extractResultArray(JSON.parse(candidate));
+      if (extracted) return extracted;
     } catch {
       // try next
     }
   }
   return null;
+}
+
+function jsonCandidates(trimmed: string): string[] {
+  const candidates = new Set<string>();
+  candidates.add(trimmed);
+  candidates.add(trimmed.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, ''));
+
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced?.[1]) candidates.add(fenced[1].trim());
+
+  const objectCandidate = balancedJsonSlice(trimmed, '{', '}');
+  if (objectCandidate) candidates.add(objectCandidate);
+  const arrayCandidate = balancedJsonSlice(trimmed, '[', ']');
+  if (arrayCandidate) candidates.add(arrayCandidate);
+
+  return [...candidates].filter(Boolean);
+}
+
+function balancedJsonSlice(text: string, open: '{' | '[', close: '}' | ']'): string | null {
+  const start = text.indexOf(open);
+  if (start < 0) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < text.length; index += 1) {
+    const char = text[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (char === open) depth += 1;
+    if (char === close) {
+      depth -= 1;
+      if (depth === 0) return text.slice(start, index + 1);
+    }
+  }
+  return null;
+}
+
+function extractResultArray(data: unknown): unknown[] | null {
+  if (Array.isArray(data)) return data;
+  if (!data || typeof data !== 'object') return null;
+
+  const record = data as Record<string, unknown>;
+  const preferredKeys = [
+    'scores',
+    'scoreRows',
+    'blockScores',
+    'entryScores',
+    'bulletScores',
+    'blocks',
+    'items',
+    'results',
+    'rewrites',
+    'bullets',
+    'entries',
+  ];
+
+  const combined: unknown[] = [];
+  for (const key of preferredKeys) {
+    const value = record[key];
+    if (Array.isArray(value)) combined.push(...value);
+    else if (value && typeof value === 'object') {
+      const nested = extractResultArray(value);
+      if (nested) combined.push(...nested);
+    }
+  }
+  if (combined.length > 0) return combined;
+
+  const arrays = collectResultArrays(record);
+  return arrays.length > 0 ? arrays.flat() : null;
+}
+
+function collectResultArrays(value: unknown): unknown[][] {
+  if (Array.isArray(value)) {
+    return value.some(looksLikeResultRow) ? [value] : value.flatMap(collectResultArrays);
+  }
+  if (!value || typeof value !== 'object') return [];
+  return Object.values(value as Record<string, unknown>).flatMap(collectResultArrays);
+}
+
+function looksLikeResultRow(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  const row = value as Record<string, unknown>;
+  return (
+    'score' in row ||
+    'rewritten' in row ||
+    'entryId' in row ||
+    'entry_id' in row ||
+    'bulletId' in row ||
+    'bullet_id' in row
+  );
 }
