@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { parseResumeText } from '@/utils/importParser';
 import {
+  detectWeakLanguage,
   findWeakPhrasesInText,
   replaceWeakPhrase,
 } from '@/utils/aiAssist';
 import { isFallbackPdfFont } from '@/utils/pdfFonts';
+import { collectBullets } from '@/utils/resumeText';
 
 describe('importParser', () => {
   it('parses a simple pasted resume into sections', () => {
@@ -40,6 +42,23 @@ describe('weak language helpers', () => {
     expect(hits.some((h) => h.phrase === 'helped')).toBe(true);
     const next = replaceWeakPhrase(content, 'helped', 'Supported');
     expect(next.toLowerCase().startsWith('supported')).toBe(true);
+  });
+
+  it('returns exact bullet ids for bulk weak-language fixes', () => {
+    const result = parseResumeText(
+      [
+        'Jordan Lee',
+        '',
+        'EXPERIENCE',
+        'Software Engineer - Acme Corp',
+        '- Helped ship reports',
+      ].join('\n'),
+    );
+    const bulletIds = new Set(collectBullets(result.resume).map((bullet) => bullet.bulletId));
+    const hits = detectWeakLanguage(result.resume);
+
+    expect(hits.length).toBeGreaterThan(0);
+    expect(bulletIds.has(hits[0]!.bulletId)).toBe(true);
   });
 });
 

@@ -1,5 +1,6 @@
 import { normalizeResume } from '@/types/schema';
 import { generateAiText, type AiSettings } from './aiByok';
+import { buildFeaturePrompt } from './aiGuides';
 import { defaultLabelForContactType } from './contactIcon';
 import { makeId } from './id';
 import type { ContactFieldType, SectionType } from '@/types';
@@ -50,9 +51,12 @@ export async function enrichWithBYOK(
     return { result: base, applied: false, error: 'No API key set.' };
   }
   try {
-    const prompt =
-      `${SYSTEM_PROMPT}\n\n--- RAW TEXT ---\n${base.rawText.slice(0, 8000)}\n\n` +
-      `--- PRELIMINARY PARSE ---\n${JSON.stringify(condenseForPrompt(base), null, 2)}`;
+    const prompt = buildFeaturePrompt(
+      'import-enrich',
+      SYSTEM_PROMPT,
+      `--- RAW TEXT ---\n${base.rawText.slice(0, 8000)}`,
+      `--- PRELIMINARY PARSE ---\n${JSON.stringify(condenseForPrompt(base), null, 2)}`,
+    );
     const raw = await generateAiText(settings, prompt, 2400);
     const json = extractJson(raw);
     if (!json) {

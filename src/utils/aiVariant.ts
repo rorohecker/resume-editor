@@ -1,33 +1,81 @@
 import type { Resume } from '@/types';
-import { generateAiText, type AiSettings } from './aiByok';
-import { listAllBlocks, type BlockScore } from './blockSelection';
+import { generateAiText, type AiSettings, type JsonSchema } from './aiByok';
+import { listAllBlocks, localScoreBlocks, type BlockScore } from './blockSelection';
+import { buildFeaturePrompt } from './aiGuides';
 import { stripHtml } from './resumeText';
 
-const PROMPT = `You score each resume block for relevance to a job description.
-Return ONLY a JSON array (no commentary, no fences) of objects:
-[
-  { "entryId": "...", "score": 0-10 },
+const SCORE_TASK = `You score each resume block for relevance to a job description.
+Return ONLY JSON (no commentary, no fences). Prefer this object shape:
+{ "scores": [
+  { "entryId": "...", "bulletId": "", "score": 0-10, "reason": "" },
   { "entryId": "...", "bulletId": "...", "score": 0-10, "reason": "..." }
-]
+] }
 - Score 10 = highly relevant; 0 = irrelevant.
 - Include EVERY entry and EVERY bullet from the inventory (bullet rows must include bulletId).
 - Prefer scoring bullets individually; still include an entry row for each entry.
 - "reason" is optional, 5-12 words for bullets if you want to explain the score.
+- For entry-only rows, set "bulletId" and "reason" to empty strings.
 - Do not invent ids; use the exact ids provided.
-- Scores may be numbers (preferred).`;
+- Scores must be numbers, not strings.`;
 
-const REWRITE_PROMPT = `You rewrite selected resume bullets so they better match a job description.
-Return ONLY a JSON array (no commentary, no fences):
-[
+const REWRITE_TASK = `You rewrite selected resume bullets so they better match a job description.
+Return ONLY JSON (no commentary, no fences). Prefer this object shape:
+{ "rewrites": [
   { "bulletId": "...", "rewritten": "...", "keywordsUsed": ["keyword"] }
-]
+] }
 
 Rules:
-- Keep every claim truthful — never invent employers, metrics, tools, or outcomes.
+- Keep every claim truthful - never invent employers, metrics, tools, or outcomes.
 - Weave in relevant keywords from the job description only when they honestly fit the original work.
 - Keep action verb + task + impact; roughly the same length (at most ~32 words).
 - Skip a bullet entirely if no honest keyword-aware rewrite helps.
 - Use the exact bulletId values provided.`;
+
+const AI_HIGH_SCORE = 8;
+const AI_LOW_SCORE = 4;
+
+const SCORE_SCHEMA: JsonSchema = {
+  type: 'object',
+  properties: {
+    scores: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          entryId: { type: 'string' },
+          bulletId: { type: 'string' },
+          score: { type: 'number' },
+          reason: { type: 'string' },
+        },
+        required: ['entryId', 'bulletId', 'score', 'reason'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['scores'],
+  additionalProperties: false,
+};
+
+const REWRITE_SCHEMA: JsonSchema = {
+  type: 'object',
+  properties: {
+    rewrites: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          bulletId: { type: 'string' },
+          rewritten: { type: 'string' },
+          keywordsUsed: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['bulletId', 'rewritten', 'keywordsUsed'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['rewrites'],
+  additionalProperties: false,
+};
 
 export interface VariantBulletRewrite {
   bulletId: string;
@@ -65,12 +113,17 @@ export async function scoreBlocksWithAi(
     })),
   };
 
-  const prompt =
-    `${PROMPT}\n\n--- JOB DESCRIPTION ---\n${jobDescription}\n\n` +
-    `--- BLOCK INVENTORY ---\n${JSON.stringify(inventory, null, 2)}`;
+  const prompt = buildFeaturePrompt(
+    'variant-score',
+    SCORE_TASK,
+    `--- JOB DESCRIPTION ---\n${jobDescription}`,
+    `--- BLOCK INVENTORY ---\n${JSON.stringify(inventory, null, 2)}`,
+  );
 
   // Large JSON inventories need headroom, especially on reasoning models.
-  const raw = await generateAiText(settings, prompt, 4500);
+  const raw = await generateAiText(settings, prompt, 4500, {
+    jsonSchema: { name: 'resume_variant_scores', schema: SCORE_SCHEMA },
+  });
   const parsed = parseLooseJsonArray(raw);
   if (!parsed) throw new Error('Provider returned malformed JSON. Try again or switch models.');
 
@@ -109,22 +162,27 @@ export async function scoreBlocksWithAi(
   if (blocks.bullets.length > 0) {
     const scoredBulletIds = new Set(scores.map((s) => s.bulletId).filter(Boolean));
     const entryScore = new Map<string, number>();
+    const localScore = new Map<string, number>();
+    for (const score of localScoreBlocks(resume, jobDescription)) {
+      if (score.bulletId) localScore.set(score.bulletId, score.score);
+    }
     for (const score of scores) {
       if (!score.bulletId) entryScore.set(score.entryId, score.score);
     }
     for (const { entry, bullet } of blocks.bullets) {
       if (scoredBulletIds.has(bullet.id)) continue;
       const base = entryScore.get(entry.id) ?? 3;
+      const local = localScore.get(bullet.id) ?? 3;
       scores.push({
         entryId: entry.id,
         bulletId: bullet.id,
-        score: Math.max(1, base * 0.7),
-        reason: 'Filled from entry relevance',
+        score: Math.max(1, Math.min(6, base * 0.45 + local * 0.55)),
+        reason: 'Conservative fill from local relevance',
       });
     }
   }
 
-  return scores;
+  return calibrateAiBlockScores(scores, resume, jobDescription);
 }
 
 /** Rewrite included bullets with job keywords. Only touches the provided bullet IDs. */
@@ -157,11 +215,16 @@ export async function rewriteVariantBulletsWithAi(
 
   // Cap payload size so rewrite stays reliable on smaller models.
   const batch = inventory.slice(0, 40);
-  const prompt =
-    `${REWRITE_PROMPT}\n\n--- JOB DESCRIPTION ---\n${jobDescription}\n\n` +
-    `--- BULLETS TO CONSIDER ---\n${JSON.stringify(batch, null, 2)}`;
+  const prompt = buildFeaturePrompt(
+    'variant-rewrite',
+    REWRITE_TASK,
+    `--- JOB DESCRIPTION ---\n${jobDescription}`,
+    `--- BULLETS TO CONSIDER ---\n${JSON.stringify(batch, null, 2)}`,
+  );
 
-  const raw = await generateAiText(settings, prompt, 4000);
+  const raw = await generateAiText(settings, prompt, 4000, {
+    jsonSchema: { name: 'resume_variant_rewrites', schema: REWRITE_SCHEMA },
+  });
   const parsed = parseLooseJsonArray(raw);
   if (!parsed) throw new Error('Provider returned malformed rewrite JSON.');
 
@@ -188,6 +251,98 @@ export async function rewriteVariantBulletsWithAi(
     });
   }
   return out;
+}
+
+/**
+ * AI models sometimes return non-discriminating scores ("everything is 7-9").
+ * Resume packing needs contrast, so calibrate clustered AI output with a ranked
+ * curve and a light local keyword tie-breaker. Well-spread model scores are left
+ * intact except for normal 0-10 clamping.
+ */
+export function calibrateAiBlockScores(
+  scores: BlockScore[],
+  resume: Resume,
+  jobDescription: string,
+): BlockScore[] {
+  if (scores.length <= 2) return scores.map((score) => ({ ...score, score: clampScore(score.score) }));
+
+  const clamped = scores.map((score, index) => ({
+    ...score,
+    index,
+    score: clampScore(score.score),
+  }));
+  const values = clamped.map((score) => score.score);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const highShare = values.filter((score) => score >= AI_HIGH_SCORE).length / values.length;
+  const lowShare = values.filter((score) => score <= AI_LOW_SCORE).length / values.length;
+  const range = max - min;
+  const needsCalibration =
+    range < 2 ||
+    min >= 5 ||
+    highShare > 0.35 ||
+    lowShare < 0.25;
+
+  if (!needsCalibration) {
+    return clamped.map(toBlockScore);
+  }
+
+  const localByKey = new Map<string, number>();
+  for (const local of localScoreBlocks(resume, jobDescription)) {
+    localByKey.set(scoreKey(local), clampScore(local.score));
+  }
+
+  const ranked = clamped
+    .map((score) => {
+      const local = localByKey.get(scoreKey(score)) ?? 0;
+      return {
+        ...score,
+        sortScore: score.score * 0.72 + local * 0.28,
+      };
+    })
+    .sort((a, b) => b.sortScore - a.sortScore || a.index - b.index);
+
+  const calibrated = new Map<number, number>();
+  for (let rank = 0; rank < ranked.length; rank += 1) {
+    const row = ranked[rank]!;
+    calibrated.set(row.index, scoreForRank(rank, ranked.length));
+  }
+
+  return clamped.map((score) => toBlockScore({ ...score, score: calibrated.get(score.index) ?? score.score }));
+}
+
+function toBlockScore(score: BlockScore & { index?: number; sortScore?: number }): BlockScore {
+  return {
+    entryId: score.entryId,
+    bulletId: score.bulletId,
+    score: score.score,
+    reason: score.reason,
+  };
+}
+
+function scoreForRank(rank: number, total: number): number {
+  if (total <= 1) return 8;
+  const p = rank / (total - 1);
+  let score: number;
+  if (p < 0.12) {
+    score = 9.4 - (p / 0.12) * 1.1;
+  } else if (p < 0.3) {
+    score = 8 - ((p - 0.12) / 0.18) * 1.2;
+  } else if (p < 0.6) {
+    score = 6.2 - ((p - 0.3) / 0.3) * 2.2;
+  } else {
+    score = 3.8 - ((p - 0.6) / 0.4) * 3;
+  }
+  return Math.max(0, Math.min(10, Math.round(score * 10) / 10));
+}
+
+function scoreKey(score: Pick<BlockScore, 'entryId' | 'bulletId'>): string {
+  return score.bulletId ? `${score.entryId}:${score.bulletId}` : score.entryId;
+}
+
+function clampScore(score: number): number {
+  if (!Number.isFinite(score)) return 0;
+  return Math.max(0, Math.min(10, Math.round(score * 10) / 10));
 }
 
 function parseLooseJsonArray(text: string): unknown[] | null {

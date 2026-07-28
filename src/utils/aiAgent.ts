@@ -1,6 +1,7 @@
 import type { Bullet, Resume } from '@/types';
 import { makeId } from '@/utils/id';
 import { collectBullets, resumeToPlainText, stripHtml } from '@/utils/resumeText';
+import { buildFeaturePrompt } from './aiGuides';
 
 export type AgentOp =
   | { op: 'replace_bullet'; bulletId: string; content: string }
@@ -13,18 +14,9 @@ export interface AgentPlan {
   ops: AgentOp[];
 }
 
-const AGENT_SYSTEM_RULES = [
-  'You control a local resume editor through structured JSON operations only.',
-  'Never invent employers, degrees, dates, metrics, tools, or achievements that are not supported by the resume.',
-  'Prefer consolidating redundant bullets over deleting unique accomplishments.',
-  'Keep bullets truthful, concise, and ATS-friendly (action verb + task + impact when possible).',
-  'Use only IDs provided in the catalog. Do not invent IDs.',
-].join(' ');
-
 export function promptForReorganize(resume: Resume, userInstruction: string, standingInstructions: string): string {
   const catalog = buildBulletCatalog(resume);
-  return [
-    AGENT_SYSTEM_RULES,
+  return buildFeaturePrompt('organize',
     standingInstructions ? `Standing user instructions:\n${standingInstructions}` : '',
     'Task: Reorganize and consolidate resume bullets.',
     'Merge overlapping bullets, drop pure duplicates, tighten wording, and improve order within each role.',
@@ -34,9 +26,7 @@ export function promptForReorganize(resume: Resume, userInstruction: string, sta
     'Prefer set_entry_bullets when rewriting a whole role. Use replace_bullet / delete_bullet for small edits.',
     `Bullet catalog:\n${catalog}`,
     `Full resume text:\n${resumeToPlainText(resume)}`,
-  ]
-    .filter(Boolean)
-    .join('\n\n');
+  );
 }
 
 export function promptForAgentControl(
@@ -45,8 +35,7 @@ export function promptForAgentControl(
   standingInstructions: string,
 ): string {
   const catalog = buildBulletCatalog(resume);
-  return [
-    AGENT_SYSTEM_RULES,
+  return buildFeaturePrompt('agent',
     standingInstructions ? `Standing user instructions:\n${standingInstructions}` : '',
     'Task: Apply the user request by editing the resume through ops.',
     `User request:\n${userMessage}`,
@@ -60,9 +49,7 @@ export function promptForAgentControl(
       .map((section) => `${section.id} | ${section.title}`)
       .join('\n')}`,
     `Full resume text:\n${resumeToPlainText(resume)}`,
-  ]
-    .filter(Boolean)
-    .join('\n\n');
+  );
 }
 
 export function parseAgentPlan(raw: string): AgentPlan {

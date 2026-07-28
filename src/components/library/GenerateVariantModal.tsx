@@ -68,16 +68,16 @@ export function GenerateVariantModal() {
   const hasKey = Boolean(settings.apiKey.trim());
   const busy = phase === 'scoring' || phase === 'rewriting';
   const canRewrite = hasKey && useAi;
-  const needsJob = (useAi && hasKey) || (rewriteBullets && canRewrite);
+  const needsJob = true;
 
   const generate = async () => {
     if (!resume) return;
-    // Always load the latest key/model — settings can change while this modal stays mounted.
+    // Always load the latest key/model; settings can change while this modal stays mounted.
     const liveSettings = loadAiSettings();
     const liveHasKey = Boolean(liveSettings.apiKey.trim());
     const liveUseAi = useAi && liveHasKey;
     const liveCanRewrite = rewriteBullets && liveUseAi;
-    if ((liveUseAi || liveCanRewrite) && !job.trim()) {
+    if (!job.trim()) {
       toast(t('variant.jobRequired'), { tone: 'warn' });
       return;
     }
@@ -110,7 +110,7 @@ export function GenerateVariantModal() {
       }
       setScores(computed);
 
-      const fitResult = fitToPages(resume, computed, { maxPages });
+      const fitResult = fitToPages(resume, computed, { maxPages, selectivity: 'strict' });
       if (fitResult.includedEntries + fitResult.includedBullets === 0) {
         throw new Error(t('variant.emptyFit'));
       }
@@ -158,7 +158,7 @@ export function GenerateVariantModal() {
 
   const fit = useMemo(() => {
     if (!resume || !scores) return null;
-    return fitToPages(resume, scores, { maxPages });
+    return fitToPages(resume, scores, { maxPages, selectivity: 'strict' });
   }, [resume, scores, maxPages]);
 
   const previewResume = useMemo(() => {

@@ -20,16 +20,8 @@ export function BulkEditDrawer({ open, onClose }: { open: boolean; onClose: () =
   const weakIds = useMemo(() => {
     if (!resume) return new Set<string>();
     const hits = detectWeakLanguage(resume);
-    const idSet = new Set<string>();
-    for (const hit of hits) {
-      // detectWeakLanguage doesn't expose bulletId — match by label + content
-      const matchingBullet = bullets.find(
-        (b) => `${b.sectionTitle} - ${b.entryTitle}` === hit.bulletLabel && b.content === hit.content,
-      );
-      if (matchingBullet) idSet.add(matchingBullet.bulletId);
-    }
-    return idSet;
-  }, [bullets, resume]);
+    return new Set(hits.map((hit) => hit.bulletId));
+  }, [resume]);
 
   const visibleBullets = filter === 'weak' ? bullets.filter((b) => weakIds.has(b.bulletId)) : bullets;
 
@@ -171,7 +163,7 @@ export function BulkEditDrawer({ open, onClose }: { open: boolean; onClose: () =
                 />
                 <div className="min-w-0 flex-1">
                   <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink-subtle">
-                    {bullet.sectionTitle} · {bullet.entryTitle}
+                    {bullet.sectionTitle} | {bullet.entryTitle}
                     {weakIds.has(bullet.bulletId) && (
                       <span className="ml-2 rounded-full bg-yellow-100 px-1.5 py-0.5 text-warn">
                         {t('bulk.weakBadge')}

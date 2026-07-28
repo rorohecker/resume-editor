@@ -75,6 +75,7 @@ export interface BulletAnalysis {
 export type BulletSuggestion = 'actionVerb' | 'metric' | 'length';
 
 export interface WeakLanguageHit {
+  bulletId: string;
   phrase: string;
   replacementOptions: readonly string[];
   bulletLabel: string;
@@ -210,6 +211,7 @@ export function detectWeakLanguage(resume: Resume): WeakLanguageHit[] {
   return bullets.flatMap((bullet) =>
     WEAK_LANGUAGE.filter((weak) => new RegExp(`\\b${escapeRegex(weak.phrase)}\\b`, 'i').test(bullet.content)).map(
       (weak) => ({
+        bulletId: bullet.bulletId,
         phrase: weak.phrase,
         replacementOptions: weak.replacements,
         bulletLabel: `${bullet.sectionTitle} - ${bullet.entryTitle}`,

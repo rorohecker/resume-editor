@@ -1,9 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { getTemplateDemoResume } from '@/components/templates/templateDemos';
 import {
   LEGACY_MODEL_MAP,
   PROVIDER_MODELS,
   formatProviderError,
   loadAiSettings,
+  promptForAtsKeywords,
+  promptForCoverLetter,
+  promptForRewrite,
+  promptForSummary,
   resetAiUsage,
   resolveModel,
   sanitizeLimit,
@@ -115,5 +120,26 @@ describe('loadAiSettings migrations', () => {
     );
     resetAiUsage();
     expect(localStorage.getItem('resume-editor:ai-byok-usage:v1')).toBeNull();
+  });
+});
+
+describe('BYOK prompt guides', () => {
+  it('prepends universal and feature-specific guide steps to drawer prompts', () => {
+    const resume = getTemplateDemoResume('general');
+    const prompts = [
+      promptForRewrite(resume, 'Worked on reports.', 'make it concise'),
+      promptForSummary(resume),
+      promptForCoverLetter(resume, 'Analyst role with SQL and dashboards.'),
+      promptForAtsKeywords(resume, 'Analyst role with SQL and dashboards.'),
+    ];
+
+    for (const prompt of prompts) {
+      expect(prompt).toContain('UNIVERSAL RULES');
+      expect(prompt).toContain('Truth only');
+    }
+    expect(prompts[0]).toContain('FEATURE: Single-bullet rewrite options');
+    expect(prompts[1]).toContain('FEATURE: Professional summary');
+    expect(prompts[2]).toContain('FEATURE: Cover letter draft');
+    expect(prompts[3]).toContain('FEATURE: ATS keyword scan');
   });
 });

@@ -1,6 +1,7 @@
 import type { Resume } from '@/types';
 import { resumeToPlainText } from './resumeText';
 import { getCached, hashKey, setCached } from './aiCache';
+import { buildFeaturePrompt } from './aiGuides';
 
 export type AiProvider = 'anthropic' | 'openai' | 'gemini';
 
@@ -12,6 +13,15 @@ export interface AiSettings {
   minuteLimit: number;
   /** Standing instructions the agent must follow when editing the resume. */
   agentInstructions: string;
+}
+
+export type JsonSchema = Record<string, unknown>;
+
+export interface AiRequestOptions {
+  jsonSchema?: {
+    name: string;
+    schema: JsonSchema;
+  };
 }
 
 interface AiUsageRecord {
@@ -26,13 +36,13 @@ const USAGE_KEY = 'resume-editor:ai-byok-usage:v1';
 
 /** Suggested model IDs (first = default). Keep aliases current with provider docs. */
 export const PROVIDER_MODELS: Record<AiProvider, string[]> = {
-  anthropic: ['claude-haiku-4-5', 'claude-sonnet-5', 'claude-opus-5'],
+  anthropic: ['claude-haiku-4-5', 'claude-sonnet-5', 'claude-opus-5', 'claude-fable-5'],
   openai: ['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6'],
-  gemini: ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-2.5-pro'],
+  gemini: ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-flash', 'gemini-2.5-pro'],
 };
 
 /**
- * Known-stale IDs from earlier app versions → current replacements.
+ * Known-stale IDs from earlier app versions -> current replacements.
  * Applied on load so existing localStorage settings keep working.
  */
 export const LEGACY_MODEL_MAP: Record<string, string> = {
@@ -57,7 +67,6 @@ export const LEGACY_MODEL_MAP: Record<string, string> = {
   'gemini-1.5-flash': 'gemini-3.6-flash',
   'gemini-1.5-pro': 'gemini-2.5-pro',
   'gemini-2.0-flash': 'gemini-3.6-flash',
-  'gemini-2.5-flash': 'gemini-3.6-flash',
 };
 
 export const PROVIDER_LABELS: Record<AiProvider, string> = {
@@ -155,55 +164,62 @@ export function clearAiSettings(): void {
 
 export async function testAiConnection(settings: AiSettings): Promise<string> {
   // Reasoning models need headroom above the visible reply; don't use a tiny budget.
-  return callByokAi(settings, 'Reply with exactly: OK', 256);
+  return callByokAi(settings, buildFeaturePrompt('connection-test'), 256);
 }
 
-export async function generateAiText(settings: AiSettings, prompt: string, maxTokens = 700): Promise<string> {
-  const cacheKey = await hashKey(`${settings.provider}|${settings.model}|${maxTokens}|${prompt}`);
+export async function generateAiText(
+  settings: AiSettings,
+  prompt: string,
+  maxTokens = 700,
+  options: AiRequestOptions = {},
+): Promise<string> {
+  const cacheKey = await hashKey(
+    `${settings.provider}|${settings.model}|${maxTokens}|${prompt}|${JSON.stringify(options.jsonSchema ?? null)}`,
+  );
   const cached = await getCached(cacheKey);
   // Never reuse empty/whitespace cache entries (poisoned by truncated reasoning replies).
   if (cached !== null && cached.trim()) return cached;
-  const result = await callByokAi(settings, prompt, maxTokens);
+  const result = await callByokAi(settings, prompt, maxTokens, options);
   if (result.trim()) void setCached(cacheKey, result);
   return result;
 }
 
 export function promptForRewrite(resume: Resume, bullet: string, instruction: string): string {
-  return [
+  return buildFeaturePrompt('bullet-rewrite',
     'Rewrite this resume bullet into 3 options.',
     'Each option must follow action verb + task + impact. Keep it truthful and concise.',
     instruction ? `User instruction: ${instruction}` : '',
     `Resume context:\n${resumeToPlainText(resume)}`,
     `Original bullet:\n${bullet}`,
     'Return only the 3 rewritten bullets, one per line.',
-  ].filter(Boolean).join('\n\n');
+  );
 }
 
 export function promptForSummary(resume: Resume): string {
-  return [
+  return buildFeaturePrompt('summary',
     'Write a 2 sentence professional resume summary for this candidate.',
     'Keep it specific, early-career friendly, and ATS-safe. Do not invent facts.',
     resumeToPlainText(resume),
-  ].join('\n\n');
+  );
 }
 
 export function promptForCoverLetter(resume: Resume, jobDescription: string): string {
-  return [
+  return buildFeaturePrompt('cover-letter',
     'Draft a concise cover letter based only on this resume and job description.',
     'Avoid fake claims. Keep it polished and editable.',
     `Resume:\n${resumeToPlainText(resume)}`,
     `Job description:\n${jobDescription || 'No job description provided.'}`,
-  ].join('\n\n');
+  );
 }
 
 export function promptForAtsKeywords(resume: Resume, jobDescription: string): string {
-  return [
+  return buildFeaturePrompt('ats-keywords',
     'Extract the top 15-20 ATS keywords from this job description.',
     'For each keyword, mark whether it appears in the resume and suggest one section if missing.',
     'Return plain lines in this format: keyword | Found/Missing | Section',
     `Resume:\n${resumeToPlainText(resume)}`,
     `Job description:\n${jobDescription}`,
-  ].join('\n\n');
+  );
 }
 
 // Hard cap so a hung provider request can't freeze the UI forever.
@@ -252,16 +268,21 @@ async function fetchWithTimeout(input: string, init: RequestInit): Promise<Respo
   }
 }
 
-async function callByokAi(settings: AiSettings, prompt: string, maxTokens: number): Promise<string> {
+async function callByokAi(
+  settings: AiSettings,
+  prompt: string,
+  maxTokens: number,
+  options: AiRequestOptions = {},
+): Promise<string> {
   if (!settings.apiKey.trim()) throw new Error('Add an API key in AI settings first.');
   // Check limits up front, but only count the call once it actually succeeds so
   // failed/aborted requests don't burn the user's daily/minute quota.
   enforceUsageLimit(settings);
 
   let result: string;
-  if (settings.provider === 'anthropic') result = await callAnthropic(settings, prompt, maxTokens);
-  else if (settings.provider === 'openai') result = await callOpenAi(settings, prompt, maxTokens);
-  else result = await callGemini(settings, prompt, maxTokens);
+  if (settings.provider === 'anthropic') result = await callAnthropic(settings, prompt, maxTokens, options);
+  else if (settings.provider === 'openai') result = await callOpenAi(settings, prompt, maxTokens, options);
+  else result = await callGemini(settings, prompt, maxTokens, options);
 
   if (!result.trim()) {
     throw new Error(
@@ -273,7 +294,26 @@ async function callByokAi(settings: AiSettings, prompt: string, maxTokens: numbe
   return result;
 }
 
-async function callAnthropic(settings: AiSettings, prompt: string, maxTokens: number): Promise<string> {
+async function callAnthropic(
+  settings: AiSettings,
+  prompt: string,
+  maxTokens: number,
+  options: AiRequestOptions,
+): Promise<string> {
+  const body: Record<string, unknown> = {
+    model: settings.model,
+    max_tokens: maxTokens,
+    messages: [{ role: 'user', content: prompt }],
+  };
+  if (options.jsonSchema && supportsAnthropicStructuredOutput(settings.model)) {
+    body.output_config = {
+      format: {
+        type: 'json_schema',
+        schema: options.jsonSchema.schema,
+      },
+    };
+  }
+
   const response = await fetchWithTimeout(providerEndpoint('anthropic', '/v1/messages'), {
     method: 'POST',
     headers: {
@@ -282,18 +322,19 @@ async function callAnthropic(settings: AiSettings, prompt: string, maxTokens: nu
       'anthropic-version': '2023-06-01',
       'anthropic-dangerous-direct-browser-access': 'true',
     },
-    body: JSON.stringify({
-      model: settings.model,
-      max_tokens: maxTokens,
-      messages: [{ role: 'user', content: prompt }],
-    }),
+    body: JSON.stringify(body),
   });
   const data = await response.json();
   if (!response.ok) throw new Error(formatProviderError('anthropic', data, response.status));
   return data.content?.map((part: { text?: string }) => part.text ?? '').join('').trim() ?? '';
 }
 
-async function callOpenAi(settings: AiSettings, prompt: string, maxTokens: number): Promise<string> {
+async function callOpenAi(
+  settings: AiSettings,
+  prompt: string,
+  maxTokens: number,
+  options: AiRequestOptions,
+): Promise<string> {
   // GPT-5.x reasoning burns output budget before visible text. Floor high enough
   // for JSON scoring/rewrite replies, not just short chat.
   const maxOutputTokens = Math.max(maxTokens, 2048);
@@ -302,7 +343,17 @@ async function callOpenAi(settings: AiSettings, prompt: string, maxTokens: numbe
     input: prompt,
     max_output_tokens: maxOutputTokens,
     store: false,
-    text: { format: { type: 'text' } },
+    text:
+      options.jsonSchema && supportsOpenAiStructuredOutput(settings.model)
+        ? {
+            format: {
+              type: 'json_schema',
+              name: options.jsonSchema.name,
+              strict: true,
+              schema: options.jsonSchema.schema,
+            },
+          }
+        : { format: { type: 'text' } },
   };
   // Only GPT-5+ Responses models accept reasoning.effort; older IDs reject it.
   // Prefer minimal effort for resume tooling so tokens go to the visible reply.
@@ -354,8 +405,21 @@ function extractOpenAiText(data: unknown): string {
     .trim();
 }
 
-async function callGemini(settings: AiSettings, prompt: string, maxTokens: number): Promise<string> {
+async function callGemini(
+  settings: AiSettings,
+  prompt: string,
+  maxTokens: number,
+  options: AiRequestOptions,
+): Promise<string> {
   const path = `/v1beta/models/${encodeURIComponent(settings.model)}:generateContent`;
+  const generationConfig: Record<string, unknown> = {
+    maxOutputTokens: Math.max(maxTokens, 256),
+    temperature: 0.2,
+  };
+  if (options.jsonSchema) {
+    generationConfig.response_mime_type = 'application/json';
+    generationConfig.response_schema = toGeminiSchema(options.jsonSchema.schema);
+  }
   const response = await fetchWithTimeout(providerEndpoint('gemini', path), {
     method: 'POST',
     headers: {
@@ -364,7 +428,7 @@ async function callGemini(settings: AiSettings, prompt: string, maxTokens: numbe
     },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { maxOutputTokens: Math.max(maxTokens, 256) },
+      generationConfig,
     }),
   });
   const data = await response.json();
@@ -387,12 +451,12 @@ function enforceUsageLimit(settings: AiSettings): void {
 
   if (dailyCalls >= dailyLimit) {
     throw new Error(
-      `Local app call limit reached for today (${dailyLimit}). This is not your provider bill — raise “Calls per day” or reset usage in AI settings.`,
+      `Local app call limit reached for today (${dailyLimit}). This is not your provider bill - raise "Calls per day" or reset usage in AI settings.`,
     );
   }
   if (minuteCalls >= minuteLimit) {
     throw new Error(
-      `Local per-minute call limit reached (${minuteLimit}). Wait a minute, or raise “Calls per minute” in AI settings.`,
+      `Local per-minute call limit reached (${minuteLimit}). Wait a minute, or raise "Calls per minute" in AI settings.`,
     );
   }
 }
@@ -493,4 +557,51 @@ function extractErrorCode(data: unknown): string {
 
 function isProvider(value: unknown): value is AiProvider {
   return value === 'anthropic' || value === 'openai' || value === 'gemini';
+}
+
+function supportsOpenAiStructuredOutput(model: string): boolean {
+  return /^gpt-5/i.test(model) || /^gpt-4o/i.test(model);
+}
+
+function supportsAnthropicStructuredOutput(model: string): boolean {
+  return !/^claude-(?:3|2|instant)/i.test(model);
+}
+
+function toGeminiSchema(schema: unknown): unknown {
+  if (Array.isArray(schema)) return schema.map(toGeminiSchema);
+  if (!schema || typeof schema !== 'object') return schema;
+
+  const raw = schema as Record<string, unknown>;
+  const next: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (key === 'additionalProperties') continue;
+    if (key === 'type' && typeof value === 'string') {
+      next.type = geminiType(value);
+    } else if (key === 'properties' && value && typeof value === 'object' && !Array.isArray(value)) {
+      next.properties = Object.fromEntries(
+        Object.entries(value as Record<string, unknown>).map(([prop, propSchema]) => [
+          prop,
+          toGeminiSchema(propSchema),
+        ]),
+      );
+    } else if (key === 'items') {
+      next.items = toGeminiSchema(value);
+    } else if (['required', 'enum', 'description', 'nullable'].includes(key)) {
+      next[key] = value;
+    }
+  }
+  return next;
+}
+
+function geminiType(type: string): string {
+  const normalized = type.toLowerCase();
+  const map: Record<string, string> = {
+    object: 'OBJECT',
+    array: 'ARRAY',
+    string: 'STRING',
+    number: 'NUMBER',
+    integer: 'INTEGER',
+    boolean: 'BOOLEAN',
+  };
+  return map[normalized] ?? type.toUpperCase();
 }

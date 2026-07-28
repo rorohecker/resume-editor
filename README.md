@@ -44,6 +44,9 @@ Open the URL the dev server prints. Pick a template. Start typing.
 
 The key never leaves your browser. The app enforces per-minute and per-day call caps you can adjust.
 
+AI feature behavior, provider notes, and the QA process are documented in
+[guides.md](guides.md) and [docs/AI_GUIDES.md](docs/AI_GUIDES.md).
+
 Where to get a key:
 
 - Claude: https://console.anthropic.com/settings/keys
