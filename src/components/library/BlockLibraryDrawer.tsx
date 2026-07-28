@@ -21,7 +21,7 @@ export function BlockLibraryDrawer() {
   const [query, setQuery] = useState('');
 
   const blocks = useMemo(
-    () => (resume ? listAllBlocks(resume) : { entries: [], bullets: [] }),
+    () => (resume ? listAllBlocks(resume) : { entries: [], bullets: [], classes: [] }),
     [resume],
   );
   const tags = useMemo(() => (resume ? allTagsIn(resume) : []), [resume]);

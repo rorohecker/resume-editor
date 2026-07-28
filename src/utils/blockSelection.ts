@@ -17,8 +17,19 @@ export interface VisibilityMap {
 export interface BlockScore {
   entryId: string;
   bulletId?: string;
+  classId?: string;
   score: number; // higher = more relevant
   reason?: string;
+}
+
+export interface ClassBlock {
+  section: Section;
+  entry: Entry;
+  fieldKey: string;
+  classId: string;
+  label: string;
+  value: string;
+  index: number;
 }
 
 export interface FitResult {
@@ -439,6 +450,20 @@ export function localScoreBlocks(resume: Resume, jobDescription: string): BlockS
           score: bulletScore,
         });
       }
+
+      for (const classBlock of classBlocksForEntry(section, entry)) {
+        const classText = [section.title, entry.title, entry.subtitle, classBlock.label, classBlock.value]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        const classOverlap = tokenOverlap(classText, meaningful);
+        const tagBoost = matchTagBoost(entry.tags, jdLower);
+        scores.push({
+          entryId: entry.id,
+          classId: classBlock.classId,
+          score: Math.min(10, classOverlap * 2.8 + tagBoost),
+        });
+      }
     }
   }
   return scores;
@@ -470,16 +495,19 @@ function recencyScore(entry: Entry): number {
 export function listAllBlocks(resume: Resume): {
   entries: { section: Section; entry: Entry }[];
   bullets: { section: Section; entry: Entry; bullet: Bullet }[];
+  classes: ClassBlock[];
 } {
   const entries: { section: Section; entry: Entry }[] = [];
   const bullets: { section: Section; entry: Entry; bullet: Bullet }[] = [];
+  const classes: ClassBlock[] = [];
   for (const section of resume.sections) {
     for (const entry of section.entries) {
       entries.push({ section, entry });
       for (const bullet of entry.bullets ?? []) bullets.push({ section, entry, bullet });
+      classes.push(...classBlocksForEntry(section, entry));
     }
   }
-  return { entries, bullets };
+  return { entries, bullets, classes };
 }
 
 export function allTagsIn(resume: Resume): string[] {
@@ -491,4 +519,52 @@ export function allTagsIn(resume: Resume): string[] {
     }
   }
   return Array.from(all).sort();
+}
+
+const CLASS_FIELD_LABELS: Record<string, string> = {
+  coursework: 'Coursework',
+  additionalCoursework: 'Additional coursework',
+};
+
+export const CLASS_BLOCK_FIELD_KEYS = Object.keys(CLASS_FIELD_LABELS);
+
+export function classBlocksForEntry(section: Section, entry: Entry): ClassBlock[] {
+  if (section.type !== 'education' && section.type !== 'study-abroad') return [];
+  const out: ClassBlock[] = [];
+  for (const fieldKey of CLASS_BLOCK_FIELD_KEYS) {
+    const value = entry.customFields?.[fieldKey];
+    if (!value?.trim()) continue;
+    splitClassList(value).forEach((item, index) => {
+      out.push({
+        section,
+        entry,
+        fieldKey,
+        classId: classBlockId(entry.id, fieldKey, index, item),
+        label: CLASS_FIELD_LABELS[fieldKey] ?? 'Class',
+        value: item,
+        index,
+      });
+    });
+  }
+  return out;
+}
+
+export function splitClassList(value: string): string[] {
+  return value
+    .split(/[,;\n]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+export function classBlockId(entryId: string, fieldKey: string, index: number, value: string): string {
+  return `class:${entryId}:${fieldKey}:${index}:${slugForClass(value)}`;
+}
+
+function slugForClass(value: string): string {
+  const slug = value
+    .toLowerCase()
+    .replace(/[^a-z0-9+#]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40);
+  return slug || 'class';
 }

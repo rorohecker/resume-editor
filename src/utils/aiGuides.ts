@@ -32,7 +32,7 @@ GOAL: Rank which resume blocks belong on a tailored short resume for THIS job - 
 
 STEPS:
 1. Read the job description. Extract must-have skills, tools, domain, seniority, and impact themes.
-2. Score EVERY inventory entry AND EVERY bullet on a harsh 0-10 scale:
+2. Score EVERY inventory entry, EVERY bullet, and EVERY class/course block on a harsh 0-10 scale:
    - 9-10: Direct evidence for a core job requirement
    - 7-8: Strong supporting evidence
    - 5-6: Weak/tangential overlap
@@ -40,9 +40,12 @@ STEPS:
    - 0: Irrelevant or empty
 3. FORCE discrimination: at least ~40% of bullets must score <=4, and at most ~30% may score >=8. Do not cluster everything at 6-8.
 4. Prefer scoring bullets individually. Still include one entry row per entry (entry score = best overall fit of that role).
-5. Return ONLY a JSON array or an object with a scores array:
-   [{"entryId":"...","score":0-10},{"entryId":"...","bulletId":"...","score":0-10,"reason":"5-12 words"}]
-6. Use exact inventory ids. Numbers only for score.`,
+5. Score duplicate bullets within the same entry lower. Do not let repeated wording/claims crowd out distinct evidence.
+6. Coursework/classes are blocks: score each provided class by exact classId so the app can keep, drop, and reorder them.
+7. The app will prioritize and pack selected content to fill at least one page when enough relevant resume detail exists. Your scores should identify what deserves that space.
+8. Return ONLY a JSON array or an object with a scores array:
+   [{"entryId":"...","bulletId":"","classId":"","score":0-10,"reason":""},{"entryId":"...","bulletId":"...","classId":"","score":0-10,"reason":"5-12 words"},{"entryId":"...","bulletId":"","classId":"...","score":0-10,"reason":"5-12 words"}]
+9. Use exact inventory ids. Numbers only for score.`,
 
   'variant-rewrite': `FEATURE: Keyword rewrite for kept variant bullets
 GOAL: Lightly retarget already-selected bullets toward the job - without lying.
@@ -52,9 +55,11 @@ STEPS:
 2. For each bullet, decide if an honest keyword-aware rewrite helps. If not, skip it.
 3. Keep claims truthful; never add tools/metrics/employers absent from the original.
 4. Keep roughly the same length (<=32 words). Preserve action verb + task + impact.
-5. Return ONLY a JSON array or an object with a rewrites array:
+5. Within the same entry/block, do not create two bullets that communicate the same task, tool, metric, or outcome. Keep the stronger distinct claim and skip the weaker duplicate.
+6. If class/course blocks influenced the variant, keep the existing classes truthful; never invent new classes.
+7. Return ONLY a JSON array or an object with a rewrites array:
    [{"bulletId":"...","rewritten":"...","keywordsUsed":["..."]}]
-6. Use exact bulletId values. Omit bullets you skip.`,
+8. Use exact bulletId values. Omit bullets you skip.`,
 
   'bullet-rewrite': `FEATURE: Single-bullet rewrite options
 GOAL: Offer 3 stronger truthful rewrites of one bullet.
@@ -97,11 +102,12 @@ GOAL: Suggest selective bullet rewrites + skill emphasis + summary + short cover
 STEPS:
 1. Match the job's must-haves to existing resume evidence.
 2. Rewrite ONLY bullets that truly benefit (skip the rest). Return at most 10 bullet rewrites.
-3. Pick emphasizedSkills / deprioritizedSkills only from skills already on the resume (max 8 each).
-4. Write a 2-sentence tailored summary and a ~150-word cover letter - truth only.
-5. Return ONLY JSON:
+3. Do not return multiple rewrites from the same role that say the same thing. Preserve distinct evidence.
+4. Pick emphasizedSkills / deprioritizedSkills only from skills already on the resume (max 8 each).
+5. Write a 2-sentence tailored summary and a ~150-word cover letter - truth only.
+6. Return ONLY JSON:
    {"emphasizedSkills":[],"deprioritizedSkills":[],"bulletRewrites":[{"bulletId":"...","rewritten":"..."}],"summary":"...","coverLetter":"..."}
-6. Use exact bulletId values from the inventory.`,
+7. Use exact bulletId values from the inventory.`,
 
   organize: `FEATURE: Organize / consolidate bullets
 GOAL: Deduplicate and tighten via structured ops - no invented content.

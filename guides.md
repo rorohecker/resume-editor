@@ -8,11 +8,19 @@
    scoring so the output is actually tailored.
 4. Keep the page target tight, usually 1 page.
 5. Run AI scoring if a BYOK key is configured; otherwise the app uses local
-   keyword scoring.
+   semantic marker scoring.
 6. Review the preview. A tailored variant should hide weak or unrelated bullets
    instead of preserving every detail.
-7. Review optional keyword rewrites, then create the variant.
-8. Use **Tailor** for in-place suggestions: selective bullet rewrites, a
+7. If the master resume has enough relevant information, the variant should use
+   enough prioritized blocks to fill at least one page without exceeding the
+   page target.
+8. Treat education classes/coursework as editable blocks: add or modify them in
+   the education entry, then Generate variant can score, reorder, keep, or hide
+   individual classes.
+9. Bullets from the same role/project should not repeat the same information;
+   the scoring and rewrite prompts tell the model to keep distinct claims.
+10. Review optional keyword rewrites, then create the variant.
+11. Use **Tailor** for in-place suggestions: selective bullet rewrites, a
    two-sentence summary, skills to emphasize/deprioritize, and a short cover
    letter draft.
 
@@ -33,8 +41,10 @@ Use this checklist before changing or releasing AI features:
 2. Confirm the prompt uses `buildFeaturePrompt(...)` when it calls BYOK AI.
 3. Confirm JSON features have parser and ID guardrails even when provider schema
    mode is available.
-4. Run `npm test`, `npm run typecheck`, and `npm run build`.
-5. Manually test Generate variant, Tailor, Rewrite, Summary, ATS Keywords,
+4. Confirm Generate variant can still produce semantic scores when provider JSON
+   is malformed or a chunk is missing rows.
+5. Run `npm test`, `npm run typecheck`, and `npm run build`.
+6. Manually test Generate variant, Tailor, Rewrite, Summary, ATS Keywords,
    Organize, Agent, Cover Letter, Import enrichment, and local-only checks.
 
 ## Maintenance Rule

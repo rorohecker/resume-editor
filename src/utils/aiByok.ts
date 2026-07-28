@@ -421,8 +421,8 @@ async function callGemini(
     temperature: 0.2,
   };
   if (options.jsonSchema) {
-    generationConfig.response_mime_type = 'application/json';
-    generationConfig.response_schema = toGeminiSchema(options.jsonSchema.schema);
+    generationConfig.responseMimeType = 'application/json';
+    generationConfig.responseJsonSchema = options.jsonSchema.schema;
   }
   const response = await fetchWithTimeout(providerEndpoint('gemini', path), {
     method: 'POST',
@@ -569,43 +569,4 @@ function supportsOpenAiStructuredOutput(model: string): boolean {
 
 function supportsAnthropicStructuredOutput(model: string): boolean {
   return !/^claude-(?:3|2|instant)/i.test(model);
-}
-
-function toGeminiSchema(schema: unknown): unknown {
-  if (Array.isArray(schema)) return schema.map(toGeminiSchema);
-  if (!schema || typeof schema !== 'object') return schema;
-
-  const raw = schema as Record<string, unknown>;
-  const next: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(raw)) {
-    if (key === 'additionalProperties') continue;
-    if (key === 'type' && typeof value === 'string') {
-      next.type = geminiType(value);
-    } else if (key === 'properties' && value && typeof value === 'object' && !Array.isArray(value)) {
-      next.properties = Object.fromEntries(
-        Object.entries(value as Record<string, unknown>).map(([prop, propSchema]) => [
-          prop,
-          toGeminiSchema(propSchema),
-        ]),
-      );
-    } else if (key === 'items') {
-      next.items = toGeminiSchema(value);
-    } else if (['required', 'enum', 'description', 'nullable'].includes(key)) {
-      next[key] = value;
-    }
-  }
-  return next;
-}
-
-function geminiType(type: string): string {
-  const normalized = type.toLowerCase();
-  const map: Record<string, string> = {
-    object: 'OBJECT',
-    array: 'ARRAY',
-    string: 'STRING',
-    number: 'NUMBER',
-    integer: 'INTEGER',
-    boolean: 'BOOLEAN',
-  };
-  return map[normalized] ?? type.toUpperCase();
 }

@@ -7,16 +7,15 @@ import { useStore } from '@/store';
 import { toast } from '@/hooks/useToast';
 import { loadAiSettings } from '@/utils/aiByok';
 import {
+  buildPrioritizedVariantResume,
+  fitVariantToPages,
   rewriteVariantBulletsWithAi,
   scoreBlocksWithAi,
   type VariantBulletRewrite,
 } from '@/utils/aiVariant';
 import {
-  applyVisibility,
-  fitToPages,
   localScoreBlocks,
   type BlockScore,
-  type VisibilityMap,
 } from '@/utils/blockSelection';
 import { replaceBulletContent, stripHtml } from '@/utils/resumeText';
 import { estimatePageUsage } from '@/utils/styleChecks';
@@ -110,7 +109,7 @@ export function GenerateVariantModal() {
       }
       setScores(computed);
 
-      const fitResult = fitToPages(resume, computed, { maxPages, selectivity: 'strict' });
+      const fitResult = fitVariantToPages(resume, computed, maxPages);
       if (fitResult.includedEntries + fitResult.includedBullets === 0) {
         throw new Error(t('variant.emptyFit'));
       }
@@ -158,18 +157,18 @@ export function GenerateVariantModal() {
 
   const fit = useMemo(() => {
     if (!resume || !scores) return null;
-    return fitToPages(resume, scores, { maxPages, selectivity: 'strict' });
+    return fitVariantToPages(resume, scores, maxPages);
   }, [resume, scores, maxPages]);
 
   const previewResume = useMemo(() => {
     if (!resume) return null;
-    let next = fit ? applyVisibility(resume, fit.visibility) : resume;
+    let next = fit && scores ? buildPrioritizedVariantResume(resume, fit.visibility, scores) : resume;
     for (const rewrite of rewrites) {
       if (!acceptedRewriteIds.has(rewrite.bulletId)) continue;
       next = replaceBulletContent(next, rewrite.bulletId, rewrite.rewritten);
     }
     return next;
-  }, [resume, fit, rewrites, acceptedRewriteIds]);
+  }, [resume, fit, scores, rewrites, acceptedRewriteIds]);
 
   const previewUsage = previewResume ? estimatePageUsage(previewResume) : 0;
 
@@ -184,9 +183,8 @@ export function GenerateVariantModal() {
 
   const create = () => {
     if (!resume || !fit || !previewResume) return;
-    const baseVisibility: VisibilityMap = fit.visibility;
-    // Apply visibility from the scored fit, then keyword rewrites the user accepted.
-    let next = applyVisibility(resume, baseVisibility);
+    // Apply visibility and priority ordering from the scored fit, then keyword rewrites the user accepted.
+    let next = scores ? buildPrioritizedVariantResume(resume, fit.visibility, scores) : previewResume;
     for (const rewrite of rewrites) {
       if (!acceptedRewriteIds.has(rewrite.bulletId)) continue;
       next = replaceBulletContent(next, rewrite.bulletId, rewrite.rewritten);

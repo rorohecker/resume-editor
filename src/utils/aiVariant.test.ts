@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { getTemplateDemoResume } from '@/components/templates/templateDemos';
 import { makeId } from '@/utils/id';
-import { calibrateAiBlockScores, parseLooseJsonArray } from './aiVariant';
-import { fitToPages, listAllBlocks, type BlockScore } from './blockSelection';
+import {
+  buildPrioritizedVariantResume,
+  calibrateAiBlockScores,
+  parseLooseJsonArray,
+} from './aiVariant';
+import { classBlocksForEntry, fitToPages, listAllBlocks, type BlockScore } from './blockSelection';
 import type { Resume } from '@/types';
 
 function resumeWithExtraDetail(): Resume {
@@ -106,5 +110,73 @@ describe('parseLooseJsonArray', () => {
       { entry_id: 'entry-1', score: '7' },
       { entry_id: 'entry-1', bullet_id: 'bullet-1', relevanceScore: 9 },
     ]);
+  });
+});
+
+describe('buildPrioritizedVariantResume', () => {
+  it('treats classes as scored blocks and rewrites coursework order for the variant', () => {
+    const resume = getTemplateDemoResume('general');
+    const education = resume.sections.find((section) => section.type === 'education')!;
+    const entry = {
+      ...education.entries[0]!,
+      id: 'edu-1',
+      customFields: {
+        coursework: 'Art History, SQL Analytics, Data Mining, Intro Biology',
+      },
+    };
+    const section = { ...education, entries: [entry] };
+    const classScores = classBlocksForEntry(section, entry).map((block) => ({
+      entryId: entry.id,
+      classId: block.classId,
+      score: block.value.includes('SQL') ? 9 : block.value.includes('Data') ? 8 : 1,
+    }));
+
+    const variant = buildPrioritizedVariantResume(
+      { ...resume, sections: [section] },
+      { entries: { [entry.id]: true }, bullets: {} },
+      [{ entryId: entry.id, score: 8 }, ...classScores],
+    );
+
+    expect(variant.sections[0]?.entries[0]?.customFields?.coursework).toBe(
+      'SQL Analytics, Data Mining',
+    );
+  });
+
+  it('suppresses duplicate visible bullets inside the same entry', () => {
+    const resume = getTemplateDemoResume('general');
+    const section = resume.sections.find((item) => item.type === 'experience')!;
+    const entry = {
+      ...section.entries[0]!,
+      id: 'entry-dup',
+      bullets: [
+        {
+          id: 'bullet-strong',
+          content: 'Built SQL dashboards that reduced weekly reporting time by 40%.',
+          visible: true,
+          order: 0,
+        },
+        {
+          id: 'bullet-duplicate',
+          content: 'Created SQL dashboards to reduce weekly reporting time for the team.',
+          visible: true,
+          order: 1,
+        },
+      ],
+    };
+    const variant = buildPrioritizedVariantResume(
+      { ...resume, sections: [{ ...section, entries: [entry] }] },
+      {
+        entries: { [entry.id]: true },
+        bullets: { 'bullet-strong': true, 'bullet-duplicate': true },
+      },
+      [
+        { entryId: entry.id, bulletId: 'bullet-strong', score: 9 },
+        { entryId: entry.id, bulletId: 'bullet-duplicate', score: 8 },
+      ],
+    );
+
+    const bullets = variant.sections[0]?.entries[0]?.bullets ?? [];
+    expect(bullets.find((bullet) => bullet.id === 'bullet-strong')?.visible).toBe(true);
+    expect(bullets.find((bullet) => bullet.id === 'bullet-duplicate')?.visible).toBe(false);
   });
 });

@@ -1,20 +1,35 @@
-import type { Resume } from '@/types';
 import { generateAiText, type AiSettings, type JsonSchema } from './aiByok';
-import { listAllBlocks, localScoreBlocks, type BlockScore } from './blockSelection';
+import {
+  applyVisibility,
+  classBlocksForEntry,
+  fitToPages,
+  listAllBlocks,
+  localScoreBlocks,
+  type BlockScore,
+  type FitResult,
+  type VisibilityMap,
+} from './blockSelection';
 import { buildFeaturePrompt } from './aiGuides';
 import { stripHtml } from './resumeText';
+import { semanticMarkersForText, semanticScoreBlocks } from './semanticScoring';
+import { estimatePageUsage } from './styleChecks';
+import type { Resume } from '@/types';
 
 const SCORE_TASK = `You score each resume block for relevance to a job description.
 Return ONLY JSON (no commentary, no fences). Prefer this object shape:
 { "scores": [
-  { "entryId": "...", "bulletId": "", "score": 0-10, "reason": "" },
-  { "entryId": "...", "bulletId": "...", "score": 0-10, "reason": "..." }
+  { "entryId": "...", "bulletId": "", "classId": "", "score": 0-10, "reason": "" },
+  { "entryId": "...", "bulletId": "...", "classId": "", "score": 0-10, "reason": "..." },
+  { "entryId": "...", "bulletId": "", "classId": "...", "score": 0-10, "reason": "..." }
 ] }
 - Score 10 = highly relevant; 0 = irrelevant.
 - Include EVERY entry and EVERY bullet from the inventory (bullet rows must include bulletId).
+- Include EVERY class/course block from the inventory (class rows must include classId).
 - Prefer scoring bullets individually; still include an entry row for each entry.
+- If two bullets in the same entry say the same thing, score the weaker duplicate lower.
 - "reason" is optional, 5-12 words for bullets if you want to explain the score.
-- For entry-only rows, set "bulletId" and "reason" to empty strings.
+- For entry-only rows, set "bulletId", "classId", and "reason" to empty strings.
+- For class/course rows, set "bulletId" to an empty string and use the exact classId.
 - Do not invent ids; use the exact ids provided.
 - Scores must be numbers, not strings.`;
 
@@ -29,10 +44,44 @@ Rules:
 - Weave in relevant keywords from the job description only when they honestly fit the original work.
 - Keep action verb + task + impact; roughly the same length (at most ~32 words).
 - Skip a bullet entirely if no honest keyword-aware rewrite helps.
-- Use the exact bulletId values provided.`;
+- Use the exact bulletId values provided.
+- Within the same entry/block, do not produce two bullets that say the same thing; keep the stronger claim distinct or skip the weaker duplicate.
+- If a class/course block is relevant, keep or reorder it; never invent classes that were not provided.`;
 
 const AI_HIGH_SCORE = 8;
 const AI_LOW_SCORE = 4;
+const SCORE_CHUNK_ROW_LIMIT = 32;
+
+type ListedBlocks = ReturnType<typeof listAllBlocks>;
+
+interface ScoreEntryItem {
+  entryId: string;
+  section: string;
+  title?: string;
+  subtitle?: string;
+  tags?: string[];
+}
+
+interface ScoreBulletItem {
+  entryId: string;
+  bulletId: string;
+  content: string;
+  tags?: string[];
+}
+
+interface ScoreClassItem {
+  entryId: string;
+  classId: string;
+  fieldKey: string;
+  label: string;
+  value: string;
+}
+
+interface ScoreInventory {
+  entries: ScoreEntryItem[];
+  bullets: ScoreBulletItem[];
+  classes: ScoreClassItem[];
+}
 
 const SCORE_SCHEMA: JsonSchema = {
   type: 'object',
@@ -44,10 +93,11 @@ const SCORE_SCHEMA: JsonSchema = {
         properties: {
           entryId: { type: 'string' },
           bulletId: { type: 'string' },
+          classId: { type: 'string' },
           score: { type: 'number' },
           reason: { type: 'string' },
         },
-        required: ['entryId', 'bulletId', 'score', 'reason'],
+        required: ['entryId', 'bulletId', 'classId', 'score', 'reason'],
         additionalProperties: false,
       },
     },
@@ -97,107 +147,71 @@ export async function scoreBlocksWithAi(
     throw new Error('This resume has no entries or bullets to score.');
   }
 
-  const inventory = {
-    entries: blocks.entries.map(({ section, entry }) => ({
-      entryId: entry.id,
-      section: section.title,
-      title: entry.title,
-      subtitle: entry.subtitle,
-      tags: entry.tags,
-    })),
-    bullets: blocks.bullets.map(({ entry, bullet }) => ({
-      entryId: entry.id,
-      bulletId: bullet.id,
-      content: stripHtml(bullet.content),
-      tags: bullet.tags,
-    })),
-  };
+  const semanticScores = semanticScoreBlocks(resume, jobDescription);
+  const semanticMarkers = semanticMarkersForText(jobDescription);
+  const inventories = buildScoreInventories(blocks);
 
-  const prompt = buildFeaturePrompt(
-    'variant-score',
-    SCORE_TASK,
-    `--- JOB DESCRIPTION ---\n${jobDescription}`,
-    `--- BLOCK INVENTORY ---\n${JSON.stringify(inventory, null, 2)}`,
-  );
-
-  // Large JSON inventories need headroom, especially on reasoning models.
-  let raw: string;
-  try {
-    raw = await generateAiText(settings, prompt, 4500, {
-      cache: false,
-      jsonSchema: { name: 'resume_variant_scores', schema: SCORE_SCHEMA },
-    });
-  } catch (error) {
-    if (!isStructuredOutputCompatibilityError(error)) throw error;
-    raw = await generateAiText(settings, prompt, 4500, { cache: false });
-  }
-  let parsed = parseLooseJsonArray(raw);
-  if (!parsed) {
-    raw = await generateAiText(settings, retryScorePrompt(jobDescription, inventory), 4500, {
-      cache: false,
-    });
-    parsed = parseLooseJsonArray(raw);
-  }
-  if (!parsed) {
-    throw new Error(
-      'Provider returned malformed scoring JSON twice. Local scoring was used for this run.',
+  const parsedRows: unknown[] = [];
+  for (let index = 0; index < inventories.length; index += 1) {
+    const parsed = await scoreInventoryChunkWithAi(
+      settings,
+      jobDescription,
+      inventories[index]!,
+      semanticMarkers,
+      index + 1,
+      inventories.length,
     );
+    if (parsed) parsedRows.push(...parsed);
+  }
+
+  if (parsedRows.length === 0) {
+    const fallback = semanticScores.length > 0 ? semanticScores : localScoreBlocks(resume, jobDescription);
+    return calibrateAiBlockScores(fallback, resume, jobDescription);
   }
 
   const knownEntries = new Set(blocks.entries.map(({ entry }) => entry.id));
   const knownBullets = new Set(blocks.bullets.map(({ bullet }) => bullet.id));
+  const knownClasses = new Map(blocks.classes.map((item) => [item.classId, item]));
   const bulletParent = new Map(blocks.bullets.map(({ entry, bullet }) => [bullet.id, entry.id]));
 
   const scores: BlockScore[] = [];
-  for (const item of parsed) {
+  for (const item of parsedRows) {
     if (!item || typeof item !== 'object') continue;
     const row = item as Record<string, unknown>;
     const bulletIdRaw = readString(row, 'bulletId', 'bullet_id', 'bulletID', 'bullet');
     const bulletId = bulletIdRaw && knownBullets.has(bulletIdRaw) ? bulletIdRaw : undefined;
+    const classIdRaw = readString(row, 'classId', 'class_id', 'courseId', 'course_id', 'class');
+    const classBlock = classIdRaw ? knownClasses.get(classIdRaw) : undefined;
+    const classId = classBlock?.classId;
+    const explicitEntryId = readString(row, 'entryId', 'entry_id', 'entryID', 'entry', 'blockId', 'block_id');
     const entryId =
-      readString(row, 'entryId', 'entry_id', 'entryID', 'entry', 'blockId', 'block_id') ||
-      (bulletId ? (bulletParent.get(bulletId) ?? '') : '');
+      (bulletId ? (bulletParent.get(bulletId) ?? '') : '') ||
+      classBlock?.entry.id ||
+      explicitEntryId ||
+      '';
     if (!entryId || !knownEntries.has(entryId)) continue;
     const scoreNum = readNumber(row, 'score', 'relevanceScore', 'relevance_score', 'rating', 'fit', 'fitScore');
     if (!Number.isFinite(scoreNum)) continue;
     scores.push({
       entryId,
       bulletId,
+      classId,
       score: Math.max(0, Math.min(10, scoreNum)),
       reason: readString(row, 'reason', 'rationale', 'explanation') || undefined,
     });
   }
 
   if (scores.length === 0) {
-    throw new Error('AI scoring returned no usable block scores. Try again or use local scoring.');
+    const fallback = semanticScores.length > 0 ? semanticScores : localScoreBlocks(resume, jobDescription);
+    return calibrateAiBlockScores(fallback, resume, jobDescription);
   }
 
-  // If the model skipped bullet rows, fill gaps with a mild default so packing
-  // still has something to select under each scored entry.
-  if (blocks.bullets.length > 0) {
-    const scoredBulletIds = new Set(scores.map((s) => s.bulletId).filter(Boolean));
-    const entryScore = new Map<string, number>();
-    const localScore = new Map<string, number>();
-    for (const score of localScoreBlocks(resume, jobDescription)) {
-      if (score.bulletId) localScore.set(score.bulletId, score.score);
-    }
-    for (const score of scores) {
-      if (!score.bulletId) entryScore.set(score.entryId, score.score);
-    }
-    for (const { entry, bullet } of blocks.bullets) {
-      if (scoredBulletIds.has(bullet.id)) continue;
-      const base = entryScore.get(entry.id) ?? 3;
-      const local = localScore.get(bullet.id) ?? 3;
-      scores.push({
-        entryId: entry.id,
-        bulletId: bullet.id,
-        score: Math.max(1, Math.min(6, base * 0.45 + local * 0.55)),
-        reason: 'Conservative fill from local relevance',
-      });
-    }
-  }
-
-  return calibrateAiBlockScores(scores, resume, jobDescription);
+  const uniqueScores = dedupeScores(scores);
+  return calibrateAiBlockScores(
+    fuseScoresWithSemantic(fillMissingScores(uniqueScores, semanticScores), semanticScores),
+    resume,
+    jobDescription,
+  );
 }
 
 /** Rewrite included bullets with job keywords. Only touches the provided bullet IDs. */
@@ -269,22 +283,416 @@ export async function rewriteVariantBulletsWithAi(
   return out;
 }
 
-function retryScorePrompt(jobDescription: string, inventory: unknown): string {
+export function fitVariantToPages(
+  resume: Resume,
+  scores: BlockScore[],
+  maxPages: number,
+): FitResult {
+  const primary = fitToPages(resume, scores, {
+    maxPages,
+    targetUsage: 94,
+    selectivity: 'balanced',
+  });
+  const availableUsage = estimatePageUsage(applyVisibility(resume, allVisibleMap(resume)));
+  const minimumUsefulPage = 88;
+  if (primary.estimatedUsage >= minimumUsefulPage || availableUsage < minimumUsefulPage) {
+    return primary;
+  }
+
+  const generous = fitToPages(resume, scores, {
+    maxPages,
+    targetUsage: 98,
+    selectivity: 'generous',
+    minScore: 0,
+    maxBulletsPerEntry: 8,
+  });
+
+  return generous.estimatedUsage > primary.estimatedUsage ? generous : primary;
+}
+
+export function buildPrioritizedVariantResume(
+  resume: Resume,
+  visibility: VisibilityMap,
+  scores: BlockScore[],
+): Resume {
+  const visibleResume = applyVisibility(resume, visibility);
+  const priority = buildPriorityLookup(scores);
+
+  const sections = visibleResume.sections.map((section) => {
+    const entries = section.entries.map((entry) => {
+      const withClasses = prioritizeClassFields(section, entry, priority.classById);
+      const bullets = prioritizeAndDedupeBullets(withClasses.bullets ?? [], priority.bulletById);
+      return { ...withClasses, bullets };
+    });
+    return {
+      ...section,
+      entries: [...entries].sort((a, b) => {
+        const av = a.visible !== false ? 1 : 0;
+        const bv = b.visible !== false ? 1 : 0;
+        return bv - av || priority.entryScore(b.id) - priority.entryScore(a.id);
+      }),
+    };
+  });
+
+  return {
+    ...visibleResume,
+    sections: [...sections].sort((a, b) => {
+      const av = a.visible && sectionHasVariantContent(a) ? 1 : 0;
+      const bv = b.visible && sectionHasVariantContent(b) ? 1 : 0;
+      if (av !== bv) return bv - av;
+      if (a.type === 'summary' && b.type !== 'summary') return -1;
+      if (b.type === 'summary' && a.type !== 'summary') return 1;
+      return sectionScore(b, priority) - sectionScore(a, priority) || a.order - b.order;
+    }).map((section, order) => ({ ...section, order })),
+  };
+}
+
+function allVisibleMap(resume: Resume): VisibilityMap {
+  const entries: Record<string, boolean> = {};
+  const bullets: Record<string, boolean> = {};
+  for (const section of resume.sections) {
+    for (const entry of section.entries) {
+      entries[entry.id] = true;
+      for (const bullet of entry.bullets ?? []) bullets[bullet.id] = true;
+    }
+  }
+  return { entries, bullets };
+}
+
+function buildPriorityLookup(scores: BlockScore[]): {
+  bulletById: Map<string, number>;
+  classById: Map<string, number>;
+  entryScore: (entryId: string) => number;
+} {
+  const entryById = new Map<string, number>();
+  const bulletById = new Map<string, number>();
+  const classById = new Map<string, number>();
+
+  for (const score of scores) {
+    const current = entryById.get(score.entryId) ?? 0;
+    if (score.score > current) entryById.set(score.entryId, score.score);
+    if (score.bulletId) {
+      const prev = bulletById.get(score.bulletId) ?? 0;
+      if (score.score > prev) bulletById.set(score.bulletId, score.score);
+    }
+    if (score.classId) {
+      const prev = classById.get(score.classId) ?? 0;
+      if (score.score > prev) classById.set(score.classId, score.score);
+    }
+  }
+
+  return {
+    bulletById,
+    classById,
+    entryScore: (entryId: string) => entryById.get(entryId) ?? 0,
+  };
+}
+
+function prioritizeAndDedupeBullets(
+  bullets: NonNullable<Resume['sections'][number]['entries'][number]['bullets']>,
+  bulletById: Map<string, number>,
+) {
+  const sorted = [...bullets].sort((a, b) => {
+    const av = a.visible ? 1 : 0;
+    const bv = b.visible ? 1 : 0;
+    return bv - av || (bulletById.get(b.id) ?? 0) - (bulletById.get(a.id) ?? 0) || a.order - b.order;
+  });
+  const keptVisible: string[] = [];
+  return sorted.map((bullet, order) => {
+    const plain = stripHtml(bullet.content);
+    const duplicate = bullet.visible && keptVisible.some((kept) => isDuplicateBullet(plain, kept));
+    if (bullet.visible && !duplicate) keptVisible.push(plain);
+    return {
+      ...bullet,
+      visible: bullet.visible && !duplicate,
+      order,
+    };
+  });
+}
+
+function prioritizeClassFields(
+  section: Resume['sections'][number],
+  entry: Resume['sections'][number]['entries'][number],
+  classById: Map<string, number>,
+) {
+  const classBlocks = classBlocksForEntry(section, entry);
+  if (classBlocks.length === 0) return entry;
+
+  const customFields = { ...(entry.customFields ?? {}) };
+  for (const fieldKey of new Set(classBlocks.map((item) => item.fieldKey))) {
+    const fieldBlocks = classBlocks.filter((item) => item.fieldKey === fieldKey);
+    const scored = fieldBlocks
+      .map((item) => ({ ...item, score: classById.get(item.classId) ?? 0 }))
+      .sort((a, b) => b.score - a.score || a.index - b.index);
+    const max = scored[0]?.score ?? 0;
+    if (max <= 0) continue;
+    const floor = Math.max(3.5, Math.min(5.5, max * 0.55));
+    const selected = scored.filter((item) => item.score >= floor).slice(0, 10);
+    const fallback = scored.slice(0, Math.min(3, scored.length));
+    const next = (selected.length > 0 ? selected : fallback).map((item) => item.value);
+    if (next.length > 0) customFields[fieldKey] = next.join(', ');
+  }
+  return { ...entry, customFields };
+}
+
+function sectionHasVariantContent(section: Resume['sections'][number]): boolean {
+  return section.entries.some((entry) => {
+    if (entry.visible === false) return false;
+    return Boolean(
+      entry.title?.trim() ||
+        entry.subtitle?.trim() ||
+        entry.location?.trim() ||
+        entry.bullets?.some((bullet) => bullet.visible && stripHtml(bullet.content)) ||
+        Object.values(entry.customFields ?? {}).some((value) => value.trim()),
+    );
+  });
+}
+
+function sectionScore(
+  section: Resume['sections'][number],
+  priority: ReturnType<typeof buildPriorityLookup>,
+): number {
+  let max = 0;
+  for (const entry of section.entries) {
+    if (entry.visible === false) continue;
+    max = Math.max(max, priority.entryScore(entry.id));
+    for (const bullet of entry.bullets ?? []) {
+      if (bullet.visible) max = Math.max(max, priority.bulletById.get(bullet.id) ?? 0);
+    }
+    for (const classBlock of classBlocksForEntry(section, entry)) {
+      max = Math.max(max, priority.classById.get(classBlock.classId) ?? 0);
+    }
+  }
+  return max;
+}
+
+function isDuplicateBullet(a: string, b: string): boolean {
+  const aTokens = bulletTokens(a);
+  const bTokens = bulletTokens(b);
+  if (aTokens.size < 4 || bTokens.size < 4) return false;
+  let overlap = 0;
+  for (const token of aTokens) if (bTokens.has(token)) overlap += 1;
+  const jaccard = overlap / new Set([...aTokens, ...bTokens]).size;
+  return overlap >= 5 && jaccard >= 0.62;
+}
+
+function bulletTokens(text: string): Set<string> {
+  const stop = new Set([
+    'the',
+    'and',
+    'for',
+    'with',
+    'from',
+    'that',
+    'this',
+    'into',
+    'while',
+    'using',
+    'used',
+    'across',
+    'team',
+    'teams',
+  ]);
+  return new Set(
+    text
+      .toLowerCase()
+      .replace(/[^a-z0-9+#%\s]/g, ' ')
+      .split(/\s+/)
+      .map(normalizeBulletToken)
+      .filter((token) => token.length > 2 && !stop.has(token)),
+  );
+}
+
+function normalizeBulletToken(token: string): string {
+  if (token.length > 5 && token.endsWith('ing')) return token.slice(0, -3);
+  if (token.length > 4 && token.endsWith('ed')) {
+    const stem = token.slice(0, -2);
+    return stem.endsWith('c') ? `${stem}e` : stem;
+  }
+  if (token.length > 4 && token.endsWith('es')) return token.slice(0, -2);
+  if (token.length > 4 && token.endsWith('s')) return token.slice(0, -1);
+  return token;
+}
+
+function buildScoreInventories(blocks: ListedBlocks): ScoreInventory[] {
+  const chunks: ScoreInventory[] = [];
+  let current: ScoreInventory = { entries: [], bullets: [], classes: [] };
+  const bulletsByEntry = new Map<string, ScoreBulletItem[]>();
+  const classesByEntry = new Map<string, ScoreClassItem[]>();
+
+  for (const { entry, bullet } of blocks.bullets) {
+    const next = bulletsByEntry.get(entry.id) ?? [];
+    next.push({
+      entryId: entry.id,
+      bulletId: bullet.id,
+      content: stripHtml(bullet.content),
+      tags: bullet.tags,
+    });
+    bulletsByEntry.set(entry.id, next);
+  }
+  for (const item of blocks.classes) {
+    const next = classesByEntry.get(item.entry.id) ?? [];
+    next.push({
+      entryId: item.entry.id,
+      classId: item.classId,
+      fieldKey: item.fieldKey,
+      label: item.label,
+      value: item.value,
+    });
+    classesByEntry.set(item.entry.id, next);
+  }
+
+  const flush = () => {
+    if (current.entries.length === 0 && current.bullets.length === 0 && current.classes.length === 0) return;
+    chunks.push(current);
+    current = { entries: [], bullets: [], classes: [] };
+  };
+
+  for (const { section, entry } of blocks.entries) {
+    const entryItem: ScoreEntryItem = {
+      entryId: entry.id,
+      section: section.title,
+      title: entry.title,
+      subtitle: entry.subtitle,
+      tags: entry.tags,
+    };
+    const bulletItems = bulletsByEntry.get(entry.id) ?? [];
+    const classItems = classesByEntry.get(entry.id) ?? [];
+    const rowCount = 1 + bulletItems.length + classItems.length;
+
+    if (rowCount > SCORE_CHUNK_ROW_LIMIT) {
+      flush();
+      const bulletLimit = Math.max(1, SCORE_CHUNK_ROW_LIMIT - 1);
+      const childItems = [
+        ...bulletItems.map((item) => ({ kind: 'bullet' as const, item })),
+        ...classItems.map((item) => ({ kind: 'class' as const, item })),
+      ];
+      for (let offset = 0; offset < childItems.length; offset += bulletLimit) {
+        const slice = childItems.slice(offset, offset + bulletLimit);
+        const sliceBullets: ScoreBulletItem[] = [];
+        const sliceClasses: ScoreClassItem[] = [];
+        for (const child of slice) {
+          if (child.kind === 'bullet') sliceBullets.push(child.item);
+          else sliceClasses.push(child.item);
+        }
+        chunks.push({
+          entries: [entryItem],
+          bullets: sliceBullets,
+          classes: sliceClasses,
+        });
+      }
+      if (childItems.length === 0) chunks.push({ entries: [entryItem], bullets: [], classes: [] });
+      continue;
+    }
+
+    const currentRows = current.entries.length + current.bullets.length + current.classes.length;
+    if (currentRows > 0 && currentRows + rowCount > SCORE_CHUNK_ROW_LIMIT) flush();
+    current.entries.push(entryItem);
+    current.bullets.push(...bulletItems);
+    current.classes.push(...classItems);
+  }
+
+  flush();
+  return chunks.length > 0 ? chunks : [{ entries: [], bullets: [], classes: [] }];
+}
+
+async function scoreInventoryChunkWithAi(
+  settings: AiSettings,
+  jobDescription: string,
+  inventory: ScoreInventory,
+  semanticMarkers: string[],
+  chunkIndex: number,
+  chunkCount: number,
+): Promise<unknown[] | null> {
+  const prompt = buildFeaturePrompt(
+    'variant-score',
+    SCORE_TASK,
+    `--- JOB DESCRIPTION ---\n${jobDescription}`,
+    `--- LOCAL SEMANTIC MARKERS ---\n${JSON.stringify(semanticMarkers)}`,
+    `--- BLOCK INVENTORY CHUNK ${chunkIndex} OF ${chunkCount} ---\n${JSON.stringify(inventory, null, 2)}`,
+  );
+
+  let raw: string;
+  try {
+    raw = await generateAiText(settings, prompt, 3200, {
+      cache: false,
+      jsonSchema: { name: 'resume_variant_scores', schema: SCORE_SCHEMA },
+    });
+  } catch (error) {
+    if (!isStructuredOutputCompatibilityError(error)) throw error;
+    raw = await generateAiText(settings, prompt, 3200, { cache: false });
+  }
+
+  let parsed = parseLooseJsonArray(raw);
+  if (!parsed) {
+    raw = await generateAiText(
+      settings,
+      retryScorePrompt(jobDescription, inventory, semanticMarkers),
+      3200,
+      { cache: false },
+    );
+    parsed = parseLooseJsonArray(raw);
+  }
+  return parsed;
+}
+
+function dedupeScores(scores: BlockScore[]): BlockScore[] {
+  const byKey = new Map<string, BlockScore>();
+  for (const score of scores) {
+    const key = scoreKey(score);
+    const existing = byKey.get(key);
+    if (!existing || score.score > existing.score) byKey.set(key, score);
+  }
+  return [...byKey.values()];
+}
+
+function fillMissingScores(scores: BlockScore[], fallbackScores: BlockScore[]): BlockScore[] {
+  const out = [...scores];
+  const seen = new Set(out.map(scoreKey));
+  for (const fallback of fallbackScores) {
+    const key = scoreKey(fallback);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      ...fallback,
+      score: Math.min(fallback.bulletId ? 6.5 : 7, Math.max(1, fallback.score)),
+      reason: fallback.reason ?? 'Semantic fallback score',
+    });
+  }
+  return out;
+}
+
+function fuseScoresWithSemantic(scores: BlockScore[], semanticScores: BlockScore[]): BlockScore[] {
+  const semanticByKey = new Map(semanticScores.map((score) => [scoreKey(score), score]));
+  return scores.map((score) => {
+    const semantic = semanticByKey.get(scoreKey(score));
+    if (!semantic) return { ...score, score: clampScore(score.score) };
+    return {
+      ...score,
+      score: clampScore(score.score * 0.74 + semantic.score * 0.26),
+      reason: score.reason ?? semantic.reason,
+    };
+  });
+}
+
+function retryScorePrompt(jobDescription: string, inventory: unknown, semanticMarkers: string[]): string {
   return buildFeaturePrompt(
     'variant-score',
     'Your last scoring response could not be parsed by JSON.parse.',
     'Return ONLY compact valid JSON now. No markdown, no comments, no prose.',
-    'Required shape: {"scores":[{"entryId":"...","bulletId":"","score":0,"reason":""}]}',
-    'For entry rows, use empty strings for bulletId and reason.',
+    'Required shape: {"scores":[{"entryId":"...","bulletId":"","classId":"","score":0,"reason":""}]}',
+    'For entry rows, use empty strings for bulletId, classId, and reason.',
     'For bullet rows, use the exact bulletId from the inventory.',
+    'For class/course rows, use the exact classId from the inventory.',
     `--- JOB DESCRIPTION ---\n${jobDescription}`,
+    `--- LOCAL SEMANTIC MARKERS ---\n${JSON.stringify(semanticMarkers)}`,
     `--- BLOCK INVENTORY ---\n${JSON.stringify(inventory, null, 2)}`,
   );
 }
 
 function isStructuredOutputCompatibilityError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return /json_schema|response_schema|output_config|structured output|unsupported.*schema|invalid.*schema|invalid.*parameter/i.test(
+  return /json_schema|response_schema|responseJsonSchema|responseMimeType|output_config|structured output|unsupported.*schema|invalid.*schema|invalid.*parameter|unknown name.*response/i.test(
     message,
   );
 }
@@ -351,6 +759,7 @@ function toBlockScore(score: BlockScore & { index?: number; sortScore?: number }
   return {
     entryId: score.entryId,
     bulletId: score.bulletId,
+    classId: score.classId,
     score: score.score,
     reason: score.reason,
   };
@@ -372,7 +781,8 @@ function scoreForRank(rank: number, total: number): number {
   return Math.max(0, Math.min(10, Math.round(score * 10) / 10));
 }
 
-function scoreKey(score: Pick<BlockScore, 'entryId' | 'bulletId'>): string {
+function scoreKey(score: Pick<BlockScore, 'entryId' | 'bulletId' | 'classId'>): string {
+  if (score.classId) return `${score.entryId}:class:${score.classId}`;
   return score.bulletId ? `${score.entryId}:${score.bulletId}` : score.entryId;
 }
 
@@ -512,6 +922,8 @@ function looksLikeResultRow(value: unknown): boolean {
     'entryId' in row ||
     'entry_id' in row ||
     'bulletId' in row ||
-    'bullet_id' in row
+    'bullet_id' in row ||
+    'classId' in row ||
+    'class_id' in row
   );
 }

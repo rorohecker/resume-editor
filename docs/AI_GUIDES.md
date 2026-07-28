@@ -12,7 +12,7 @@ Gemini receive the same universal rules plus feature-specific steps.
 | --- | --- | --- | --- |
 | Claude | `claude-haiku-4-5` | Fast, low-cost default for resume edits. `claude-sonnet-5`, `claude-opus-5`, `claude-fable-5`, and custom IDs remain available. | Claude Opus/Sonnet/Fable 5 use adaptive thinking; Claude 4.7+ rejects non-default `temperature`, `top_p`, and `top_k`, so the app omits those parameters. Current Claude models support `output_config.format` JSON schemas. |
 | OpenAI | `gpt-5.6-luna` | Cost-sensitive default for high-volume BYOK calls. `gpt-5.6-terra` and `gpt-5.6` remain available. | Uses the Responses API. GPT-5.6 models support reasoning effort, and structured outputs use `text.format` with `json_schema`. |
-| Gemini | `gemini-3.6-flash` | Current stable Gemini 3 model balancing speed and quality. `gemini-3.5-flash`, `gemini-3.5-flash-lite`, `gemini-2.5-flash`, `gemini-2.5-pro`, and custom IDs remain available. | Uses `generateContent`. Google recommends Interactions API for newest features, but `generateContent` still documents JSON schemas through `generationConfig.response_mime_type` and `response_schema`. |
+| Gemini | `gemini-3.6-flash` | Current stable Gemini 3 model balancing speed and quality. `gemini-3.5-flash`, `gemini-3.5-flash-lite`, `gemini-2.5-flash`, `gemini-2.5-pro`, and custom IDs remain available. | Uses `generateContent`. The REST API documents JSON output through `generationConfig.responseMimeType` plus `responseJsonSchema` or `responseSchema`. |
 
 Official docs:
 
@@ -22,7 +22,7 @@ Official docs:
 - Claude Messages API: https://docs.anthropic.com/en/api/prompt-validation
 - Claude structured outputs: https://platform.claude.com/docs/en/build-with-claude/structured-outputs
 - Gemini models: https://ai.google.dev/gemini-api/docs/models
-- Gemini structured outputs: https://ai.google.dev/gemini-api/docs/generate-content/structured-output
+- Gemini structured outputs: https://ai.google.dev/gemini-api/docs/structured-output
 
 ## Universal Rules
 
@@ -46,7 +46,7 @@ All model prompts must include these rules:
 2. Use provider-native structured output when safe:
    - OpenAI: `text.format` with `json_schema` for GPT-5/GPT-4o families.
    - Claude: `output_config.format` with `json_schema` for Claude 4.5+.
-   - Gemini: `generationConfig.response_mime_type` and `response_schema`.
+   - Gemini: `generationConfig.responseMimeType` and `responseJsonSchema`.
 3. Keep plain-text prompts for features that intentionally return prose.
 4. Always keep local fallbacks for non-network features.
 5. Keep parser/validator guardrails even when schema mode is enabled.
@@ -57,8 +57,8 @@ All model prompts must include these rules:
 
 | Feature | UI entry | Code entry | Output type | Reliability guardrails |
 | --- | --- | --- | --- | --- |
-| Generate variant - AI scoring | Generate variant for role | `scoreBlocksWithAi` | JSON object/array of entry and bullet scores | Provider JSON schema, ID validation, conservative bullet fills, clustered-score calibration, strict page packing. |
-| Generate variant - keyword rewrite | Generate variant for role | `rewriteVariantBulletsWithAi` | JSON rewrites | Provider JSON schema, known bullet IDs only, unchanged text ignored, rewrite review before create. |
+| Generate variant - AI scoring | Generate variant for role | `scoreBlocksWithAi` | JSON object/array of entry, bullet, and class/course scores | Provider JSON schema, chunked inventories, semantic marker fallback, ID validation, class block scoring, duplicate-bullet pressure, clustered-score calibration, page-fill packing. |
+| Generate variant - keyword rewrite | Generate variant for role | `rewriteVariantBulletsWithAi` | JSON rewrites | Provider JSON schema, known bullet IDs only, unchanged text ignored, duplicate rewrite avoidance, rewrite review before create. |
 | Tailor to job | Tailor modal | `generateTailoring` | JSON outcome | Provider JSON schema, max 10 rewrites, fake-skill filtering, duplicate/unchanged rewrite removal, summary/cover length caps. |
 | Bullet rewrite | AI drawer, Bulk edit | `promptForRewrite` | 3 plain text lines | Shared guide prompt, local rewrite fallback, UI keeps first 3 clean options. |
 | Summary | AI drawer | `promptForSummary` | Plain text | Shared guide prompt, local summary fallback, insert via `upsertSummarySection`. |
@@ -85,26 +85,54 @@ User steps:
 3. Paste a full job description. This is required for AI and local scoring.
 4. Keep target pages tight, usually 1 page.
 5. Run scoring and review the preview before creating the variant.
+6. If the master resume has enough relevant detail, expect the preview to use
+   enough selected content to fill at least one page instead of stopping early.
 
 Model steps:
 
 1. Extract must-have job skills, tools, domain, seniority, and impact themes.
-2. Score every entry and bullet on a harsh 0-10 scale.
+2. Score every entry, bullet, and class/course block on a harsh 0-10 scale.
 3. Force score spread: many bullets should be low relevance; only direct
    evidence gets 8-10.
-4. Return exact IDs only.
+4. Include class/course rows with exact `classId` values when coursework or
+   additional coursework appears in the inventory.
+5. Score repeated bullets inside the same entry lower so duplicate claims do
+   not crowd out distinct evidence.
+6. Return exact IDs only.
+
+Root cause fixed in 0.2.50:
+
+1. Gemini schema mode was using snake_case fields that are not the documented
+   REST request shape, so Gemini could return normal prose instead of enforced
+   JSON.
+2. Large resumes were scored in one giant response. A long score array can be
+   truncated or wrapped, which creates malformed JSON even when the model
+   understood the task.
+3. The old path treated two malformed provider replies as a feature failure
+   instead of falling back to a stronger local semantic scorer.
 
 App steps:
 
 1. Parse JSON from either a raw score array or `{ "scores": [...] }`.
 2. Drop unknown IDs and unusable scores.
-3. Fill skipped bullet rows with conservative local relevance.
-4. Calibrate clustered or over-generous scores.
-5. Bypass the AI response cache for scoring so one malformed response cannot
+3. Score inventories in chunks of roughly 32 rows so the provider returns small,
+   parseable JSON.
+4. Send the job's local semantic markers alongside each chunk so small models
+   have a compact guide to role intent.
+5. Treat classes/coursework as selectable blocks by scoring `classId` rows and
+   using those scores to keep, drop, and reorder the existing class list.
+6. Fill skipped or malformed chunks with the local semantic marker/vector model.
+7. Fuse provider scores with semantic scores so over-broad LLM answers are
+   corrected by deterministic role similarity.
+8. Calibrate clustered or over-generous scores.
+9. Bypass the AI response cache for scoring so one malformed response cannot
    poison future attempts.
-6. Retry once with a compact JSON-only prompt if the first response is
+10. Retry once with a compact JSON-only prompt if the first response is
    malformed or wrapped in prose.
-7. Pack with strict selectivity so weak details are hidden.
+11. Pack with page-fill intent: start selective, then add more relevant blocks
+   up to the target page limit when enough content exists.
+12. Reorder visible sections, entries, bullets, and class lists by score.
+13. Hide lower-priority duplicate bullets within the same entry.
 
 Acceptance checks:
 
@@ -112,6 +140,11 @@ Acceptance checks:
 2. Preview hides unrelated bullets.
 3. No experience entry appears as an empty shell.
 4. One role cannot swallow the whole page.
+5. Relevant variants fill at least one page when enough resume detail exists.
+6. Coursework/classes can be modified by adding them to the education field and
+   are then scored, reordered, kept, or dropped like other blocks.
+7. Bullets from the same entry do not repeat the same task, tool, metric, or
+   outcome.
 
 ### Generate Variant - Keyword Rewrite
 
@@ -126,6 +159,9 @@ Model steps:
 1. Consider only kept bullet IDs.
 2. Rewrite only when an honest keyword-aware improvement exists.
 3. Preserve facts, approximate length, and action/task/impact shape.
+4. Do not create two bullets in the same entry that say the same thing. Keep
+   the stronger distinct claim and skip the weaker duplicate.
+5. Never invent classes or coursework; keep existing class names truthful.
 
 App steps:
 
@@ -288,7 +324,7 @@ Run this after any AI prompt, provider, or parser change:
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
 | Variant keeps almost everything | Model returned clustered/high scores, or old build | Update and rerun; score calibration and strict packing should now cull aggressively. |
-| AI scoring falls back to local | Key, CORS, unavailable model, unsupported schema, or malformed JSON after retry | Test connection, use built-in model IDs, and run `npm run dev` for OpenAI/Gemini. |
+| AI scoring falls back to local | Key, CORS, unavailable model, or provider outage | Test connection, use built-in model IDs, and run `npm run dev` for OpenAI/Gemini. Malformed JSON now falls back inside scoring through semantic markers. |
 | Claude returns 400 on generation | Unsupported request parameter on newer Claude model | Do not send temperature/top_p/top_k; app now omits Claude temperature. |
 | Empty provider reply | Output budget too low or reasoning consumed visible tokens | Retry with Haiku/Luna/Flash or increase token budget for that feature. |
 | OpenAI quota error | API credits missing; ChatGPT Plus is separate | Add API credits in OpenAI platform billing. |
