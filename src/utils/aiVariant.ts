@@ -9,7 +9,7 @@ import {
   type VisibilityMap,
 } from './blockSelection';
 import { buildFeaturePrompt } from './aiGuides';
-import { stripHtml } from './resumeText';
+import { stripHtml, resumeToPlainText } from './resumeText';
 import { semanticMarkersForText, semanticScoreBlocks } from './semanticScoring';
 import { estimatePageUsage } from './styleChecks';
 import type { Resume } from '@/types';
@@ -21,6 +21,7 @@ Return ONLY JSON (no commentary, no fences). Prefer this object shape:
   { "entryId": "...", "bulletId": "...", "classId": "", "score": 0-10, "reason": "..." }
 ] }
 - Score 10 = highly relevant; 0 = irrelevant.
+- Follow the TARGET ROLE PLAN when deciding what to highlight vs deprioritize.
 - Only score Experience, Skills, Projects, and Leadership inventory rows.
 - Do not score or rework Education; the app keeps Education fixed at the top.
 - Include EVERY entry and EVERY bullet from the inventory (bullet rows must include bulletId).
@@ -39,6 +40,7 @@ Return ONLY JSON (no commentary, no fences). Prefer this object shape:
 ] }
 
 Rules:
+- Follow the TARGET ROLE PLAN for what to rewrite and how to reframe experiences.
 - Keep every claim truthful - never invent employers, metrics, tools, or outcomes.
 - Weave in relevant keywords from the job description only when they honestly fit the original work.
 - Keep action verb + task + impact; roughly the same length (at most ~32 words).
@@ -135,6 +137,29 @@ const REWRITE_SCHEMA: JsonSchema = {
   additionalProperties: false,
 };
 
+const PLAN_SCHEMA: JsonSchema = {
+  type: 'object',
+  properties: {
+    targetRole: { type: 'string' },
+    keyFactors: { type: 'array', items: { type: 'string' } },
+    skillsToHighlight: { type: 'array', items: { type: 'string' } },
+    experiencesToReframe: { type: 'array', items: { type: 'string' } },
+    whatToRewrite: { type: 'array', items: { type: 'string' } },
+    whatToDeprioritize: { type: 'array', items: { type: 'string' } },
+    targetingNotes: { type: 'string' },
+  },
+  required: [
+    'targetRole',
+    'keyFactors',
+    'skillsToHighlight',
+    'experiencesToReframe',
+    'whatToRewrite',
+    'whatToDeprioritize',
+    'targetingNotes',
+  ],
+  additionalProperties: false,
+};
+
 export interface VariantBulletRewrite {
   bulletId: string;
   original: string;
@@ -142,10 +167,164 @@ export interface VariantBulletRewrite {
   keywordsUsed: string[];
 }
 
+export interface VariantRolePlan {
+  targetRole: string;
+  keyFactors: string[];
+  skillsToHighlight: string[];
+  experiencesToReframe: string[];
+  whatToRewrite: string[];
+  whatToDeprioritize: string[];
+  targetingNotes: string;
+}
+
+/** Skills / custom / "Additional Information" sections users can manually unhide in the preview. */
+export function isManualVisibilitySection(section: Resume['sections'][number]): boolean {
+  if (section.type === 'skills' || section.type === 'custom') return true;
+  return /additional\s*information|additional\s*info|&\s*skills/i.test(section.title);
+}
+
+/** Ensure every entry/bullet id exists on the map so preview toggles never invent missing keys. */
+export function coverVisibilityMap(resume: Resume, map: VisibilityMap): VisibilityMap {
+  const entries = { ...map.entries };
+  const bullets = { ...map.bullets };
+  for (const section of resume.sections) {
+    for (const entry of section.entries) {
+      if (!(entry.id in entries)) entries[entry.id] = entry.visible !== false;
+      for (const bullet of entry.bullets ?? []) {
+        if (!(bullet.id in bullets)) bullets[bullet.id] = bullet.visible;
+      }
+    }
+  }
+  return { entries, bullets };
+}
+
+export function formatRolePlanForPrompt(plan: VariantRolePlan): string {
+  return `--- TARGET ROLE PLAN ---\n${JSON.stringify(plan, null, 2)}`;
+}
+
+export function localVariantRolePlan(jobDescription: string): VariantRolePlan {
+  const text = jobDescription.replace(/\s+/g, ' ').trim();
+  const roleMatch = text.match(
+    /(?:position|role|title)\s*[:\-–]\s*([^.\n]{3,80})|seeking an?\s+([^.\n]{3,80})|hire an?\s+([^.\n]{3,80})/i,
+  );
+  const targetRole =
+    (roleMatch?.[1] || roleMatch?.[2] || roleMatch?.[3] || '').trim() ||
+    text.split(/[.!\n]/)[0]?.slice(0, 80).trim() ||
+    'Target role';
+  const tokens = [...new Set(text.toLowerCase().match(/[a-z][a-z0-9+#.]{2,}/g) ?? [])]
+    .filter((token) => !LOCAL_PLAN_STOP.has(token))
+    .slice(0, 8);
+  return {
+    targetRole,
+    keyFactors: tokens.slice(0, 6).map((token) => token.replace(/^./, (c) => c.toUpperCase())),
+    skillsToHighlight: tokens.slice(0, 5),
+    experiencesToReframe: [
+      'Lead with outcomes that match the job’s top tools and domain terms',
+      'Keep recent, measurable work ahead of generic responsibilities',
+    ],
+    whatToRewrite: [
+      'Angle kept bullets toward the job’s must-have keywords when truthful',
+      'Prefer action + task + impact phrasing',
+    ],
+    whatToDeprioritize: [
+      'Generic soft-skill bullets with no job overlap',
+      'Unrelated activities and duplicate claims',
+    ],
+    targetingNotes:
+      'Prioritize blocks that overlap the job’s key tokens. Keep Education fixed. Hide weak Skills/Additional Information categories unless the user unhides them.',
+  };
+}
+
+const LOCAL_PLAN_STOP = new Set([
+  'the', 'and', 'for', 'with', 'you', 'your', 'our', 'are', 'will', 'this', 'that',
+  'from', 'have', 'has', 'been', 'were', 'was', 'able', 'into', 'about', 'over',
+  'role', 'job', 'team', 'work', 'working', 'experience', 'required', 'requirements',
+  'responsibilities', 'qualifications', 'preferred', 'must', 'should', 'including',
+]);
+
+export async function planVariantForRole(
+  settings: AiSettings,
+  resume: Resume,
+  jobDescription: string,
+): Promise<VariantRolePlan> {
+  if (!settings.apiKey.trim()) throw new Error('Add a BYOK API key first.');
+  if (!jobDescription.trim()) throw new Error('Paste a job description first.');
+
+  const prompt = buildFeaturePrompt(
+    'variant-plan',
+    `--- JOB DESCRIPTION ---\n${jobDescription}`,
+    `--- RESUME SNAPSHOT ---\n${resumeToPlainText(resume).slice(0, 6000)}`,
+  );
+
+  let raw: string;
+  try {
+    raw = await generateAiText(settings, prompt, 1800, {
+      cache: false,
+      jsonSchema: { name: 'resume_variant_role_plan', schema: PLAN_SCHEMA },
+    });
+  } catch (error) {
+    if (!isStructuredOutputCompatibilityError(error)) throw error;
+    raw = await generateAiText(settings, prompt, 1800, { cache: false });
+  }
+
+  const parsed = parseLooseJsonObject(raw);
+  if (!parsed) return localVariantRolePlan(jobDescription);
+  return normalizeRolePlan(parsed, jobDescription);
+}
+
+function normalizeRolePlan(raw: Record<string, unknown>, jobDescription: string): VariantRolePlan {
+  const fallback = localVariantRolePlan(jobDescription);
+  const list = (...keys: string[]) => {
+    for (const key of keys) {
+      const value = raw[key];
+      if (Array.isArray(value)) {
+        return value
+          .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+          .map((item) => item.trim())
+          .slice(0, 8);
+      }
+    }
+    return [] as string[];
+  };
+  const text = (...keys: string[]) => {
+    for (const key of keys) {
+      const value = raw[key];
+      if (typeof value === 'string' && value.trim()) return value.trim();
+    }
+    return '';
+  };
+  return {
+    targetRole: text('targetRole', 'target_role', 'role') || fallback.targetRole,
+    keyFactors: nonempty(list('keyFactors', 'key_factors', 'factors'), fallback.keyFactors),
+    skillsToHighlight: nonempty(
+      list('skillsToHighlight', 'skills_to_highlight', 'highlightSkills'),
+      fallback.skillsToHighlight,
+    ),
+    experiencesToReframe: nonempty(
+      list('experiencesToReframe', 'experiences_to_reframe', 'reframe'),
+      fallback.experiencesToReframe,
+    ),
+    whatToRewrite: nonempty(
+      list('whatToRewrite', 'what_to_rewrite', 'rewrite'),
+      fallback.whatToRewrite,
+    ),
+    whatToDeprioritize: nonempty(
+      list('whatToDeprioritize', 'what_to_deprioritize', 'deprioritize'),
+      fallback.whatToDeprioritize,
+    ),
+    targetingNotes: text('targetingNotes', 'targeting_notes', 'notes') || fallback.targetingNotes,
+  };
+}
+
+function nonempty(value: string[], fallback: string[]): string[] {
+  return value.length > 0 ? value : fallback;
+}
+
 export async function scoreBlocksWithAi(
   settings: AiSettings,
   resume: Resume,
   jobDescription: string,
+  plan?: VariantRolePlan,
 ): Promise<BlockScore[]> {
   if (!settings.apiKey.trim()) throw new Error('Add a BYOK API key first.');
   if (!jobDescription.trim()) throw new Error('Paste a job description first.');
@@ -156,6 +335,7 @@ export async function scoreBlocksWithAi(
     throw new Error('This resume has no Experience, Skills, Projects, or Leadership blocks to score.');
   }
 
+  const rolePlan = plan ?? localVariantRolePlan(jobDescription);
   const semanticScores = filterVariantReworkableScores(resume, semanticScoreBlocks(resume, jobDescription));
   const semanticMarkers = semanticMarkersForText(jobDescription);
   const inventories = buildScoreInventories(blocks);
@@ -169,6 +349,7 @@ export async function scoreBlocksWithAi(
       semanticMarkers,
       index + 1,
       inventories.length,
+      rolePlan,
     );
     if (parsed) parsedRows.push(...parsed);
   }
@@ -235,6 +416,7 @@ export async function rewriteVariantBulletsWithAi(
   resume: Resume,
   jobDescription: string,
   bulletIds: string[],
+  plan?: VariantRolePlan,
 ): Promise<VariantBulletRewrite[]> {
   if (!settings.apiKey.trim()) throw new Error('Add a BYOK API key first.');
   if (!jobDescription.trim()) throw new Error('Paste a job description first.');
@@ -260,9 +442,11 @@ export async function rewriteVariantBulletsWithAi(
 
   // Cap payload size so rewrite stays reliable on smaller models.
   const batch = inventory.slice(0, 40);
+  const rolePlan = plan ?? localVariantRolePlan(jobDescription);
   const prompt = buildFeaturePrompt(
     'variant-rewrite',
     REWRITE_TASK,
+    formatRolePlanForPrompt(rolePlan),
     `--- JOB DESCRIPTION ---\n${jobDescription}`,
     `--- BULLETS TO CONSIDER ---\n${JSON.stringify(batch, null, 2)}`,
   );
@@ -630,10 +814,12 @@ async function scoreInventoryChunkWithAi(
   semanticMarkers: string[],
   chunkIndex: number,
   chunkCount: number,
+  plan: VariantRolePlan,
 ): Promise<unknown[] | null> {
   const prompt = buildFeaturePrompt(
     'variant-score',
     SCORE_TASK,
+    formatRolePlanForPrompt(plan),
     `--- JOB DESCRIPTION ---\n${jobDescription}`,
     `--- LOCAL SEMANTIC MARKERS ---\n${JSON.stringify(semanticMarkers)}`,
     `--- BLOCK INVENTORY CHUNK ${chunkIndex} OF ${chunkCount} ---\n${JSON.stringify(inventory, null, 2)}`,
@@ -654,7 +840,7 @@ async function scoreInventoryChunkWithAi(
   if (!parsed) {
     raw = await generateAiText(
       settings,
-      retryScorePrompt(jobDescription, inventory, semanticMarkers),
+      retryScorePrompt(jobDescription, inventory, semanticMarkers, plan),
       3200,
       { cache: false },
     );
@@ -702,7 +888,12 @@ function fuseScoresWithSemantic(scores: BlockScore[], semanticScores: BlockScore
   });
 }
 
-function retryScorePrompt(jobDescription: string, inventory: unknown, semanticMarkers: string[]): string {
+function retryScorePrompt(
+  jobDescription: string,
+  inventory: unknown,
+  semanticMarkers: string[],
+  plan: VariantRolePlan,
+): string {
   return buildFeaturePrompt(
     'variant-score',
     'Your last scoring response could not be parsed by JSON.parse.',
@@ -712,6 +903,7 @@ function retryScorePrompt(jobDescription: string, inventory: unknown, semanticMa
     'Do not score Education or classes/coursework; keep classId as an empty string.',
     'For entry rows, use empty strings for bulletId, classId, and reason.',
     'For bullet rows, use the exact bulletId from the inventory.',
+    formatRolePlanForPrompt(plan),
     `--- JOB DESCRIPTION ---\n${jobDescription}`,
     `--- LOCAL SEMANTIC MARKERS ---\n${JSON.stringify(semanticMarkers)}`,
     `--- BLOCK INVENTORY ---\n${JSON.stringify(inventory, null, 2)}`,
@@ -852,6 +1044,24 @@ export function parseLooseJsonArray(text: string): unknown[] | null {
   // wrapper is truncated or glued together with prose.
   const recovered = recoverResultRows(trimmed);
   return recovered.length > 0 ? recovered : null;
+}
+
+export function parseLooseJsonObject(text: string): Record<string, unknown> | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  for (const candidate of jsonCandidates(trimmed)) {
+    for (const repaired of repairJsonCandidates(candidate)) {
+      try {
+        const data = JSON.parse(repaired);
+        if (data && typeof data === 'object' && !Array.isArray(data)) {
+          return data as Record<string, unknown>;
+        }
+      } catch {
+        // try next
+      }
+    }
+  }
+  return null;
 }
 
 function tryParseJsonArray(candidate: string): unknown[] | null {

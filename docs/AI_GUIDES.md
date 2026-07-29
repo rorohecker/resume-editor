@@ -57,8 +57,10 @@ All model prompts must include these rules:
 
 | Feature | UI entry | Code entry | Output type | Reliability guardrails |
 | --- | --- | --- | --- | --- |
-| Generate variant - AI scoring | Generate variant for role | `scoreBlocksWithAi` | JSON object/array of Experience, Skills, Projects, and Leadership entry/bullet scores | Provider JSON schema, chunked inventories, semantic marker fallback, ID validation, duplicate-bullet pressure, clustered-score calibration, page-fill packing around fixed Education. |
-| Generate variant - keyword rewrite | Generate variant for role | `rewriteVariantBulletsWithAi` | JSON rewrites | Provider JSON schema, known bullet IDs only, unchanged text ignored, duplicate rewrite avoidance, rewrite review before create. |
+| Generate variant - role plan | Generate variant for role | `planVariantForRole` | JSON plan (role, key factors, highlight/reframe/rewrite/deprioritize) | Provider JSON schema, local plan fallback, feeds scoring + rewrite prompts. |
+| Generate variant - AI scoring | Generate variant for role | `scoreBlocksWithAi` | JSON object/array of Experience, Skills, Projects, and Leadership entry/bullet scores | Provider JSON schema, chunked inventories, semantic marker fallback, ID validation, duplicate-bullet pressure, clustered-score calibration, page-fill packing around fixed Education, plan-aware scoring. |
+| Generate variant - keyword rewrite | Generate variant for role | `rewriteVariantBulletsWithAi` | JSON rewrites | Provider JSON schema, known bullet IDs only, unchanged text ignored, duplicate rewrite avoidance, rewrite review before create, plan-aware reframes. |
+| Generate variant - visibility | Generate variant preview | `isManualVisibilitySection` + eye toggles | Manual entry show/hide for Skills / Additional Information / custom | Overrides packing for those sections before create; Education stays pinned. |
 | Tailor to job | Tailor modal | `generateTailoring` | JSON outcome | Provider JSON schema, max 10 rewrites, fake-skill filtering, duplicate/unchanged rewrite removal, summary/cover length caps. |
 | Bullet rewrite | AI drawer, Bulk edit | `promptForRewrite` | 3 plain text lines | Shared guide prompt, local rewrite fallback, UI keeps first 3 clean options. |
 | Summary | AI drawer | `promptForSummary` | Plain text | Shared guide prompt, local summary fallback, insert via `upsertSummarySection`. |
@@ -84,11 +86,15 @@ User steps:
 2. Open Generate variant for role.
 3. Paste a full job description. This is required for AI and local scoring.
 4. Keep target pages tight, usually 1 page.
-5. Run scoring and review the preview before creating the variant.
+5. Run generation. AI first builds a target-role plan, then scores (and
+   optionally rewrites). Review the plan and preview before creating.
 6. Education stays fixed at the top of the generated variant.
-7. If the master resume has enough relevant detail, expect the preview to use
+7. Use eye toggles on Skills / Additional Information to unhide categories the
+   packer dropped, or hide ones you do not want.
+8. If the master resume has enough relevant detail, expect the preview to use
    enough selected Experience, Skills, Projects, and Leadership content to fill
-   at least one page instead of stopping early.
+   at least one page instead of stopping early. Page-usage % should not
+   systematically overstate occupancy.
 
 Model steps:
 

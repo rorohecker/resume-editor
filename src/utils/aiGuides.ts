@@ -5,6 +5,7 @@
  */
 
 export type AiFeatureId =
+  | 'variant-plan'
   | 'variant-score'
   | 'variant-rewrite'
   | 'bullet-rewrite'
@@ -27,40 +28,64 @@ export const UNIVERSAL_AI_RULES = `UNIVERSAL RULES (apply to every task):
 6. Work for any model size: be decisive, avoid hedging essays, keep lists short.`;
 
 const FEATURE_STEPS: Record<AiFeatureId, string> = {
+  'variant-plan': `FEATURE: Target-role planning (before scoring)
+GOAL: Think like a recruiting coach for THIS job, then produce a short plan the scorer and rewriter will follow.
+
+STEPS:
+1. Infer the target role title and seniority from the job description.
+2. List 5-8 key factors that decide who gets an interview (must-have skills, tools, domains, soft skills, impact themes).
+3. Decide what to HIGHLIGHT from a typical candidate resume for this role (skills categories, experience themes, project types).
+4. Decide what to REWRITE or REFRAME (how to angle bullets toward the role without inventing facts).
+5. Decide what to DEPRIORITIZE or hide (generic bullets, unrelated activities, weak skill noise).
+6. Note how to reframe experiences for this role in 2-4 concrete guidance bullets.
+7. Return ONLY JSON:
+{
+  "targetRole": "...",
+  "keyFactors": ["..."],
+  "skillsToHighlight": ["..."],
+  "experiencesToReframe": ["..."],
+  "whatToRewrite": ["..."],
+  "whatToDeprioritize": ["..."],
+  "targetingNotes": "2-4 sentences of packing/rewrite strategy"
+}
+8. Keep lists short and specific to THIS job. No resume IDs required in the plan.`,
+
   'variant-score': `FEATURE: Role-variant block scoring
 GOAL: Rank which resume blocks belong on a tailored short resume for THIS job - not keep everything.
 
 STEPS:
-1. Read the job description. Extract must-have skills, tools, domain, seniority, and impact themes.
+1. Read the job description AND the target-role plan (key factors, highlight/deprioritize lists, reframe guidance).
 2. Score EVERY inventory entry and EVERY bullet on a harsh 0-10 scale:
-   - 9-10: Direct evidence for a core job requirement
+   - 9-10: Direct evidence for a core job requirement or plan highlight
    - 7-8: Strong supporting evidence
    - 5-6: Weak/tangential overlap
-   - 1-4: Little relevance (generic soft skills, unrelated work)
+   - 1-4: Little relevance (generic soft skills, unrelated work, plan deprioritize items)
    - 0: Irrelevant or empty
 3. FORCE discrimination: at least ~40% of bullets must score <=4, and at most ~30% may score >=8. Do not cluster everything at 6-8.
 4. Prefer scoring bullets individually. Still include one entry row per entry (entry score = best overall fit of that role).
 5. Score duplicate bullets within the same entry lower. Do not let repeated wording/claims crowd out distinct evidence.
 6. Education is fixed: do not score it, do not rewrite it, and do not reorder coursework/classes. The app keeps Education at the top.
 7. Only Experience, Skills, Projects, and Leadership are generator-reworkable. Your scores should identify which of those blocks deserve space.
-8. The app will prioritize and pack selected reworkable content to fill at least one page when enough relevant resume detail exists.
-9. Return ONLY a JSON array or an object with a scores array:
+8. For Skills / Additional Information rows: keep categories that match keyFactors/skillsToHighlight; score unrelated skill categories low so the user can still un-hide them later.
+9. The app will prioritize and pack selected reworkable content to fill at least one page when enough relevant resume detail exists.
+10. Return ONLY a JSON array or an object with a scores array:
    [{"entryId":"...","bulletId":"","classId":"","score":0-10,"reason":""},{"entryId":"...","bulletId":"...","classId":"","score":0-10,"reason":"5-12 words"}]
-10. Use exact inventory ids. Numbers only for score. Keep classId empty.`,
+11. Use exact inventory ids. Numbers only for score. Keep classId empty.`,
 
   'variant-rewrite': `FEATURE: Keyword rewrite for kept variant bullets
 GOAL: Lightly retarget already-selected bullets toward the job - without lying.
 
 STEPS:
-1. Read the job description keywords and the bullet inventory.
+1. Read the job description, the target-role plan (especially whatToRewrite and experiencesToReframe), and the bullet inventory.
 2. For each bullet, decide if an honest keyword-aware rewrite helps. If not, skip it.
-3. Keep claims truthful; never add tools/metrics/employers absent from the original.
-4. Keep roughly the same length (<=32 words). Preserve action verb + task + impact.
-5. Within the same entry/block, do not create two bullets that communicate the same task, tool, metric, or outcome. Keep the stronger distinct claim and skip the weaker duplicate.
-6. Only rewrite Experience, Projects, and Leadership bullets. Do not rewrite Education, classes/coursework, summaries, awards, certifications, publications, or research.
-7. Return ONLY a JSON array or an object with a rewrites array:
+3. Prefer reframes that match the plan's targetingNotes without inventing tools/metrics/employers.
+4. Keep claims truthful; never add tools/metrics/employers absent from the original.
+5. Keep roughly the same length (<=32 words). Preserve action verb + task + impact.
+6. Within the same entry/block, do not create two bullets that communicate the same task, tool, metric, or outcome. Keep the stronger distinct claim and skip the weaker duplicate.
+7. Only rewrite Experience, Projects, and Leadership bullets. Do not rewrite Education, classes/coursework, summaries, awards, certifications, publications, or research.
+8. Return ONLY a JSON array or an object with a rewrites array:
    [{"bulletId":"...","rewritten":"...","keywordsUsed":["..."]}]
-8. Use exact bulletId values. Omit bullets you skip.`,
+9. Use exact bulletId values. Omit bullets you skip.`,
 
   'bullet-rewrite': `FEATURE: Single-bullet rewrite options
 GOAL: Offer 3 stronger truthful rewrites of one bullet.
@@ -155,6 +180,7 @@ export function buildFeaturePrompt(feature: AiFeatureId, ...parts: Array<string 
 
 /** Short human labels for docs/UI. */
 export const AI_FEATURE_LABELS: Record<AiFeatureId, string> = {
+  'variant-plan': 'Generate variant - role plan',
   'variant-score': 'Generate variant - AI scoring',
   'variant-rewrite': 'Generate variant - keyword rewrite',
   'bullet-rewrite': 'AI drawer - bullet rewrite',

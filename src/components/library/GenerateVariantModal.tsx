@@ -1,26 +1,33 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { Sparkles, Wand2 } from 'lucide-react';
+import { Eye, EyeOff, Sparkles, Wand2 } from 'lucide-react';
 import { Modal } from '@/components/shared/Modal';
 import { useStore } from '@/store';
 import { toast } from '@/hooks/useToast';
 import { loadAiSettings } from '@/utils/aiByok';
 import {
   buildPrioritizedVariantResume,
+  coverVisibilityMap,
   fitVariantToPages,
+  isManualVisibilitySection,
+  localVariantRolePlan,
+  planVariantForRole,
   rewriteVariantBulletsWithAi,
   scoreBlocksWithAi,
   type VariantBulletRewrite,
+  type VariantRolePlan,
 } from '@/utils/aiVariant';
 import {
   localScoreBlocks,
   type BlockScore,
+  type VisibilityMap,
 } from '@/utils/blockSelection';
 import { replaceBulletContent, stripHtml } from '@/utils/resumeText';
 import { estimatePageUsage } from '@/utils/styleChecks';
+import type { Entry, Section } from '@/types';
 
-type ProgressPhase = 'idle' | 'scoring' | 'rewriting' | 'done';
+type ProgressPhase = 'idle' | 'planning' | 'scoring' | 'rewriting' | 'done';
 
 export function GenerateVariantModal() {
   const { t } = useTranslation();
@@ -32,6 +39,8 @@ export function GenerateVariantModal() {
   const [job, setJob] = useState('');
   const [phase, setPhase] = useState<ProgressPhase>('idle');
   const [scores, setScores] = useState<BlockScore[] | null>(null);
+  const [visibility, setVisibility] = useState<VisibilityMap | null>(null);
+  const [rolePlan, setRolePlan] = useState<VariantRolePlan | null>(null);
   const [maxPages, setMaxPages] = useState(1);
   const [variantName, setVariantName] = useState('');
   const [useAi, setUseAi] = useState(true);
@@ -44,6 +53,8 @@ export function GenerateVariantModal() {
     if (!open) {
       setJob('');
       setScores(null);
+      setVisibility(null);
+      setRolePlan(null);
       setPhase('idle');
       setVariantName('');
       setRewrites([]);
@@ -65,7 +76,7 @@ export function GenerateVariantModal() {
   // Re-read settings whenever the modal opens so a key added in AI settings applies.
   const settings = useMemo(() => loadAiSettings(), [open]);
   const hasKey = Boolean(settings.apiKey.trim());
-  const busy = phase === 'scoring' || phase === 'rewriting';
+  const busy = phase === 'planning' || phase === 'scoring' || phase === 'rewriting';
   const canRewrite = hasKey && useAi;
   const needsJob = true;
 
@@ -84,15 +95,31 @@ export function GenerateVariantModal() {
       toast(t('variant.emptyResume'), { tone: 'warn' });
       return;
     }
-    setPhase('scoring');
+    setPhase('planning');
     setRewrites([]);
     setAcceptedRewriteIds(new Set());
+    setVisibility(null);
+    setRolePlan(null);
     try {
+      let plan: VariantRolePlan;
+      if (liveUseAi) {
+        try {
+          plan = await planVariantForRole(liveSettings, resume, job);
+        } catch {
+          plan = localVariantRolePlan(job);
+          toast(t('variant.planFallback'), { tone: 'warn', ttl: 4000 });
+        }
+      } else {
+        plan = localVariantRolePlan(job);
+      }
+      setRolePlan(plan);
+
+      setPhase('scoring');
       let computed: BlockScore[];
       let allowRewrite = liveCanRewrite;
       if (liveUseAi) {
         try {
-          computed = await scoreBlocksWithAi(liveSettings, resume, job);
+          computed = await scoreBlocksWithAi(liveSettings, resume, job, plan);
         } catch (aiErr) {
           // Fall back to local ranking so the feature still works if the API fails.
           computed = localScoreBlocks(resume, job);
@@ -113,6 +140,7 @@ export function GenerateVariantModal() {
       if (fitResult.includedEntries + fitResult.includedBullets === 0) {
         throw new Error(t('variant.emptyFit'));
       }
+      setVisibility(coverVisibilityMap(resume, fitResult.visibility));
 
       const includedBulletIds = Object.entries(fitResult.visibility.bullets)
         .filter(([, visible]) => visible)
@@ -126,6 +154,7 @@ export function GenerateVariantModal() {
             resume,
             job,
             includedBulletIds,
+            plan,
           );
           setRewrites(nextRewrites);
           setAcceptedRewriteIds(new Set(nextRewrites.map((item) => item.bulletId)));
@@ -151,6 +180,8 @@ export function GenerateVariantModal() {
     } catch (err) {
       setPhase('idle');
       setScores(null);
+      setVisibility(null);
+      setRolePlan(null);
       toast(err instanceof Error ? err.message : t('variant.failed'), { tone: 'danger' });
     }
   };
@@ -160,15 +191,37 @@ export function GenerateVariantModal() {
     return fitVariantToPages(resume, scores, maxPages);
   }, [resume, scores, maxPages]);
 
+  // Keep manual Skills/Additional Information toggles when page budget packing changes.
+  useEffect(() => {
+    if (!fit || !resume) return;
+    setVisibility((prev) => {
+      const packed = coverVisibilityMap(resume, fit.visibility);
+      if (!prev) return packed;
+      const next: VisibilityMap = {
+        entries: { ...packed.entries },
+        bullets: { ...packed.bullets },
+      };
+      for (const section of resume.sections) {
+        if (!isManualVisibilitySection(section)) continue;
+        for (const entry of section.entries) {
+          if (entry.id in prev.entries) next.entries[entry.id] = prev.entries[entry.id];
+        }
+      }
+      return next;
+    });
+  }, [fit, resume]);
+
+  const activeVisibility = visibility ?? fit?.visibility ?? null;
+
   const previewResume = useMemo(() => {
-    if (!resume) return null;
-    let next = fit && scores ? buildPrioritizedVariantResume(resume, fit.visibility, scores) : resume;
+    if (!resume || !activeVisibility || !scores) return null;
+    let next = buildPrioritizedVariantResume(resume, activeVisibility, scores);
     for (const rewrite of rewrites) {
       if (!acceptedRewriteIds.has(rewrite.bulletId)) continue;
       next = replaceBulletContent(next, rewrite.bulletId, rewrite.rewritten);
     }
     return next;
-  }, [resume, fit, scores, rewrites, acceptedRewriteIds]);
+  }, [resume, activeVisibility, scores, rewrites, acceptedRewriteIds]);
 
   const previewUsage = previewResume ? estimatePageUsage(previewResume) : 0;
 
@@ -181,10 +234,19 @@ export function GenerateVariantModal() {
     });
   };
 
+  const toggleEntryVisibility = (entryId: string) => {
+    setVisibility((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        entries: { ...prev.entries, [entryId]: !prev.entries[entryId] },
+      };
+    });
+  };
+
   const create = () => {
-    if (!resume || !fit || !previewResume) return;
-    // Apply visibility and priority ordering from the scored fit, then keyword rewrites the user accepted.
-    let next = scores ? buildPrioritizedVariantResume(resume, fit.visibility, scores) : previewResume;
+    if (!resume || !previewResume || !activeVisibility || !scores) return;
+    let next = buildPrioritizedVariantResume(resume, activeVisibility, scores);
     for (const rewrite of rewrites) {
       if (!acceptedRewriteIds.has(rewrite.bulletId)) continue;
       next = replaceBulletContent(next, rewrite.bulletId, rewrite.rewritten);
@@ -201,15 +263,17 @@ export function GenerateVariantModal() {
   };
 
   const statusLabel =
-    phase === 'scoring'
-      ? t('variant.scoring')
-      : phase === 'rewriting'
-        ? t('variant.rewriting')
-        : phase === 'done' && rewrites.length > 0
-          ? t('variant.statusDoneRewrites', { count: acceptedRewriteIds.size })
-          : phase === 'done'
-            ? t('variant.statusDone')
-            : null;
+    phase === 'planning'
+      ? t('variant.planning')
+      : phase === 'scoring'
+        ? t('variant.scoring')
+        : phase === 'rewriting'
+          ? t('variant.rewriting')
+          : phase === 'done' && rewrites.length > 0
+            ? t('variant.statusDoneRewrites', { count: acceptedRewriteIds.size })
+            : phase === 'done'
+              ? t('variant.statusDone')
+              : null;
 
   return (
     <Modal
@@ -227,11 +291,11 @@ export function GenerateVariantModal() {
             <button
               type="button"
               className="btn-primary"
-              disabled={!resume || !fit || busy}
-              title={!fit ? t('variant.scoreFirst') : undefined}
+              disabled={!resume || !previewResume || busy}
+              title={!previewResume ? t('variant.scoreFirst') : undefined}
               onClick={create}
             >
-              {fit ? t('variant.create') : t('variant.scoreFirst')}
+              {previewResume ? t('variant.create') : t('variant.scoreFirst')}
             </button>
           </div>
         </div>
@@ -337,6 +401,34 @@ export function GenerateVariantModal() {
                   : t('variant.scoreLocal')}
           </button>
 
+          {rolePlan && (
+            <div className="space-y-2 rounded-md border border-paper-edge p-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-ink">
+                {t('variant.rolePlan')}
+              </h3>
+              <p className="text-[11px] text-ink-subtle">{t('variant.rolePlanHint')}</p>
+              <p className="text-xs font-medium text-ink">{rolePlan.targetRole}</p>
+              {rolePlan.keyFactors.length > 0 && (
+                <PlanList label={t('variant.planKeyFactors')} items={rolePlan.keyFactors} />
+              )}
+              {rolePlan.skillsToHighlight.length > 0 && (
+                <PlanList label={t('variant.planHighlight')} items={rolePlan.skillsToHighlight} />
+              )}
+              {rolePlan.experiencesToReframe.length > 0 && (
+                <PlanList label={t('variant.planReframe')} items={rolePlan.experiencesToReframe} />
+              )}
+              {rolePlan.whatToRewrite.length > 0 && (
+                <PlanList label={t('variant.planRewrite')} items={rolePlan.whatToRewrite} />
+              )}
+              {rolePlan.whatToDeprioritize.length > 0 && (
+                <PlanList label={t('variant.planDeprioritize')} items={rolePlan.whatToDeprioritize} />
+              )}
+              {rolePlan.targetingNotes && (
+                <p className="text-[11px] text-ink-muted">{rolePlan.targetingNotes}</p>
+              )}
+            </div>
+          )}
+
           {rewrites.length > 0 && (
             <div className="space-y-2 rounded-md border border-paper-edge p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -406,7 +498,7 @@ export function GenerateVariantModal() {
         </div>
 
         <div className="min-w-0 overflow-y-auto rounded-md border border-paper-edge bg-paper-tint">
-          {!fit ? (
+          {!fit || !activeVisibility ? (
             <div className="flex h-full min-h-72 items-center justify-center px-4 text-center text-sm text-ink-subtle">
               {busy ? statusLabel : t('variant.awaitingScore')}
             </div>
@@ -418,10 +510,27 @@ export function GenerateVariantModal() {
                 <Stat label={t('variant.bulletsIn')} value={`${fit.includedBullets}/${fit.includedBullets + fit.excludedBullets}`} tone="ok" />
                 <Stat label={t('variant.preview')} value={`${previewUsage}%`} tone={previewUsage > 100 ? 'warn' : 'ok'} />
               </div>
+              <p className="text-[11px] text-ink-subtle">{t('variant.visibilityHint')}</p>
 
-              {previewResume && (
+              {resume && previewResume && (
                 <div className="space-y-2">
                   {previewResume.sections.map((section) => {
+                    if (isManualVisibilitySection(section)) {
+                      const masterSection = resume.sections.find((item) => item.id === section.id);
+                      if (!masterSection) return null;
+                      return (
+                        <ManualSectionPreview
+                          key={section.id}
+                          section={masterSection}
+                          visibility={activeVisibility}
+                          onToggleEntry={toggleEntryVisibility}
+                          showLabel={t('variant.showEntry')}
+                          hideLabel={t('variant.hideEntry')}
+                          hiddenBadge={t('variant.hiddenBadge')}
+                        />
+                      );
+                    }
+
                     const visible = section.entries.filter((e) => e.visible !== false);
                     if (visible.length === 0) return null;
                     return (
@@ -437,6 +546,9 @@ export function GenerateVariantModal() {
                                 <div className="font-medium text-ink">
                                   {entry.title || entry.subtitle}
                                 </div>
+                                {entry.subtitle && entry.title ? (
+                                  <div className="text-ink-muted">{entry.subtitle}</div>
+                                ) : null}
                                 {usedBullets.length > 0 && (
                                   <ul className="ml-3 list-disc text-ink-muted">
                                     {usedBullets.map((bullet) => {
@@ -464,6 +576,25 @@ export function GenerateVariantModal() {
                       </div>
                     );
                   })}
+
+                  {/* Skills/Additional sections that packing dropped entirely still need a home for unhide. */}
+                  {resume.sections
+                    .filter(
+                      (section) =>
+                        isManualVisibilitySection(section) &&
+                        !previewResume.sections.some((item) => item.id === section.id),
+                    )
+                    .map((section) => (
+                      <ManualSectionPreview
+                        key={section.id}
+                        section={section}
+                        visibility={activeVisibility}
+                        onToggleEntry={toggleEntryVisibility}
+                        showLabel={t('variant.showEntry')}
+                        hideLabel={t('variant.hideEntry')}
+                        hiddenBadge={t('variant.hiddenBadge')}
+                      />
+                    ))}
                 </div>
               )}
             </div>
@@ -471,6 +602,107 @@ export function GenerateVariantModal() {
         </div>
       </div>
     </Modal>
+  );
+}
+
+function ManualSectionPreview({
+  section,
+  visibility,
+  onToggleEntry,
+  showLabel,
+  hideLabel,
+  hiddenBadge,
+}: {
+  section: Section;
+  visibility: VisibilityMap;
+  onToggleEntry: (entryId: string) => void;
+  showLabel: string;
+  hideLabel: string;
+  hiddenBadge: string;
+}) {
+  if (section.entries.length === 0) return null;
+  return (
+    <div className="rounded-md border border-paper-edge bg-paper p-2">
+      <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-ink-subtle">
+        {section.title}
+      </div>
+      <ul className="space-y-1">
+        {section.entries.map((entry) => (
+          <ManualEntryRow
+            key={entry.id}
+            entry={entry}
+            visible={visibility.entries[entry.id] === true}
+            onToggle={() => onToggleEntry(entry.id)}
+            showLabel={showLabel}
+            hideLabel={hideLabel}
+            hiddenBadge={hiddenBadge}
+          />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ManualEntryRow({
+  entry,
+  visible,
+  onToggle,
+  showLabel,
+  hideLabel,
+  hiddenBadge,
+}: {
+  entry: Entry;
+  visible: boolean;
+  onToggle: () => void;
+  showLabel: string;
+  hideLabel: string;
+  hiddenBadge: string;
+}) {
+  // coverVisibilityMap defaults missing keys; packed false means hidden.
+  // Treat explicit false as hidden; missing as hidden for reworked skills after fit.
+  const shown = visible;
+  return (
+    <li
+      className={`flex items-start gap-2 rounded-md px-1 py-1 ${
+        shown ? '' : 'bg-paper-tint/80 opacity-70'
+      }`}
+    >
+      <button
+        type="button"
+        className="btn-ghost mt-0.5 shrink-0 p-1"
+        title={shown ? hideLabel : showLabel}
+        aria-label={shown ? hideLabel : showLabel}
+        onClick={onToggle}
+      >
+        {shown ? <Eye size={14} /> : <EyeOff size={14} />}
+      </button>
+      <div className="min-w-0 flex-1">
+        <div className="font-medium text-ink">
+          {entry.title || entry.subtitle || 'Untitled'}
+          {!shown && (
+            <span className="ml-1 rounded-full bg-paper-edge/60 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-ink-subtle">
+              {hiddenBadge}
+            </span>
+          )}
+        </div>
+        {entry.subtitle && entry.title ? (
+          <div className="text-ink-muted">{entry.subtitle}</div>
+        ) : null}
+      </div>
+    </li>
+  );
+}
+
+function PlanList({ label, items }: { label: string; items: string[] }) {
+  return (
+    <div>
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-subtle">{label}</div>
+      <ul className="mt-0.5 list-disc space-y-0.5 pl-4 text-[11px] text-ink-muted">
+        {items.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createResumeFromTemplate } from '@/components/templates/createFromTemplate';
+import { getTemplateDemoResume } from '@/components/templates/templateDemos';
 import { getTemplate, TEMPLATES } from '@/components/templates/registry';
 import { estimatePageStats } from '@/utils/styleChecks';
 import { resumeToPlainText } from '@/utils/resumeText';
@@ -80,6 +81,75 @@ describe('page usage estimate', () => {
     const stats = estimatePageStats(resume);
     expect(stats.estimatedPages).toBe(1);
     expect(stats.percent).toBeLessThan(60);
+  });
+
+  it('does not treat a typical one-page resume as overflowing', () => {
+    const resume = getTemplateDemoResume('general');
+    const filled = {
+      ...resume,
+      header: { ...resume.header, name: 'Alex Rivera' },
+      sections: resume.sections.map((section) => {
+        if (section.type === 'experience') {
+          return {
+            ...section,
+            entries: [
+              {
+                id: 'exp-1',
+                title: 'Analyst Intern',
+                subtitle: 'Example Company',
+                location: 'Austin, TX',
+                startDate: '2024-06',
+                endDate: '2024-08',
+                bullets: [
+                  {
+                    id: 'b1',
+                    content: 'Built SQL dashboards that cut reporting time by 40%.',
+                    visible: true,
+                    order: 0,
+                  },
+                  {
+                    id: 'b2',
+                    content: 'Partnered with engineers to ship an internal React tool.',
+                    visible: true,
+                    order: 1,
+                  },
+                  {
+                    id: 'b3',
+                    content: 'Documented process improvements for leadership reviews.',
+                    visible: true,
+                    order: 2,
+                  },
+                ],
+              },
+            ],
+          };
+        }
+        if (section.type === 'education') {
+          return {
+            ...section,
+            entries: [
+              {
+                id: 'edu-1',
+                title: 'B.S. Example Major',
+                subtitle: 'Example University',
+                location: 'Austin, TX',
+                startDate: '2022-08',
+                endDate: '2026-05',
+                customFields: {
+                  gpa: '3.8',
+                  coursework: 'Data Structures, Databases, Statistics, Machine Learning',
+                },
+                bullets: [],
+              },
+            ],
+          };
+        }
+        return section;
+      }),
+    };
+    const stats = estimatePageStats(filled);
+    expect(stats.estimatedPages).toBe(1);
+    expect(stats.percent).toBeLessThanOrEqual(100);
   });
 
   it('counts a page break as forcing a second page', () => {

@@ -83,6 +83,29 @@ describe('calibrateAiBlockScores', () => {
   });
 });
 
+describe('localVariantRolePlan', () => {
+  it('extracts key tokens for a software role', async () => {
+    const { localVariantRolePlan, isManualVisibilitySection } = await import('./aiVariant');
+    const plan = localVariantRolePlan(
+      'We are hiring a Software Engineer. Required: React, TypeScript, SQL, system design.',
+    );
+    expect(plan.targetRole.length).toBeGreaterThan(0);
+    expect(plan.keyFactors.length).toBeGreaterThan(0);
+    expect(plan.skillsToHighlight.join(' ').toLowerCase()).toMatch(/react|typescript|sql/);
+    expect(
+      isManualVisibilitySection({
+        id: 's1',
+        type: 'skills',
+        title: 'Additional Information & Skills',
+        visible: true,
+        order: 0,
+        layout: 'skills-grid',
+        entries: [],
+      }),
+    ).toBe(true);
+  });
+});
+
 describe('parseLooseJsonArray', () => {
   it('extracts scores from a fenced object response', () => {
     const parsed = parseLooseJsonArray(

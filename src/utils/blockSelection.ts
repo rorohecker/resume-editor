@@ -237,22 +237,31 @@ export function fitToPages(
     if (!rec) return lineCost;
     const titleCost =
       ((resume.styles.fontSize.entryTitle * resume.styles.spacing.bullet) / usablePt) * 100;
-    // Slightly overestimate so packing stays under real page usage.
+    // Stay close to estimatePageUsage — slight padding only for section chrome.
     return (
-      titleCost * 1.15 +
+      titleCost +
       (rec.hasSubtitle ? lineCost : 0) +
       (resume.styles.spacing.entry / usablePt) * 100 +
-      // Section header amortized lightly when first entry of a section appears —
-      // approximated as a small constant so we don't under-count headers.
-      lineCost * 0.35
+      lineCost * 0.15
     );
   };
 
   const bulletCost = (bulletId: string): number => {
     const plain = stripHtml(bulletContent.get(bulletId) ?? '');
-    const lines = Math.max(1, Math.ceil(Math.max(plain.length, 1) / Math.max(8, charsPerLine - 2)));
-    // 1.25× so wrapped bullets don't overfill vs the real estimator.
-    return lines * lineCost * 1.25;
+    const words = plain.trim().split(/\s+/).filter(Boolean);
+    let lines = 1;
+    let used = 0;
+    const perLine = Math.max(8, charsPerLine - 1);
+    for (const word of words) {
+      const next = used === 0 ? word.length : used + 1 + word.length;
+      if (next <= perLine) used = next;
+      else {
+        lines += 1;
+        used = Math.min(word.length, perLine);
+      }
+    }
+    if (words.length === 0) lines = 1;
+    return lines * lineCost;
   };
 
   const rankedBulletsFor = (entryId: string): Bullet[] => {

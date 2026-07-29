@@ -7,21 +7,24 @@
 3. Paste the full job description. This is required for both AI and local
    scoring so the output is actually tailored.
 4. Keep the page target tight, usually 1 page.
-5. Run AI scoring if a BYOK key is configured; otherwise the app uses local
-   semantic marker scoring.
-6. Review the preview. A tailored variant should hide weak or unrelated bullets
-   instead of preserving every detail.
-7. Education is always pinned as the first section in the generated variant and
+5. Run generation. With BYOK, the app first plans for the target role (key
+   factors, what to highlight/reframe/rewrite/deprioritize), then scores and
+   optionally rewrites. Without a key, it uses a local plan + semantic scoring.
+6. Review the target-role plan and the preview. A tailored variant should hide
+   weak or unrelated bullets instead of preserving every detail.
+7. Use the eye toggles on Skills / Additional Information to show or hide
+   categories the packer dropped before creating the variant.
+8. Education is always pinned as the first section in the generated variant and
    is not rewritten, reordered, or class-filtered by the generator.
-8. Generate variant only reworks Experience, Skills, Projects, and Leadership.
+9. Generate variant only reworks Experience, Skills, Projects, and Leadership.
    Other sections keep their existing visibility/content.
-9. If the master resume has enough relevant information, the variant should use
+10. If the master resume has enough relevant information, the variant should use
    enough prioritized allowed-section blocks to fill at least one page without
-   exceeding the page target.
-10. Bullets from the same role/project should not repeat the same information;
+   exceeding the page target. Page-usage % should track the live preview closely.
+11. Bullets from the same role/project should not repeat the same information;
    the scoring and rewrite prompts tell the model to keep distinct claims.
-11. Review optional keyword rewrites, then create the variant.
-12. Use **Tailor** for in-place suggestions: selective bullet rewrites, a
+12. Review optional keyword rewrites, then create the variant.
+13. Use **Tailor** for in-place suggestions: selective bullet rewrites, a
    two-sentence summary, skills to emphasize/deprioritize, and a short cover
    letter draft.
 

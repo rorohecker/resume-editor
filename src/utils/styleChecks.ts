@@ -16,8 +16,9 @@ const PAGE_WIDTH_IN = {
 };
 
 // Average glyph advance as a fraction of the font size for the resume fonts we
-// ship. Used to estimate how many characters fit on one line at a given width.
-const AVG_CHAR_WIDTH_EM = 0.5;
+// ship. Tuned slightly under 0.5 so wraps match Georgia / Carlito / Inter better
+// than a conservative 0.5 (which over-counted lines and inflated page %).
+const AVG_CHAR_WIDTH_EM = 0.44;
 
 // Sidebar template geometry — mirrors createPdfStyles' leftColumn (30% width,
 // 12pt gutter) so two-column resumes aren't measured as one tall stack.
@@ -111,7 +112,8 @@ function headerHeight(resume: Resume): number {
   const hasContacts = resume.header.contactFields.some(
     (field) => field.visible && field.value.trim(),
   );
-  const contactHeight = hasContacts ? 4 + styles.fontSize.contactLine * 1.2 : 0;
+  // Contact fields render on one (occasionally wrapped) line under the name.
+  const contactHeight = hasContacts ? styles.fontSize.contactLine * 1.15 + 2 : 0;
   return nameHeight + contactHeight;
 }
 
@@ -123,7 +125,8 @@ function sectionHeight(section: Section, resume: Resume, cpl: number, bodyLine: 
   if (!overrides.hideHeader) {
     height += styles.fontSize.sectionHeader * 1.1;
     const hasRule = !overrides.hideRule && styles.ruleStyle.variant !== 'none';
-    height += hasRule ? 6 : 2;
+    // Rule + small gaps ≈ PDF rule margins (1 + 4) without padding twice.
+    height += hasRule ? 5 : 1;
   }
   height += sectionContentHeight(section, resume, cpl, bodyLine);
   return height;
@@ -137,19 +140,22 @@ function sectionContentHeight(
 ): number {
   if (section.type === 'skills' || section.layout === 'skills-grid') {
     const entries = section.entries.filter((entry) => entry.visible !== false);
+    if (entries.length === 0) return 0;
     let height = 0;
     entries.forEach((entry, index) => {
       const text = `${entry.title || 'Skills'}: ${entry.subtitle ?? ''}`;
-      height += Math.max(1, wrapLines(text, cpl)) * bodyLine + (index > 0 ? 2 : 0);
+      const lines = Math.max(1, wrapLines(text, cpl));
+      height += lines * bodyLine + (index > 0 ? Math.max(1, resume.styles.spacing.entry / 2) : 0);
     });
-    return Math.max(bodyLine, height);
+    return height;
   }
 
   if (section.type === 'summary' || section.layout === 'text-block') {
     const entry = section.entries[0];
     if (!entry || entry.visible === false) return 0;
     const text = entry.title ?? '';
-    return Math.max(text.trim() ? 1 : 0, wrapLines(text, cpl)) * bodyLine;
+    if (!text.trim()) return 0;
+    return Math.max(1, wrapLines(text, cpl)) * bodyLine;
   }
 
   if (section.layout === 'bullet-list') {
@@ -164,21 +170,89 @@ function sectionContentHeight(
   for (const entry of section.entries) {
     if (entry.visible === false) continue;
     height += firstEntry ? 0 : section.styleOverrides?.entrySpacing ?? styles.spacing.entry;
-    height += entryHeight(entry, resume, cpl, bodyLine);
+    height += entryHeight(entry, section, resume, cpl, bodyLine);
     firstEntry = false;
   }
   return height;
 }
 
-function entryHeight(entry: Entry, resume: Resume, cpl: number, bodyLine: number): number {
+function entryHeight(
+  entry: Entry,
+  section: Section,
+  resume: Resume,
+  cpl: number,
+  bodyLine: number,
+): number {
   const { styles } = resume;
-  // Title and the right-aligned date share one row.
-  let height = styles.fontSize.entryTitle * 1.15;
+  const titleLine = styles.fontSize.entryTitle * 1.1;
+
+  // Match PreviewRenderer layouts: projects put title + tech on one row;
+  // education joins location/GPA/coursework on a single tertiary line.
+  if (section.type === 'projects') {
+    let height = titleLine;
+    if (entry.customFields?.githubUrl?.trim() || entry.url?.trim()) height += bodyLine * 0.9;
+    height += bulletsHeight(entry.bullets ?? [], cpl, bodyLine);
+    return height;
+  }
+
+  if (section.type === 'education') {
+    let height = titleLine;
+    if (entry.subtitle?.trim()) height += bodyLine;
+    const tertiary = educationTertiaryLine(entry, false);
+    if (tertiary) height += Math.max(1, wrapLines(tertiary, cpl)) * bodyLine;
+    height += bulletsHeight(entry.bullets ?? [], cpl, bodyLine);
+    return height;
+  }
+
+  if (section.type === 'study-abroad') {
+    const tertiary = educationTertiaryLine(entry, true);
+    let height = tertiary
+      ? Math.max(1, wrapLines(tertiary, cpl)) * Math.max(titleLine, bodyLine)
+      : titleLine;
+    height += bulletsHeight(entry.bullets ?? [], cpl, bodyLine);
+    return height;
+  }
+
+  // Experience / leadership / research / custom: title, subtitle, location lines.
+  // Custom fields are not rendered as extra rows in the default entry layout.
+  let height = titleLine;
   if (entry.subtitle?.trim()) height += bodyLine;
-  if (entry.location?.trim()) height += bodyLine * 0.9;
-  height += visibleCustomFieldCount(entry) * bodyLine * 0.95;
+  if (entry.location?.trim()) height += bodyLine * 0.85;
+  if (entry.url?.trim() && section.type !== 'certifications') height += bodyLine * 0.85;
   height += bulletsHeight(entry.bullets ?? [], cpl, bodyLine);
   return height;
+}
+
+function educationTertiaryLine(entry: Entry, studyAbroad: boolean): string {
+  const cf = entry.customFields ?? {};
+  if (studyAbroad) {
+    const program = entry.title?.trim();
+    const loc = entry.location?.trim();
+    const header = program && loc ? `${program} in ${loc}` : program || loc || '';
+    return [
+      header,
+      cf.gpa?.trim() ? `GPA: ${cf.gpa.trim()}` : '',
+      cf.language?.trim() ?? '',
+      cf.coursework?.trim() ? `Courses: ${cf.coursework.trim()}` : '',
+    ]
+      .filter(Boolean)
+      .join(' | ');
+  }
+  return [
+    entry.location?.trim() ?? '',
+    cf.gpa?.trim() ? `GPA: ${cf.gpa.trim()}` : '',
+    cf.coursework?.trim() ? `Coursework: ${cf.coursework.trim()}` : '',
+    cf.additionalCoursework?.trim()
+      ? `Additional Coursework in ${cf.additionalCoursework.trim()}`
+      : '',
+    cf.studyAbroad?.trim() ?? '',
+    cf.honors?.trim() ?? '',
+    cf.minor?.trim() ? `Minor: ${cf.minor.trim()}` : '',
+    cf.certificate?.trim() ? `Certificate: ${cf.certificate.trim()}` : '',
+    cf.track?.trim() ? `Track: ${cf.track.trim()}` : '',
+  ]
+    .filter(Boolean)
+    .join(' | ');
 }
 
 function bulletsHeight(
@@ -187,8 +261,8 @@ function bulletsHeight(
   bodyLine: number,
 ): number {
   let height = 0;
-  // A glyph + gutter eats ~2 characters of usable width per bullet line.
-  const bulletCpl = Math.max(8, cpl - 2);
+  // Bullet glyph + gutter ≈ 1 character of usable width, not 2.
+  const bulletCpl = Math.max(8, cpl - 1);
   for (const bullet of bullets) {
     if (bullet.visible === false) continue;
     const plain = stripHtml(bullet.content);
@@ -204,16 +278,26 @@ function wrapLines(text: string, cpl: number): number {
   const perLine = Math.max(1, cpl);
   return clean
     .split('\n')
-    .reduce((sum, row) => sum + Math.max(1, Math.ceil(row.trim().length / perLine)), 0);
+    .reduce((sum, row) => {
+      const words = row.trim().split(/\s+/).filter(Boolean);
+      if (words.length === 0) return sum;
+      let lines = 1;
+      let used = 0;
+      for (const word of words) {
+        const next = used === 0 ? word.length : used + 1 + word.length;
+        if (next <= perLine) {
+          used = next;
+        } else {
+          lines += 1;
+          used = Math.min(word.length, perLine);
+        }
+      }
+      return sum + lines;
+    }, 0);
 }
 
 function charsPerLine(widthPt: number, body: number): number {
   return Math.max(8, Math.floor(widthPt / (body * AVG_CHAR_WIDTH_EM)));
-}
-
-function visibleCustomFieldCount(entry: Entry): number {
-  if (!entry.customFields) return 0;
-  return Object.values(entry.customFields).filter((value) => value.trim()).length;
 }
 
 function sectionHasContent(section: Section): boolean {
