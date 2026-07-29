@@ -61,6 +61,11 @@ export interface FitOptions {
    * - generous: ~90% page, softer floor, max 6
    */
   selectivity?: 'strict' | 'balanced' | 'generous';
+  /**
+   * Optional starting visibility. Used by variant generation to pin fixed
+   * sections such as Education before packing reworkable blocks around them.
+   */
+  initialVisibility?: VisibilityMap;
 }
 
 export function buildVisibilityFrom(resume: Resume): VisibilityMap {
@@ -152,8 +157,10 @@ export function fitToPages(
   const visibility: VisibilityMap = { entries: {}, bullets: {} };
   for (const section of resume.sections) {
     for (const entry of section.entries) {
-      visibility.entries[entry.id] = false;
-      for (const bullet of entry.bullets ?? []) visibility.bullets[bullet.id] = false;
+      visibility.entries[entry.id] = options.initialVisibility?.entries[entry.id] ?? false;
+      for (const bullet of entry.bullets ?? []) {
+        visibility.bullets[bullet.id] = options.initialVisibility?.bullets[bullet.id] ?? false;
+      }
     }
   }
 
@@ -183,7 +190,10 @@ export function fitToPages(
         bullets: entry.bullets ?? [],
         sectionType: section.type,
       });
-      bulletsIncluded.set(entry.id, 0);
+      bulletsIncluded.set(
+        entry.id,
+        (entry.bullets ?? []).filter((bullet) => visibility.bullets[bullet.id]).length,
+      );
       for (const bullet of entry.bullets ?? []) {
         lookupEntryParent.set(bullet.id, entry.id);
         bulletContent.set(bullet.id, bullet.content);

@@ -1,7 +1,6 @@
 import { generateAiText, type AiSettings, type JsonSchema } from './aiByok';
 import {
   applyVisibility,
-  classBlocksForEntry,
   fitToPages,
   listAllBlocks,
   localScoreBlocks,
@@ -19,17 +18,17 @@ const SCORE_TASK = `You score each resume block for relevance to a job descripti
 Return ONLY JSON (no commentary, no fences). Prefer this object shape:
 { "scores": [
   { "entryId": "...", "bulletId": "", "classId": "", "score": 0-10, "reason": "" },
-  { "entryId": "...", "bulletId": "...", "classId": "", "score": 0-10, "reason": "..." },
-  { "entryId": "...", "bulletId": "", "classId": "...", "score": 0-10, "reason": "..." }
+  { "entryId": "...", "bulletId": "...", "classId": "", "score": 0-10, "reason": "..." }
 ] }
 - Score 10 = highly relevant; 0 = irrelevant.
+- Only score Experience, Skills, Projects, and Leadership inventory rows.
+- Do not score or rework Education; the app keeps Education fixed at the top.
 - Include EVERY entry and EVERY bullet from the inventory (bullet rows must include bulletId).
-- Include EVERY class/course block from the inventory (class rows must include classId).
 - Prefer scoring bullets individually; still include an entry row for each entry.
 - If two bullets in the same entry say the same thing, score the weaker duplicate lower.
 - "reason" is optional, 5-12 words for bullets if you want to explain the score.
 - For entry-only rows, set "bulletId", "classId", and "reason" to empty strings.
-- For class/course rows, set "bulletId" to an empty string and use the exact classId.
+- For bullet rows, set "classId" to an empty string.
 - Do not invent ids; use the exact ids provided.
 - Scores must be numbers, not strings.`;
 
@@ -45,12 +44,21 @@ Rules:
 - Keep action verb + task + impact; roughly the same length (at most ~32 words).
 - Skip a bullet entirely if no honest keyword-aware rewrite helps.
 - Use the exact bulletId values provided.
-- Within the same entry/block, do not produce two bullets that say the same thing; keep the stronger claim distinct or skip the weaker duplicate.
-- If a class/course block is relevant, keep or reorder it; never invent classes that were not provided.`;
+- Only rewrite bullets from Experience, Projects, or Leadership sections.
+- Within the same entry/block, do not produce two bullets that say the same thing; keep the stronger claim distinct or skip the weaker duplicate.`;
 
 const AI_HIGH_SCORE = 8;
 const AI_LOW_SCORE = 4;
 const SCORE_CHUNK_ROW_LIMIT = 32;
+const VARIANT_REWORKABLE_SECTION_TYPES = new Set<Resume['sections'][number]['type']>([
+  'experience',
+  'skills',
+  'projects',
+  'leadership',
+]);
+const VARIANT_PINNED_TOP_SECTION_TYPES = new Set<Resume['sections'][number]['type']>([
+  'education',
+]);
 
 type ListedBlocks = ReturnType<typeof listAllBlocks>;
 
@@ -142,12 +150,13 @@ export async function scoreBlocksWithAi(
   if (!settings.apiKey.trim()) throw new Error('Add a BYOK API key first.');
   if (!jobDescription.trim()) throw new Error('Paste a job description first.');
 
-  const blocks = listAllBlocks(resume);
+  const allBlocks = listAllBlocks(resume);
+  const blocks = variantScorableBlocks(allBlocks);
   if (blocks.entries.length === 0 && blocks.bullets.length === 0) {
-    throw new Error('This resume has no entries or bullets to score.');
+    throw new Error('This resume has no Experience, Skills, Projects, or Leadership blocks to score.');
   }
 
-  const semanticScores = semanticScoreBlocks(resume, jobDescription);
+  const semanticScores = filterVariantReworkableScores(resume, semanticScoreBlocks(resume, jobDescription));
   const semanticMarkers = semanticMarkersForText(jobDescription);
   const inventories = buildScoreInventories(blocks);
 
@@ -165,7 +174,10 @@ export async function scoreBlocksWithAi(
   }
 
   if (parsedRows.length === 0) {
-    const fallback = semanticScores.length > 0 ? semanticScores : localScoreBlocks(resume, jobDescription);
+    const fallback =
+      semanticScores.length > 0
+        ? semanticScores
+        : filterVariantReworkableScores(resume, localScoreBlocks(resume, jobDescription));
     return calibrateAiBlockScores(fallback, resume, jobDescription);
   }
 
@@ -202,7 +214,10 @@ export async function scoreBlocksWithAi(
   }
 
   if (scores.length === 0) {
-    const fallback = semanticScores.length > 0 ? semanticScores : localScoreBlocks(resume, jobDescription);
+    const fallback =
+      semanticScores.length > 0
+        ? semanticScores
+        : filterVariantReworkableScores(resume, localScoreBlocks(resume, jobDescription));
     return calibrateAiBlockScores(fallback, resume, jobDescription);
   }
 
@@ -228,6 +243,7 @@ export async function rewriteVariantBulletsWithAi(
   const wanted = new Set(bulletIds);
   const inventory: { bulletId: string; section: string; entry: string; content: string }[] = [];
   for (const section of resume.sections) {
+    if (!isVariantBulletRewriteSection(section)) continue;
     for (const entry of section.entries) {
       for (const bullet of entry.bullets ?? []) {
         if (!wanted.has(bullet.id)) continue;
@@ -288,23 +304,31 @@ export function fitVariantToPages(
   scores: BlockScore[],
   maxPages: number,
 ): FitResult {
-  const primary = fitToPages(resume, scores, {
+  const variantResume = withPinnedVariantSections(resume);
+  const variantScores = filterVariantReworkableScores(variantResume, scores);
+  const initialVisibility = buildVariantBaseVisibility(variantResume);
+
+  const primary = fitToPages(variantResume, variantScores, {
     maxPages,
     targetUsage: 94,
     selectivity: 'balanced',
+    initialVisibility,
   });
-  const availableUsage = estimatePageUsage(applyVisibility(resume, allVisibleMap(resume)));
+  const availableUsage = estimatePageUsage(
+    applyVisibility(variantResume, buildVariantAvailableVisibility(variantResume)),
+  );
   const minimumUsefulPage = 88;
   if (primary.estimatedUsage >= minimumUsefulPage || availableUsage < minimumUsefulPage) {
     return primary;
   }
 
-  const generous = fitToPages(resume, scores, {
+  const generous = fitToPages(variantResume, variantScores, {
     maxPages,
     targetUsage: 98,
     selectivity: 'generous',
     minScore: 0,
     maxBulletsPerEntry: 8,
+    initialVisibility,
   });
 
   return generous.estimatedUsage > primary.estimatedUsage ? generous : primary;
@@ -315,14 +339,14 @@ export function buildPrioritizedVariantResume(
   visibility: VisibilityMap,
   scores: BlockScore[],
 ): Resume {
-  const visibleResume = applyVisibility(resume, visibility);
+  const visibleResume = applyVisibility(withPinnedVariantSections(resume), visibility);
   const priority = buildPriorityLookup(scores);
 
   const sections = visibleResume.sections.map((section) => {
+    if (!isVariantReworkableSection(section)) return section;
     const entries = section.entries.map((entry) => {
-      const withClasses = prioritizeClassFields(section, entry, priority.classById);
-      const bullets = prioritizeAndDedupeBullets(withClasses.bullets ?? [], priority.bulletById);
-      return { ...withClasses, bullets };
+      const bullets = prioritizeAndDedupeBullets(entry.bullets ?? [], priority.bulletById);
+      return { ...entry, bullets };
     });
     return {
       ...section,
@@ -330,33 +354,92 @@ export function buildPrioritizedVariantResume(
         const av = a.visible !== false ? 1 : 0;
         const bv = b.visible !== false ? 1 : 0;
         return bv - av || priority.entryScore(b.id) - priority.entryScore(a.id);
-      }),
+      }).map((entry, order) => ({ ...entry, order })),
     };
   });
 
   return {
     ...visibleResume,
     sections: [...sections].sort((a, b) => {
-      const av = a.visible && sectionHasVariantContent(a) ? 1 : 0;
-      const bv = b.visible && sectionHasVariantContent(b) ? 1 : 0;
-      if (av !== bv) return bv - av;
-      if (a.type === 'summary' && b.type !== 'summary') return -1;
-      if (b.type === 'summary' && a.type !== 'summary') return 1;
-      return sectionScore(b, priority) - sectionScore(a, priority) || a.order - b.order;
+      const ap = isVariantPinnedTopSection(a) ? 1 : 0;
+      const bp = isVariantPinnedTopSection(b) ? 1 : 0;
+      return bp - ap || a.order - b.order;
     }).map((section, order) => ({ ...section, order })),
   };
 }
 
-function allVisibleMap(resume: Resume): VisibilityMap {
+function buildVariantBaseVisibility(resume: Resume): VisibilityMap {
   const entries: Record<string, boolean> = {};
   const bullets: Record<string, boolean> = {};
   for (const section of resume.sections) {
+    const preserve = !isVariantReworkableSection(section);
     for (const entry of section.entries) {
-      entries[entry.id] = true;
-      for (const bullet of entry.bullets ?? []) bullets[bullet.id] = true;
+      entries[entry.id] = preserve ? entry.visible !== false : false;
+      for (const bullet of entry.bullets ?? []) {
+        bullets[bullet.id] = preserve ? bullet.visible : false;
+      }
     }
   }
   return { entries, bullets };
+}
+
+function buildVariantAvailableVisibility(resume: Resume): VisibilityMap {
+  const visibility = buildVariantBaseVisibility(resume);
+  for (const section of resume.sections) {
+    if (!isVariantReworkableSection(section)) continue;
+    for (const entry of section.entries) {
+      visibility.entries[entry.id] = true;
+      for (const bullet of entry.bullets ?? []) visibility.bullets[bullet.id] = true;
+    }
+  }
+  return visibility;
+}
+
+function variantScorableBlocks(blocks: ListedBlocks): ListedBlocks {
+  return {
+    entries: blocks.entries.filter(({ section }) => isVariantReworkableSection(section)),
+    bullets: blocks.bullets.filter(({ section }) => isVariantReworkableSection(section)),
+    classes: [],
+  };
+}
+
+function filterVariantReworkableScores(resume: Resume, scores: BlockScore[]): BlockScore[] {
+  const entryIds = new Set<string>();
+  const bulletIds = new Set<string>();
+  for (const section of resume.sections) {
+    if (!isVariantReworkableSection(section)) continue;
+    for (const entry of section.entries) {
+      entryIds.add(entry.id);
+      for (const bullet of entry.bullets ?? []) bulletIds.add(bullet.id);
+    }
+  }
+
+  return scores.filter((score) => {
+    if (!entryIds.has(score.entryId)) return false;
+    if (score.classId) return false;
+    return !score.bulletId || bulletIds.has(score.bulletId);
+  });
+}
+
+function withPinnedVariantSections(resume: Resume): Resume {
+  return {
+    ...resume,
+    sections: resume.sections.map((section) =>
+      isVariantPinnedTopSection(section) ? { ...section, visible: true } : section,
+    ),
+  };
+}
+
+function isVariantReworkableSection(section: Resume['sections'][number]): boolean {
+  return VARIANT_REWORKABLE_SECTION_TYPES.has(section.type);
+}
+
+function isVariantPinnedTopSection(section: Resume['sections'][number]): boolean {
+  return VARIANT_PINNED_TOP_SECTION_TYPES.has(section.type);
+}
+
+function isVariantBulletRewriteSection(section: Resume['sections'][number]): boolean {
+  return section.type === 'experience' || section.type === 'projects' || section.type === 'leadership';
 }
 
 function buildPriorityLookup(scores: BlockScore[]): {
@@ -408,62 +491,6 @@ function prioritizeAndDedupeBullets(
       order,
     };
   });
-}
-
-function prioritizeClassFields(
-  section: Resume['sections'][number],
-  entry: Resume['sections'][number]['entries'][number],
-  classById: Map<string, number>,
-) {
-  const classBlocks = classBlocksForEntry(section, entry);
-  if (classBlocks.length === 0) return entry;
-
-  const customFields = { ...(entry.customFields ?? {}) };
-  for (const fieldKey of new Set(classBlocks.map((item) => item.fieldKey))) {
-    const fieldBlocks = classBlocks.filter((item) => item.fieldKey === fieldKey);
-    const scored = fieldBlocks
-      .map((item) => ({ ...item, score: classById.get(item.classId) ?? 0 }))
-      .sort((a, b) => b.score - a.score || a.index - b.index);
-    const max = scored[0]?.score ?? 0;
-    if (max <= 0) continue;
-    const floor = Math.max(3.5, Math.min(5.5, max * 0.55));
-    const selected = scored.filter((item) => item.score >= floor).slice(0, 10);
-    const fallback = scored.slice(0, Math.min(3, scored.length));
-    const next = (selected.length > 0 ? selected : fallback).map((item) => item.value);
-    if (next.length > 0) customFields[fieldKey] = next.join(', ');
-  }
-  return { ...entry, customFields };
-}
-
-function sectionHasVariantContent(section: Resume['sections'][number]): boolean {
-  return section.entries.some((entry) => {
-    if (entry.visible === false) return false;
-    return Boolean(
-      entry.title?.trim() ||
-        entry.subtitle?.trim() ||
-        entry.location?.trim() ||
-        entry.bullets?.some((bullet) => bullet.visible && stripHtml(bullet.content)) ||
-        Object.values(entry.customFields ?? {}).some((value) => value.trim()),
-    );
-  });
-}
-
-function sectionScore(
-  section: Resume['sections'][number],
-  priority: ReturnType<typeof buildPriorityLookup>,
-): number {
-  let max = 0;
-  for (const entry of section.entries) {
-    if (entry.visible === false) continue;
-    max = Math.max(max, priority.entryScore(entry.id));
-    for (const bullet of entry.bullets ?? []) {
-      if (bullet.visible) max = Math.max(max, priority.bulletById.get(bullet.id) ?? 0);
-    }
-    for (const classBlock of classBlocksForEntry(section, entry)) {
-      max = Math.max(max, priority.classById.get(classBlock.classId) ?? 0);
-    }
-  }
-  return max;
 }
 
 function isDuplicateBullet(a: string, b: string): boolean {
@@ -681,9 +708,10 @@ function retryScorePrompt(jobDescription: string, inventory: unknown, semanticMa
     'Your last scoring response could not be parsed by JSON.parse.',
     'Return ONLY compact valid JSON now. No markdown, no comments, no prose.',
     'Required shape: {"scores":[{"entryId":"...","bulletId":"","classId":"","score":0,"reason":""}]}',
+    'Only score Experience, Skills, Projects, and Leadership rows from the inventory.',
+    'Do not score Education or classes/coursework; keep classId as an empty string.',
     'For entry rows, use empty strings for bulletId, classId, and reason.',
     'For bullet rows, use the exact bulletId from the inventory.',
-    'For class/course rows, use the exact classId from the inventory.',
     `--- JOB DESCRIPTION ---\n${jobDescription}`,
     `--- LOCAL SEMANTIC MARKERS ---\n${JSON.stringify(semanticMarkers)}`,
     `--- BLOCK INVENTORY ---\n${JSON.stringify(inventory, null, 2)}`,
@@ -814,12 +842,25 @@ function readNumber(row: Record<string, unknown>, ...keys: string[]): number {
 export function parseLooseJsonArray(text: string): unknown[] | null {
   const trimmed = text.trim();
   if (!trimmed) return null;
+
   for (const candidate of jsonCandidates(trimmed)) {
+    const parsed = tryParseJsonArray(candidate);
+    if (parsed) return parsed;
+  }
+
+  // Last resort: recover individual score/rewrite objects even when the outer
+  // wrapper is truncated or glued together with prose.
+  const recovered = recoverResultRows(trimmed);
+  return recovered.length > 0 ? recovered : null;
+}
+
+function tryParseJsonArray(candidate: string): unknown[] | null {
+  for (const repaired of repairJsonCandidates(candidate)) {
     try {
-      const extracted = extractResultArray(JSON.parse(candidate));
-      if (extracted) return extracted;
+      const extracted = extractResultArray(JSON.parse(repaired));
+      if (extracted && extracted.length > 0) return extracted;
     } catch {
-      // try next
+      // try next repair
     }
   }
   return null;
@@ -838,7 +879,107 @@ function jsonCandidates(trimmed: string): string[] {
   const arrayCandidate = balancedJsonSlice(trimmed, '[', ']');
   if (arrayCandidate) candidates.add(arrayCandidate);
 
+  // Truncated payloads: take from first { or [ through the end and let repairs close it.
+  const firstBrace = trimmed.search(/[\[{]/);
+  if (firstBrace >= 0) candidates.add(trimmed.slice(firstBrace));
+
   return [...candidates].filter(Boolean);
+}
+
+/** Normalize common model JSON defects before JSON.parse. */
+function repairJsonCandidates(raw: string): string[] {
+  const cleaned = raw
+    .replace(/^\uFEFF/, '')
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/\u00A0/g, ' ')
+    .trim();
+
+  const out = new Set<string>();
+  out.add(cleaned);
+
+  // Strip // and /* */ comments outside strings (rough but helpful).
+  out.add(
+    cleaned
+      .replace(/(^|[^:])\/\/.*$/gm, '$1')
+      .replace(/\/\*[\s\S]*?\*\//g, ''),
+  );
+
+  // Trailing commas before ] or }.
+  out.add(cleaned.replace(/,\s*([}\]])/g, '$1'));
+
+  // Python / JS literals some models emit.
+  out.add(
+    cleaned
+      .replace(/\bNone\b/g, 'null')
+      .replace(/\bTrue\b/g, 'true')
+      .replace(/\bFalse\b/g, 'false'),
+  );
+
+  // Single-quoted keys: {'entryId': 'x'} → {"entryId": "x"} (best-effort).
+  out.add(
+    cleaned.replace(/([{,]\s*)'([^'\\]+)'(\s*:)/g, '$1"$2"$3').replace(/:\s*'([^'\\]*)'/g, ': "$1"'),
+  );
+
+  // Close truncated objects/arrays when the model hits the token limit mid-JSON.
+  out.add(closeTruncatedJson(cleaned.replace(/,\s*([}\]])/g, '$1')));
+
+  return [...out].filter(Boolean);
+}
+
+function closeTruncatedJson(text: string): string {
+  let inString = false;
+  let escaped = false;
+  const stack: Array<'{' | '['> = [];
+  for (const char of text) {
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (char === '{' || char === '[') stack.push(char);
+    if (char === '}' || char === ']') stack.pop();
+  }
+
+  let repaired = text;
+  if (inString) repaired += '"';
+  // Drop a dangling trailing comma or colon before we close.
+  repaired = repaired.replace(/[,:]\s*$/, '');
+  while (stack.length > 0) {
+    const open = stack.pop();
+    repaired += open === '{' ? '}' : ']';
+  }
+  return repaired;
+}
+
+function recoverResultRows(text: string): unknown[] {
+  const rows: unknown[] = [];
+  const seen = new Set<string>();
+  const objectPattern = /\{[^{}]*"(?:entryId|entry_id|bulletId|bullet_id|score|rewritten)"[^{}]*\}/g;
+  for (const match of text.match(objectPattern) ?? []) {
+    for (const repaired of repairJsonCandidates(match)) {
+      try {
+        const value = JSON.parse(repaired);
+        if (!looksLikeResultRow(value)) continue;
+        const key = JSON.stringify(value);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        rows.push(value);
+        break;
+      } catch {
+        // try next repair
+      }
+    }
+  }
+  return rows;
 }
 
 function balancedJsonSlice(text: string, open: '{' | '[', close: '}' | ']'): string | null {

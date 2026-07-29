@@ -57,7 +57,7 @@ All model prompts must include these rules:
 
 | Feature | UI entry | Code entry | Output type | Reliability guardrails |
 | --- | --- | --- | --- | --- |
-| Generate variant - AI scoring | Generate variant for role | `scoreBlocksWithAi` | JSON object/array of entry, bullet, and class/course scores | Provider JSON schema, chunked inventories, semantic marker fallback, ID validation, class block scoring, duplicate-bullet pressure, clustered-score calibration, page-fill packing. |
+| Generate variant - AI scoring | Generate variant for role | `scoreBlocksWithAi` | JSON object/array of Experience, Skills, Projects, and Leadership entry/bullet scores | Provider JSON schema, chunked inventories, semantic marker fallback, ID validation, duplicate-bullet pressure, clustered-score calibration, page-fill packing around fixed Education. |
 | Generate variant - keyword rewrite | Generate variant for role | `rewriteVariantBulletsWithAi` | JSON rewrites | Provider JSON schema, known bullet IDs only, unchanged text ignored, duplicate rewrite avoidance, rewrite review before create. |
 | Tailor to job | Tailor modal | `generateTailoring` | JSON outcome | Provider JSON schema, max 10 rewrites, fake-skill filtering, duplicate/unchanged rewrite removal, summary/cover length caps. |
 | Bullet rewrite | AI drawer, Bulk edit | `promptForRewrite` | 3 plain text lines | Shared guide prompt, local rewrite fallback, UI keeps first 3 clean options. |
@@ -85,17 +85,20 @@ User steps:
 3. Paste a full job description. This is required for AI and local scoring.
 4. Keep target pages tight, usually 1 page.
 5. Run scoring and review the preview before creating the variant.
-6. If the master resume has enough relevant detail, expect the preview to use
-   enough selected content to fill at least one page instead of stopping early.
+6. Education stays fixed at the top of the generated variant.
+7. If the master resume has enough relevant detail, expect the preview to use
+   enough selected Experience, Skills, Projects, and Leadership content to fill
+   at least one page instead of stopping early.
 
 Model steps:
 
 1. Extract must-have job skills, tools, domain, seniority, and impact themes.
-2. Score every entry, bullet, and class/course block on a harsh 0-10 scale.
+2. Score only Experience, Skills, Projects, and Leadership entries/bullets on a
+   harsh 0-10 scale.
 3. Force score spread: many bullets should be low relevance; only direct
    evidence gets 8-10.
-4. Include class/course rows with exact `classId` values when coursework or
-   additional coursework appears in the inventory.
+4. Do not score or rewrite Education, classes/coursework, summaries, awards,
+   certifications, publications, research, or custom sections.
 5. Score repeated bullets inside the same entry lower so duplicate claims do
    not crowd out distinct evidence.
 6. Return exact IDs only.
@@ -119,8 +122,7 @@ App steps:
    parseable JSON.
 4. Send the job's local semantic markers alongside each chunk so small models
    have a compact guide to role intent.
-5. Treat classes/coursework as selectable blocks by scoring `classId` rows and
-   using those scores to keep, drop, and reorder the existing class list.
+5. Keep Education visible and pinned before generator-reworkable sections.
 6. Fill skipped or malformed chunks with the local semantic marker/vector model.
 7. Fuse provider scores with semantic scores so over-broad LLM answers are
    corrected by deterministic role similarity.
@@ -129,10 +131,17 @@ App steps:
    poison future attempts.
 10. Retry once with a compact JSON-only prompt if the first response is
    malformed or wrapped in prose.
-11. Pack with page-fill intent: start selective, then add more relevant blocks
-   up to the target page limit when enough content exists.
-12. Reorder visible sections, entries, bullets, and class lists by score.
-13. Hide lower-priority duplicate bullets within the same entry.
+11. Repair common malformed payloads before giving up: fenced blocks, smart
+   quotes, trailing commas, truncated braces/brackets, and score objects
+   recovered from surrounding prose.
+12. Pack with page-fill intent: start from fixed Education/non-generator
+   visibility, then add relevant Experience, Skills, Projects, and Leadership
+   blocks up to the target page limit when enough content exists.
+13. Keep Education section order first and preserve Education entries,
+   coursework/classes, and wording.
+14. Reorder entries and bullets only inside Experience, Skills, Projects, and
+   Leadership.
+15. Hide lower-priority duplicate bullets within the same allowed entry.
 
 Acceptance checks:
 
@@ -141,8 +150,8 @@ Acceptance checks:
 3. No experience entry appears as an empty shell.
 4. One role cannot swallow the whole page.
 5. Relevant variants fill at least one page when enough resume detail exists.
-6. Coursework/classes can be modified by adding them to the education field and
-   are then scored, reordered, kept, or dropped like other blocks.
+6. Education appears first and is not rewritten, reordered, or class-filtered by
+   Generate Variant.
 7. Bullets from the same entry do not repeat the same task, tool, metric, or
    outcome.
 
@@ -159,9 +168,11 @@ Model steps:
 1. Consider only kept bullet IDs.
 2. Rewrite only when an honest keyword-aware improvement exists.
 3. Preserve facts, approximate length, and action/task/impact shape.
-4. Do not create two bullets in the same entry that say the same thing. Keep
+4. Only rewrite Experience, Projects, and Leadership bullets.
+5. Do not create two bullets in the same entry that say the same thing. Keep
    the stronger distinct claim and skip the weaker duplicate.
-5. Never invent classes or coursework; keep existing class names truthful.
+6. Never rewrite Education, coursework/classes, awards, certifications,
+   publications, summaries, research, or custom sections.
 
 App steps:
 

@@ -4,9 +4,10 @@ import { makeId } from '@/utils/id';
 import {
   buildPrioritizedVariantResume,
   calibrateAiBlockScores,
+  fitVariantToPages,
   parseLooseJsonArray,
 } from './aiVariant';
-import { classBlocksForEntry, fitToPages, listAllBlocks, type BlockScore } from './blockSelection';
+import { fitToPages, listAllBlocks, type BlockScore } from './blockSelection';
 import type { Resume } from '@/types';
 
 function resumeWithExtraDetail(): Resume {
@@ -111,12 +112,39 @@ describe('parseLooseJsonArray', () => {
       { entry_id: 'entry-1', bullet_id: 'bullet-1', relevanceScore: 9 },
     ]);
   });
+
+  it('repairs trailing commas and smart quotes', () => {
+    const parsed = parseLooseJsonArray(
+      '{\n  “scores”: [\n    {“entryId”: “entry-1”, “bulletId”: “”, “score”: 9,},\n  ],\n}',
+    );
+    expect(parsed).toEqual([{ entryId: 'entry-1', bulletId: '', score: 9 }]);
+  });
+
+  it('closes truncated score payloads', () => {
+    const parsed = parseLooseJsonArray(
+      '{"scores":[{"entryId":"entry-1","bulletId":"bullet-1","score":8,"reason":"sql fit"',
+    );
+    expect(parsed).toEqual([
+      { entryId: 'entry-1', bulletId: 'bullet-1', score: 8, reason: 'sql fit' },
+    ]);
+  });
+
+  it('recovers score objects glued into prose when the wrapper is broken', () => {
+    const parsed = parseLooseJsonArray(
+      'Sure. {"entryId":"entry-1","score":8} and also {"entryId":"entry-1","bulletId":"bullet-1","score":9} done.',
+    );
+    expect(parsed).toEqual([
+      { entryId: 'entry-1', score: 8 },
+      { entryId: 'entry-1', bulletId: 'bullet-1', score: 9 },
+    ]);
+  });
 });
 
 describe('buildPrioritizedVariantResume', () => {
-  it('treats classes as scored blocks and rewrites coursework order for the variant', () => {
+  it('pins education first and preserves education fields without class reordering', () => {
     const resume = getTemplateDemoResume('general');
     const education = resume.sections.find((section) => section.type === 'education')!;
+    const experience = resume.sections.find((section) => section.type === 'experience')!;
     const entry = {
       ...education.entries[0]!,
       id: 'edu-1',
@@ -124,22 +152,58 @@ describe('buildPrioritizedVariantResume', () => {
         coursework: 'Art History, SQL Analytics, Data Mining, Intro Biology',
       },
     };
-    const section = { ...education, entries: [entry] };
-    const classScores = classBlocksForEntry(section, entry).map((block) => ({
-      entryId: entry.id,
-      classId: block.classId,
-      score: block.value.includes('SQL') ? 9 : block.value.includes('Data') ? 8 : 1,
-    }));
+    const educationSection = { ...education, order: 1, entries: [entry] };
+    const experienceSection = {
+      ...experience,
+      order: 0,
+      entries: [{ ...experience.entries[0]!, id: 'exp-1' }],
+    };
 
     const variant = buildPrioritizedVariantResume(
-      { ...resume, sections: [section] },
-      { entries: { [entry.id]: true }, bullets: {} },
-      [{ entryId: entry.id, score: 8 }, ...classScores],
+      { ...resume, sections: [experienceSection, educationSection] },
+      {
+        entries: { [entry.id]: true, 'exp-1': true },
+        bullets: Object.fromEntries((experienceSection.entries[0]?.bullets ?? []).map((bullet) => [bullet.id, true])),
+      },
+      [
+        { entryId: 'exp-1', score: 10 },
+        { entryId: entry.id, classId: 'class:edu-1:coursework:1:sql-analytics', score: 10 },
+      ],
     );
 
+    expect(variant.sections[0]?.type).toBe('education');
     expect(variant.sections[0]?.entries[0]?.customFields?.coursework).toBe(
-      'SQL Analytics, Data Mining',
+      'Art History, SQL Analytics, Data Mining, Intro Biology',
     );
+  });
+
+  it('fits allowed sections around fixed education', () => {
+    const resume = getTemplateDemoResume('general');
+    const education = resume.sections.find((section) => section.type === 'education')!;
+    const experience = resume.sections.find((section) => section.type === 'experience')!;
+    const expEntry = experience.entries[0]!;
+    const firstBullet = expEntry.bullets?.[0]!;
+    const fit = fitVariantToPages(
+      { ...resume, sections: [{ ...experience, order: 0 }, { ...education, order: 1 }] },
+      [
+        { entryId: education.entries[0]!.id, score: 10 },
+        { entryId: expEntry.id, bulletId: firstBullet.id, score: 9 },
+      ],
+      1,
+    );
+    const variant = buildPrioritizedVariantResume(
+      { ...resume, sections: [{ ...experience, order: 0 }, { ...education, order: 1 }] },
+      fit.visibility,
+      [
+        { entryId: education.entries[0]!.id, score: 10 },
+        { entryId: expEntry.id, bulletId: firstBullet.id, score: 9 },
+      ],
+    );
+
+    expect(variant.sections[0]?.type).toBe('education');
+    expect(variant.sections[0]?.entries[0]?.visible).toBe(true);
+    expect(variant.sections[1]?.type).toBe('experience');
+    expect(variant.sections[1]?.entries[0]?.visible).toBe(true);
   });
 
   it('suppresses duplicate visible bullets inside the same entry', () => {
