@@ -91,6 +91,7 @@ describe('localVariantRolePlan', () => {
     );
     expect(plan.targetRole.length).toBeGreaterThan(0);
     expect(plan.keyFactors.length).toBeGreaterThan(0);
+    expect(plan.clarifyingQuestions).toEqual([]);
     expect(plan.skillsToHighlight.join(' ').toLowerCase()).toMatch(/react|typescript|sql/);
     expect(
       isManualVisibilitySection({
@@ -103,6 +104,41 @@ describe('localVariantRolePlan', () => {
         entries: [],
       }),
     ).toBe(true);
+  });
+});
+
+describe('formatRolePlanForPrompt', () => {
+  it('includes user clarifications when answers are present', async () => {
+    const { formatRolePlanForPrompt, localVariantRolePlan } = await import('./aiVariant');
+    const plan = {
+      ...localVariantRolePlan('Software Engineer role needing React metrics'),
+      clarifyingQuestions: [
+        {
+          id: 'q1',
+          topic: 'Resume Editor',
+          question: 'About how many users or exports did Resume Editor reach?',
+          why: 'To quantify impact for a product eng reframe',
+        },
+      ],
+    };
+    const prompt = formatRolePlanForPrompt(plan, [
+      { questionId: 'q1', answer: 'Used by ~40 classmates for internship apps' },
+    ]);
+    expect(prompt).toContain('TARGET ROLE PLAN');
+    expect(prompt).not.toContain('clarifyingQuestions');
+    expect(prompt).toContain('USER CLARIFICATIONS');
+    expect(prompt).toContain('~40 classmates');
+  });
+});
+
+describe('buildFeaturePrompt writing rules', () => {
+  it('injects Sanitizer rules for rewrite features but not scoring', async () => {
+    const { buildFeaturePrompt, RESUME_WRITING_RULES } = await import('./aiGuides');
+    const rewrite = buildFeaturePrompt('variant-rewrite', 'BODY');
+    const score = buildFeaturePrompt('variant-score', 'BODY');
+    expect(rewrite).toContain(RESUME_WRITING_RULES.slice(0, 40));
+    expect(rewrite).toContain('no em dashes');
+    expect(score).not.toContain('RESUME WRITING STYLE');
   });
 });
 

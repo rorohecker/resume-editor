@@ -2,6 +2,7 @@
  * Shared AI operating guides for every BYOK feature.
  * Keep docs/AI_GUIDES.md in sync when changing these strings - they are
  * prepended to provider prompts so Claude / OpenAI / Gemini follow the same steps.
+ * Writing style follows docs/THE_SANITIZER.md (resume-adapted rules below).
  */
 
 export type AiFeatureId =
@@ -27,6 +28,33 @@ export const UNIVERSAL_AI_RULES = `UNIVERSAL RULES (apply to every task):
 5. If you cannot complete a step honestly, omit that item rather than fabricating.
 6. Work for any model size: be decisive, avoid hedging essays, keep lists short.`;
 
+/**
+ * Resume-adapted writing style from docs/THE_SANITIZER.md.
+ * Applied to every feature that drafts or rewrites prose.
+ */
+export const RESUME_WRITING_RULES = `RESUME WRITING STYLE (The Sanitizer — apply when drafting or rewriting prose):
+1. Lead with information. Open with the action, claim, or fact — no throat-clearing or topic praise.
+2. Name the actor and the observable action. Prefer "Built X that Y" over false agency ("the project enabled…", "the solution empowers…").
+3. Prefer mechanisms and weighted details (tool, audience, scale, constraint, outcome) over inflated verbs/adjectives (foster, harness, unlock, elevate, robust, seamless, innovative, cutting-edge, transformative, holistic, pivotal…).
+4. Cut stock phrases and corporate filler ("plays a crucial role", "in today's fast-paced…", "unlock the potential", "paves the way", "at its core").
+5. Use details that change the claim. Do not invent metrics, tools, or friction — preserve true constraints when the source has them.
+6. Match certainty to evidence. One level of caution is enough; no hedge stacking and no unearned slogans.
+7. Across bullets in the same role, vary the claim — do not repeat the same task, tool, metric, or outcome.
+8. House style: no em dashes; no dramatic one-line endings; no automatic three-part adjective/example stacks; plain ATS-friendly English; keep technical terms that carry meaning.
+9. Do not add fake imperfections (typos, slang, fragments) to sound human.`;
+
+const WRITING_FEATURES = new Set<AiFeatureId>([
+  'variant-plan',
+  'variant-rewrite',
+  'bullet-rewrite',
+  'summary',
+  'cover-letter',
+  'tailor',
+  'organize',
+  'agent',
+  'import-enrich',
+]);
+
 const FEATURE_STEPS: Record<AiFeatureId, string> = {
   'variant-plan': `FEATURE: Target-role planning (before scoring)
 GOAL: Think like a recruiting coach for THIS job, then produce a short plan the scorer and rewriter will follow.
@@ -38,7 +66,8 @@ STEPS:
 4. Decide what to REWRITE or REFRAME (how to angle bullets toward the role without inventing facts).
 5. Decide what to DEPRIORITIZE or hide (generic bullets, unrelated activities, weak skill noise).
 6. Note how to reframe experiences for this role in 2-4 concrete guidance bullets.
-7. Return ONLY JSON:
+7. SELF-PROMPT: If you have a promising reframe idea but the resume lacks a metric, scope, tool, audience, or outcome needed to write it truthfully, add 1-4 clarifyingQuestions for the user. Each question must be specific, answerable in one short sentence, and include why you need it. If the resume already has enough detail, return an empty clarifyingQuestions array.
+8. Return ONLY JSON:
 {
   "targetRole": "...",
   "keyFactors": ["..."],
@@ -46,9 +75,12 @@ STEPS:
   "experiencesToReframe": ["..."],
   "whatToRewrite": ["..."],
   "whatToDeprioritize": ["..."],
-  "targetingNotes": "2-4 sentences of packing/rewrite strategy"
+  "targetingNotes": "2-4 sentences of packing/rewrite strategy",
+  "clarifyingQuestions": [
+    { "id": "q1", "topic": "Project or role name", "question": "...?", "why": "So we can reframe X without inventing Y" }
+  ]
 }
-8. Keep lists short and specific to THIS job. No resume IDs required in the plan.`,
+9. Keep lists short and specific to THIS job. Never invent facts in questions — ask only for missing detail that would unlock an honest reframe.`,
 
   'variant-score': `FEATURE: Role-variant block scoring
 GOAL: Rank which resume blocks belong on a tailored short resume for THIS job - not keep everything.
@@ -76,10 +108,10 @@ STEPS:
 GOAL: Lightly retarget already-selected bullets toward the job - without lying.
 
 STEPS:
-1. Read the job description, the target-role plan (especially whatToRewrite and experiencesToReframe), and the bullet inventory.
+1. Read the job description, the target-role plan (especially whatToRewrite and experiencesToReframe), any USER CLARIFICATIONS, and the bullet inventory.
 2. For each bullet, decide if an honest keyword-aware rewrite helps. If not, skip it.
-3. Prefer reframes that match the plan's targetingNotes without inventing tools/metrics/employers.
-4. Keep claims truthful; never add tools/metrics/employers absent from the original.
+3. Prefer reframes that match the plan's targetingNotes. When USER CLARIFICATIONS are present, you may use those facts to complete a reframe — still do not invent beyond the resume plus clarifications.
+4. Keep claims truthful; never add tools/metrics/employers absent from the original or clarifications.
 5. Keep roughly the same length (<=32 words). Preserve action verb + task + impact.
 6. Within the same entry/block, do not create two bullets that communicate the same task, tool, metric, or outcome. Keep the stronger distinct claim and skip the weaker duplicate.
 7. Only rewrite Experience, Projects, and Leadership bullets. Do not rewrite Education, classes/coursework, summaries, awards, certifications, publications, or research.
@@ -173,9 +205,17 @@ STEPS:
 /**
  * Build a provider prompt with universal rules + feature steps + task body.
  * Use this for every BYOK feature so all models get the same operating guide.
+ * Writing features also receive The Sanitizer resume style rules.
  */
 export function buildFeaturePrompt(feature: AiFeatureId, ...parts: Array<string | false | null | undefined>): string {
-  return [UNIVERSAL_AI_RULES, FEATURE_STEPS[feature], ...parts.filter(Boolean)].join('\n\n');
+  return [
+    UNIVERSAL_AI_RULES,
+    WRITING_FEATURES.has(feature) ? RESUME_WRITING_RULES : '',
+    FEATURE_STEPS[feature],
+    ...parts.filter(Boolean),
+  ]
+    .filter(Boolean)
+    .join('\n\n');
 }
 
 /** Short human labels for docs/UI. */

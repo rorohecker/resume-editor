@@ -8,12 +8,15 @@
    scoring so the output is actually tailored.
 4. Keep the page target tight, usually 1 page.
 5. Run generation. With BYOK, the app first plans for the target role (key
-   factors, what to highlight/reframe/rewrite/deprioritize), then scores and
-   optionally rewrites. Without a key, it uses a local plan + semantic scoring.
+   factors, what to highlight/reframe/rewrite/deprioritize). If the planner has
+   a reframe idea but needs a metric, scope, or outcome you have not written
+   yet, it pauses and asks clarifying questions — answer or skip, then scoring
+   continues with your details. Without a key, it uses a local plan + semantic
+   scoring.
 6. Review the target-role plan and the preview. A tailored variant should hide
    weak or unrelated bullets instead of preserving every detail.
-7. Use the eye toggles on Skills / Additional Information to show or hide
-   categories the packer dropped before creating the variant.
+7. Use the eye toggles on Skills / Additional Information (in the editor and in
+   the variant preview) to show or hide categories before creating the variant.
 8. Education is always pinned as the first section in the generated variant and
    is not rewritten, reordered, or class-filtered by the generator.
 9. Generate variant only reworks Experience, Skills, Projects, and Leadership.
@@ -36,6 +39,12 @@ live in [docs/AI_GUIDES.md](docs/AI_GUIDES.md).
 Machine-readable prompt steps live in `src/utils/aiGuides.ts`. Every BYOK
 feature should call `buildFeaturePrompt(...)` so all supported providers follow
 the same rules.
+
+## Writing Guidelines
+
+AI-drafted bullets, summaries, and cover letters follow
+[docs/THE_SANITIZER.md](docs/THE_SANITIZER.md) (The Sanitizer writing system).
+Compact rules are injected into writing prompts via `RESUME_WRITING_RULES`.
 
 ## AI QA Process
 

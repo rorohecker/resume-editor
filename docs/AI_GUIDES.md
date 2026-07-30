@@ -39,6 +39,17 @@ All model prompts must include these rules:
    fabricating.
 6. Keep results short and decisive so smaller, faster models can comply.
 
+## Writing Style (The Sanitizer)
+
+All features that draft or rewrite prose also receive resume-adapted Sanitizer
+rules from `RESUME_WRITING_RULES` in `src/utils/aiGuides.ts`. The full research
+guide and revision method live in [THE_SANITIZER.md](./THE_SANITIZER.md).
+
+In short: lead with information; name actors and mechanisms; prefer weighted
+details over inflated vocabulary; cut stock phrases and corporate filler; match
+certainty to evidence; no em dashes or unearned slogans; never invent facts or
+fake imperfections to sound human.
+
 ## Provider Implementation Rules
 
 1. Keep BYOK keys client-owned. The browser sends keys directly or through the
@@ -57,10 +68,10 @@ All model prompts must include these rules:
 
 | Feature | UI entry | Code entry | Output type | Reliability guardrails |
 | --- | --- | --- | --- | --- |
-| Generate variant - role plan | Generate variant for role | `planVariantForRole` | JSON plan (role, key factors, highlight/reframe/rewrite/deprioritize) | Provider JSON schema, local plan fallback, feeds scoring + rewrite prompts. |
-| Generate variant - AI scoring | Generate variant for role | `scoreBlocksWithAi` | JSON object/array of Experience, Skills, Projects, and Leadership entry/bullet scores | Provider JSON schema, chunked inventories, semantic marker fallback, ID validation, duplicate-bullet pressure, clustered-score calibration, page-fill packing around fixed Education, plan-aware scoring. |
-| Generate variant - keyword rewrite | Generate variant for role | `rewriteVariantBulletsWithAi` | JSON rewrites | Provider JSON schema, known bullet IDs only, unchanged text ignored, duplicate rewrite avoidance, rewrite review before create, plan-aware reframes. |
-| Generate variant - visibility | Generate variant preview | `isManualVisibilitySection` + eye toggles | Manual entry show/hide for Skills / Additional Information / custom | Overrides packing for those sections before create; Education stays pinned. |
+| Generate variant - role plan | Generate variant for role | `planVariantForRole` | JSON plan (role, key factors, highlight/reframe/rewrite/deprioritize, optional clarifyingQuestions) | Provider JSON schema, local plan fallback, may pause for user answers before scoring + rewrite. |
+| Generate variant - AI scoring | Generate variant for role | `scoreBlocksWithAi` | JSON object/array of Experience, Skills, Projects, and Leadership entry/bullet scores | Provider JSON schema, chunked inventories, semantic marker fallback, ID validation, duplicate-bullet pressure, clustered-score calibration, page-fill packing around fixed Education, plan-aware scoring (uses clarifications when present). |
+| Generate variant - keyword rewrite | Generate variant for role | `rewriteVariantBulletsWithAi` | JSON rewrites | Provider JSON schema, known bullet IDs only, unchanged text ignored, duplicate rewrite avoidance, rewrite review before create, plan-aware reframes (uses clarifications when present). |
+| Generate variant - visibility | Generate variant preview | `isManualVisibilitySection` + eye toggles | Manual entry show/hide for Skills / Additional Information / custom | Overrides packing for those sections before create; Education stays pinned. Editor left panel also has eye toggles on skill categories. |
 | Tailor to job | Tailor modal | `generateTailoring` | JSON outcome | Provider JSON schema, max 10 rewrites, fake-skill filtering, duplicate/unchanged rewrite removal, summary/cover length caps. |
 | Bullet rewrite | AI drawer, Bulk edit | `promptForRewrite` | 3 plain text lines | Shared guide prompt, local rewrite fallback, UI keeps first 3 clean options. |
 | Summary | AI drawer | `promptForSummary` | Plain text | Shared guide prompt, local summary fallback, insert via `upsertSummarySection`. |
@@ -86,11 +97,13 @@ User steps:
 2. Open Generate variant for role.
 3. Paste a full job description. This is required for AI and local scoring.
 4. Keep target pages tight, usually 1 page.
-5. Run generation. AI first builds a target-role plan, then scores (and
-   optionally rewrites). Review the plan and preview before creating.
+5. Run generation. AI first builds a target-role plan. If it has a reframe idea
+   that needs a metric/scope/outcome missing from the resume, it asks clarifying
+   questions — answer or skip, then scoring (and optional rewrite) continue with
+   those details. Review the plan and preview before creating.
 6. Education stays fixed at the top of the generated variant.
-7. Use eye toggles on Skills / Additional Information to unhide categories the
-   packer dropped, or hide ones you do not want.
+7. Use eye toggles on Skills / Additional Information (editor + variant preview)
+   to show or hide categories.
 8. If the master resume has enough relevant detail, expect the preview to use
    enough selected Experience, Skills, Projects, and Leadership content to fill
    at least one page instead of stopping early. Page-usage % should not

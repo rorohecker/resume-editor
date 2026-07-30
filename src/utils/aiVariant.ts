@@ -147,6 +147,20 @@ const PLAN_SCHEMA: JsonSchema = {
     whatToRewrite: { type: 'array', items: { type: 'string' } },
     whatToDeprioritize: { type: 'array', items: { type: 'string' } },
     targetingNotes: { type: 'string' },
+    clarifyingQuestions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          question: { type: 'string' },
+          why: { type: 'string' },
+          topic: { type: 'string' },
+        },
+        required: ['id', 'question', 'why', 'topic'],
+        additionalProperties: false,
+      },
+    },
   },
   required: [
     'targetRole',
@@ -156,6 +170,7 @@ const PLAN_SCHEMA: JsonSchema = {
     'whatToRewrite',
     'whatToDeprioritize',
     'targetingNotes',
+    'clarifyingQuestions',
   ],
   additionalProperties: false,
 };
@@ -167,6 +182,13 @@ export interface VariantBulletRewrite {
   keywordsUsed: string[];
 }
 
+export interface ClarifyingQuestion {
+  id: string;
+  question: string;
+  why: string;
+  topic: string;
+}
+
 export interface VariantRolePlan {
   targetRole: string;
   keyFactors: string[];
@@ -175,7 +197,14 @@ export interface VariantRolePlan {
   whatToRewrite: string[];
   whatToDeprioritize: string[];
   targetingNotes: string;
+  clarifyingQuestions: ClarifyingQuestion[];
 }
+
+export interface ClarifyingAnswer {
+  questionId: string;
+  answer: string;
+}
+
 
 /** Skills / custom / "Additional Information" sections users can manually unhide in the preview. */
 export function isManualVisibilitySection(section: Resume['sections'][number]): boolean {
@@ -198,8 +227,30 @@ export function coverVisibilityMap(resume: Resume, map: VisibilityMap): Visibili
   return { entries, bullets };
 }
 
-export function formatRolePlanForPrompt(plan: VariantRolePlan): string {
-  return `--- TARGET ROLE PLAN ---\n${JSON.stringify(plan, null, 2)}`;
+export function formatRolePlanForPrompt(
+  plan: VariantRolePlan,
+  answers: ClarifyingAnswer[] = [],
+): string {
+  const { clarifyingQuestions, ...planBody } = plan;
+  const answered = answers
+    .filter((item) => item.answer.trim())
+    .map((item) => {
+      const question = clarifyingQuestions.find((q) => q.id === item.questionId);
+      return {
+        questionId: item.questionId,
+        topic: question?.topic ?? '',
+        question: question?.question ?? '',
+        answer: item.answer.trim(),
+      };
+    });
+  return [
+    `--- TARGET ROLE PLAN ---\n${JSON.stringify(planBody, null, 2)}`,
+    answered.length > 0
+      ? `--- USER CLARIFICATIONS (use these details when scoring/rewriting; do not invent beyond them) ---\n${JSON.stringify(answered, null, 2)}`
+      : '',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
 }
 
 export function localVariantRolePlan(jobDescription: string): VariantRolePlan {
@@ -232,6 +283,7 @@ export function localVariantRolePlan(jobDescription: string): VariantRolePlan {
     ],
     targetingNotes:
       'Prioritize blocks that overlap the job’s key tokens. Keep Education fixed. Hide weak Skills/Additional Information categories unless the user unhides them.',
+    clarifyingQuestions: [],
   };
 }
 
@@ -313,7 +365,45 @@ function normalizeRolePlan(raw: Record<string, unknown>, jobDescription: string)
       fallback.whatToDeprioritize,
     ),
     targetingNotes: text('targetingNotes', 'targeting_notes', 'notes') || fallback.targetingNotes,
+    clarifyingQuestions: normalizeClarifyingQuestions(raw.clarifyingQuestions ?? raw.questions),
   };
+}
+
+function normalizeClarifyingQuestions(value: unknown): ClarifyingQuestion[] {
+  if (!Array.isArray(value)) return [];
+  const out: ClarifyingQuestion[] = [];
+  value.forEach((item, index) => {
+    if (!item || typeof item !== 'object') return;
+    const row = item as Record<string, unknown>;
+    const question =
+      typeof row.question === 'string'
+        ? row.question.trim()
+        : typeof row.prompt === 'string'
+          ? row.prompt.trim()
+          : '';
+    if (!question) return;
+    const id =
+      typeof row.id === 'string' && row.id.trim()
+        ? row.id.trim()
+        : `q${index + 1}`;
+    out.push({
+      id,
+      question,
+      why:
+        typeof row.why === 'string' && row.why.trim()
+          ? row.why.trim()
+          : typeof row.reason === 'string' && row.reason.trim()
+            ? row.reason.trim()
+            : 'Needed to reframe honestly for this role.',
+      topic:
+        typeof row.topic === 'string' && row.topic.trim()
+          ? row.topic.trim()
+          : typeof row.experience === 'string' && row.experience.trim()
+            ? row.experience.trim()
+            : 'Experience',
+    });
+  });
+  return out.slice(0, 5);
 }
 
 function nonempty(value: string[], fallback: string[]): string[] {
@@ -325,6 +415,7 @@ export async function scoreBlocksWithAi(
   resume: Resume,
   jobDescription: string,
   plan?: VariantRolePlan,
+  answers: ClarifyingAnswer[] = [],
 ): Promise<BlockScore[]> {
   if (!settings.apiKey.trim()) throw new Error('Add a BYOK API key first.');
   if (!jobDescription.trim()) throw new Error('Paste a job description first.');
@@ -350,6 +441,7 @@ export async function scoreBlocksWithAi(
       index + 1,
       inventories.length,
       rolePlan,
+      answers,
     );
     if (parsed) parsedRows.push(...parsed);
   }
@@ -417,6 +509,7 @@ export async function rewriteVariantBulletsWithAi(
   jobDescription: string,
   bulletIds: string[],
   plan?: VariantRolePlan,
+  answers: ClarifyingAnswer[] = [],
 ): Promise<VariantBulletRewrite[]> {
   if (!settings.apiKey.trim()) throw new Error('Add a BYOK API key first.');
   if (!jobDescription.trim()) throw new Error('Paste a job description first.');
@@ -446,7 +539,7 @@ export async function rewriteVariantBulletsWithAi(
   const prompt = buildFeaturePrompt(
     'variant-rewrite',
     REWRITE_TASK,
-    formatRolePlanForPrompt(rolePlan),
+    formatRolePlanForPrompt(rolePlan, answers),
     `--- JOB DESCRIPTION ---\n${jobDescription}`,
     `--- BULLETS TO CONSIDER ---\n${JSON.stringify(batch, null, 2)}`,
   );
@@ -815,11 +908,12 @@ async function scoreInventoryChunkWithAi(
   chunkIndex: number,
   chunkCount: number,
   plan: VariantRolePlan,
+  answers: ClarifyingAnswer[] = [],
 ): Promise<unknown[] | null> {
   const prompt = buildFeaturePrompt(
     'variant-score',
     SCORE_TASK,
-    formatRolePlanForPrompt(plan),
+    formatRolePlanForPrompt(plan, answers),
     `--- JOB DESCRIPTION ---\n${jobDescription}`,
     `--- LOCAL SEMANTIC MARKERS ---\n${JSON.stringify(semanticMarkers)}`,
     `--- BLOCK INVENTORY CHUNK ${chunkIndex} OF ${chunkCount} ---\n${JSON.stringify(inventory, null, 2)}`,
@@ -840,7 +934,7 @@ async function scoreInventoryChunkWithAi(
   if (!parsed) {
     raw = await generateAiText(
       settings,
-      retryScorePrompt(jobDescription, inventory, semanticMarkers, plan),
+      retryScorePrompt(jobDescription, inventory, semanticMarkers, plan, answers),
       3200,
       { cache: false },
     );
@@ -893,6 +987,7 @@ function retryScorePrompt(
   inventory: unknown,
   semanticMarkers: string[],
   plan: VariantRolePlan,
+  answers: ClarifyingAnswer[] = [],
 ): string {
   return buildFeaturePrompt(
     'variant-score',
@@ -903,7 +998,7 @@ function retryScorePrompt(
     'Do not score Education or classes/coursework; keep classId as an empty string.',
     'For entry rows, use empty strings for bulletId, classId, and reason.',
     'For bullet rows, use the exact bulletId from the inventory.',
-    formatRolePlanForPrompt(plan),
+    formatRolePlanForPrompt(plan, answers),
     `--- JOB DESCRIPTION ---\n${jobDescription}`,
     `--- LOCAL SEMANTIC MARKERS ---\n${JSON.stringify(semanticMarkers)}`,
     `--- BLOCK INVENTORY ---\n${JSON.stringify(inventory, null, 2)}`,

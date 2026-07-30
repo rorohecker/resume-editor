@@ -1485,8 +1485,10 @@ function SkillsEditor({
       )}
 
       <SortableList items={section.entries} onReorder={onReorder} className="space-y-3">
-        {(entry, dragHandle) => (
-          <div className="rounded-md border border-paper-edge bg-paper px-3 py-3">
+        {(entry, dragHandle) => {
+          const hidden = entry.visible === false;
+          return (
+          <div className={`rounded-md border border-paper-edge bg-paper px-3 py-3 ${hidden ? 'opacity-60' : ''}`}>
             <div className="mb-2 flex items-center gap-2">
               {dragHandle}
               <input
@@ -1496,6 +1498,16 @@ function SkillsEditor({
                 className="input h-8 flex-1 text-xs"
                 spellCheck={false}
               />
+              <button
+                type="button"
+                className="icon-btn h-7 w-7"
+                onClick={() => onUpdate(entry.id, { visible: hidden ? true : false })}
+                title={hidden ? t('editor.show') : t('editor.hide')}
+                aria-label={hidden ? t('editor.showCategory') : t('editor.hideCategory')}
+                aria-pressed={!hidden}
+              >
+                {hidden ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
               <button
                 type="button"
                 className="icon-btn h-7 w-7"
@@ -1515,6 +1527,11 @@ function SkillsEditor({
                 <Trash2 size={14} />
               </button>
             </div>
+            {hidden && (
+              <p className="mb-2 text-[10px] uppercase tracking-wide text-ink-subtle">
+                {t('editor.hidden')}
+              </p>
+            )}
             <textarea
               value={entry.subtitle ?? ''}
               onChange={(e) => onUpdate(entry.id, { subtitle: e.target.value })}
@@ -1523,7 +1540,8 @@ function SkillsEditor({
               spellCheck
             />
           </div>
-        )}
+          );
+        }}
       </SortableList>
     </div>
   );
@@ -2163,7 +2181,12 @@ function createSection(type: SectionType, order: number, t?: TFunction): Section
 
 function createEntry(section: Section, t?: TFunction, templateId?: TemplateId): Entry {
   if (section.type === 'skills' || section.layout === 'skills-grid') {
-    return { id: makeId(), title: label(t, 'editor.defaultSkillCategory', 'Languages'), subtitle: '' };
+    return {
+      id: makeId(),
+      title: label(t, 'editor.defaultSkillCategory', 'Languages'),
+      subtitle: '',
+      visible: true,
+    };
   }
   if (section.type === 'summary' || section.layout === 'text-block') {
     return { id: makeId(), title: '' };

@@ -15,6 +15,7 @@ import {
   planVariantForRole,
   rewriteVariantBulletsWithAi,
   scoreBlocksWithAi,
+  type ClarifyingAnswer,
   type VariantBulletRewrite,
   type VariantRolePlan,
 } from '@/utils/aiVariant';
@@ -27,7 +28,7 @@ import { replaceBulletContent, stripHtml } from '@/utils/resumeText';
 import { estimatePageUsage } from '@/utils/styleChecks';
 import type { Entry, Section } from '@/types';
 
-type ProgressPhase = 'idle' | 'planning' | 'scoring' | 'rewriting' | 'done';
+type ProgressPhase = 'idle' | 'planning' | 'questions' | 'scoring' | 'rewriting' | 'done';
 
 export function GenerateVariantModal() {
   const { t } = useTranslation();
@@ -41,6 +42,7 @@ export function GenerateVariantModal() {
   const [scores, setScores] = useState<BlockScore[] | null>(null);
   const [visibility, setVisibility] = useState<VisibilityMap | null>(null);
   const [rolePlan, setRolePlan] = useState<VariantRolePlan | null>(null);
+  const [clarifyingAnswers, setClarifyingAnswers] = useState<Record<string, string>>({});
   const [maxPages, setMaxPages] = useState(1);
   const [variantName, setVariantName] = useState('');
   const [useAi, setUseAi] = useState(true);
@@ -55,6 +57,7 @@ export function GenerateVariantModal() {
       setScores(null);
       setVisibility(null);
       setRolePlan(null);
+      setClarifyingAnswers({});
       setPhase('idle');
       setVariantName('');
       setRewrites([]);
@@ -79,6 +82,86 @@ export function GenerateVariantModal() {
   const busy = phase === 'planning' || phase === 'scoring' || phase === 'rewriting';
   const canRewrite = hasKey && useAi;
   const needsJob = true;
+  const awaitingQuestions = phase === 'questions' && Boolean(rolePlan?.clarifyingQuestions.length);
+
+  const answersList = (plan: VariantRolePlan): ClarifyingAnswer[] =>
+    plan.clarifyingQuestions.map((q) => ({
+      questionId: q.id,
+      answer: clarifyingAnswers[q.id] ?? '',
+    }));
+
+  const runScoreAndRewrite = async (plan: VariantRolePlan, answers: ClarifyingAnswer[]) => {
+    if (!resume) return;
+    const liveSettings = loadAiSettings();
+    const liveHasKey = Boolean(liveSettings.apiKey.trim());
+    const liveUseAi = useAi && liveHasKey;
+    const liveCanRewrite = rewriteBullets && liveUseAi;
+
+    setPhase('scoring');
+    let computed: BlockScore[];
+    let allowRewrite = liveCanRewrite;
+    if (liveUseAi) {
+      try {
+        computed = await scoreBlocksWithAi(liveSettings, resume, job, plan, answers);
+      } catch (aiErr) {
+        // Fall back to local ranking so the feature still works if the API fails.
+        computed = localScoreBlocks(resume, job);
+        allowRewrite = false;
+        toast(
+          aiErr instanceof Error
+            ? t('variant.aiFallback', { message: aiErr.message })
+            : t('variant.aiFallback', { message: t('variant.failed') }),
+          { tone: 'warn', ttl: 5000 },
+        );
+      }
+    } else {
+      computed = localScoreBlocks(resume, job);
+    }
+    setScores(computed);
+
+    const fitResult = fitVariantToPages(resume, computed, maxPages);
+    if (fitResult.includedEntries + fitResult.includedBullets === 0) {
+      throw new Error(t('variant.emptyFit'));
+    }
+    setVisibility(coverVisibilityMap(resume, fitResult.visibility));
+
+    const includedBulletIds = Object.entries(fitResult.visibility.bullets)
+      .filter(([, visible]) => visible)
+      .map(([id]) => id);
+
+    if (allowRewrite && includedBulletIds.length > 0) {
+      setPhase('rewriting');
+      try {
+        const nextRewrites = await rewriteVariantBulletsWithAi(
+          liveSettings,
+          resume,
+          job,
+          includedBulletIds,
+          plan,
+          answers,
+        );
+        setRewrites(nextRewrites);
+        setAcceptedRewriteIds(new Set(nextRewrites.map((item) => item.bulletId)));
+        toast(
+          nextRewrites.length > 0
+            ? t('variant.rewrote', { count: nextRewrites.length })
+            : t('variant.rewroteNone'),
+          { tone: 'success' },
+        );
+      } catch (rewriteErr) {
+        // Keep the scored preview even if keyword rewrite fails.
+        toast(
+          rewriteErr instanceof Error ? rewriteErr.message : t('variant.rewriteFailed'),
+          { tone: 'warn' },
+        );
+      }
+    } else {
+      toast(liveUseAi ? t('variant.scored') : t('variant.scoredLocal'), {
+        tone: 'success',
+      });
+    }
+    setPhase('done');
+  };
 
   const generate = async () => {
     if (!resume) return;
@@ -86,7 +169,6 @@ export function GenerateVariantModal() {
     const liveSettings = loadAiSettings();
     const liveHasKey = Boolean(liveSettings.apiKey.trim());
     const liveUseAi = useAi && liveHasKey;
-    const liveCanRewrite = rewriteBullets && liveUseAi;
     if (!job.trim()) {
       toast(t('variant.jobRequired'), { tone: 'warn' });
       return;
@@ -99,7 +181,9 @@ export function GenerateVariantModal() {
     setRewrites([]);
     setAcceptedRewriteIds(new Set());
     setVisibility(null);
+    setScores(null);
     setRolePlan(null);
+    setClarifyingAnswers({});
     try {
       let plan: VariantRolePlan;
       if (liveUseAi) {
@@ -114,74 +198,31 @@ export function GenerateVariantModal() {
       }
       setRolePlan(plan);
 
-      setPhase('scoring');
-      let computed: BlockScore[];
-      let allowRewrite = liveCanRewrite;
-      if (liveUseAi) {
-        try {
-          computed = await scoreBlocksWithAi(liveSettings, resume, job, plan);
-        } catch (aiErr) {
-          // Fall back to local ranking so the feature still works if the API fails.
-          computed = localScoreBlocks(resume, job);
-          allowRewrite = false;
-          toast(
-            aiErr instanceof Error
-              ? t('variant.aiFallback', { message: aiErr.message })
-              : t('variant.aiFallback', { message: t('variant.failed') }),
-            { tone: 'warn', ttl: 5000 },
-          );
-        }
-      } else {
-        computed = localScoreBlocks(resume, job);
+      if (liveUseAi && plan.clarifyingQuestions.length > 0) {
+        setClarifyingAnswers(
+          Object.fromEntries(plan.clarifyingQuestions.map((q) => [q.id, ''])),
+        );
+        setPhase('questions');
+        return;
       }
-      setScores(computed);
 
-      const fitResult = fitVariantToPages(resume, computed, maxPages);
-      if (fitResult.includedEntries + fitResult.includedBullets === 0) {
-        throw new Error(t('variant.emptyFit'));
-      }
-      setVisibility(coverVisibilityMap(resume, fitResult.visibility));
-
-      const includedBulletIds = Object.entries(fitResult.visibility.bullets)
-        .filter(([, visible]) => visible)
-        .map(([id]) => id);
-
-      if (allowRewrite && includedBulletIds.length > 0) {
-        setPhase('rewriting');
-        try {
-          const nextRewrites = await rewriteVariantBulletsWithAi(
-            liveSettings,
-            resume,
-            job,
-            includedBulletIds,
-            plan,
-          );
-          setRewrites(nextRewrites);
-          setAcceptedRewriteIds(new Set(nextRewrites.map((item) => item.bulletId)));
-          toast(
-            nextRewrites.length > 0
-              ? t('variant.rewrote', { count: nextRewrites.length })
-              : t('variant.rewroteNone'),
-            { tone: 'success' },
-          );
-        } catch (rewriteErr) {
-          // Keep the scored preview even if keyword rewrite fails.
-          toast(
-            rewriteErr instanceof Error ? rewriteErr.message : t('variant.rewriteFailed'),
-            { tone: 'warn' },
-          );
-        }
-      } else {
-        toast(liveUseAi ? t('variant.scored') : t('variant.scoredLocal'), {
-          tone: 'success',
-        });
-      }
-      setPhase('done');
+      await runScoreAndRewrite(plan, []);
     } catch (err) {
       setPhase('idle');
       setScores(null);
       setVisibility(null);
       setRolePlan(null);
+      toast(err instanceof Error ? err.message : t('variant.failed'), { tone: 'danger' });
+    }
+  };
+
+  const continueAfterQuestions = async (skipAnswers: boolean) => {
+    if (!resume || !rolePlan) return;
+    const answers = skipAnswers ? [] : answersList(rolePlan);
+    try {
+      await runScoreAndRewrite(rolePlan, answers);
+    } catch (err) {
+      setPhase('questions');
       toast(err instanceof Error ? err.message : t('variant.failed'), { tone: 'danger' });
     }
   };
@@ -265,15 +306,17 @@ export function GenerateVariantModal() {
   const statusLabel =
     phase === 'planning'
       ? t('variant.planning')
-      : phase === 'scoring'
-        ? t('variant.scoring')
-        : phase === 'rewriting'
-          ? t('variant.rewriting')
-          : phase === 'done' && rewrites.length > 0
-            ? t('variant.statusDoneRewrites', { count: acceptedRewriteIds.size })
-            : phase === 'done'
-              ? t('variant.statusDone')
-              : null;
+      : phase === 'questions'
+        ? t('variant.questionsPending')
+        : phase === 'scoring'
+          ? t('variant.scoring')
+          : phase === 'rewriting'
+            ? t('variant.rewriting')
+            : phase === 'done' && rewrites.length > 0
+              ? t('variant.statusDoneRewrites', { count: acceptedRewriteIds.size })
+              : phase === 'done'
+                ? t('variant.statusDone')
+                : null;
 
   return (
     <Modal
@@ -388,7 +431,7 @@ export function GenerateVariantModal() {
           <button
             type="button"
             className="btn-primary w-full"
-            disabled={busy || !resume || (needsJob && !job.trim())}
+            disabled={busy || awaitingQuestions || !resume || (needsJob && !job.trim())}
             onClick={() => void generate()}
           >
             {useAi && hasKey ? <Sparkles size={14} /> : <Wand2 size={14} />}
@@ -400,6 +443,62 @@ export function GenerateVariantModal() {
                   ? t('variant.scoreAi')
                   : t('variant.scoreLocal')}
           </button>
+
+          {awaitingQuestions && rolePlan && (
+            <div className="space-y-3 rounded-md border border-accent/30 bg-accent/5 p-3">
+              <div>
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-ink">
+                  {t('variant.clarifyingTitle')}
+                </h3>
+                <p className="mt-1 text-[11px] text-ink-subtle">{t('variant.clarifyingHint')}</p>
+              </div>
+              <ul className="space-y-3">
+                {rolePlan.clarifyingQuestions.map((q) => (
+                  <li key={q.id} className="space-y-1.5">
+                    <label className="block text-xs" htmlFor={`clarify-${q.id}`}>
+                      <span className="font-medium text-ink">{q.question}</span>
+                      {q.topic && (
+                        <span className="mt-0.5 block text-[10px] uppercase tracking-wide text-ink-subtle">
+                          {q.topic}
+                        </span>
+                      )}
+                      {q.why && (
+                        <span className="mt-0.5 block text-[11px] text-ink-muted">{q.why}</span>
+                      )}
+                    </label>
+                    <textarea
+                      id={`clarify-${q.id}`}
+                      value={clarifyingAnswers[q.id] ?? ''}
+                      onChange={(e) =>
+                        setClarifyingAnswers((prev) => ({ ...prev, [q.id]: e.target.value }))
+                      }
+                      placeholder={t('variant.clarifyingPlaceholder')}
+                      className="input min-h-16 resize-y text-xs"
+                      spellCheck
+                    />
+                  </li>
+                ))}
+              </ul>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="btn-primary flex-1"
+                  disabled={busy}
+                  onClick={() => void continueAfterQuestions(false)}
+                >
+                  {t('variant.continueWithAnswers')}
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  disabled={busy}
+                  onClick={() => void continueAfterQuestions(true)}
+                >
+                  {t('variant.skipQuestions')}
+                </button>
+              </div>
+            </div>
+          )}
 
           {rolePlan && (
             <div className="space-y-2 rounded-md border border-paper-edge p-3">
@@ -500,7 +599,11 @@ export function GenerateVariantModal() {
         <div className="min-w-0 overflow-y-auto rounded-md border border-paper-edge bg-paper-tint">
           {!fit || !activeVisibility ? (
             <div className="flex h-full min-h-72 items-center justify-center px-4 text-center text-sm text-ink-subtle">
-              {busy ? statusLabel : t('variant.awaitingScore')}
+              {awaitingQuestions
+                ? t('variant.questionsPending')
+                : busy
+                  ? statusLabel
+                  : t('variant.awaitingScore')}
             </div>
           ) : (
             <div className="space-y-3 p-3 text-xs">
