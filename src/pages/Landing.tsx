@@ -87,7 +87,7 @@ export function LandingPage() {
       link.href = url;
       link.download = `resume-editor-backup-${new Date().toISOString().slice(0, 10)}.json`;
       link.click();
-      URL.revokeObjectURL(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 4000);
       recordBackup();
       toast(t('landing.backupSaved'), { tone: 'success', ttl: 2000 });
     });

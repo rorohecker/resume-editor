@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Copy, Download, FileText, Sparkles } from 'lucide-react';
 import { useStore } from '@/store';
@@ -13,6 +13,8 @@ export function CoverLetterModal() {
   const { t } = useTranslation();
   const open = useStore((s) => s.coverLetterOpen);
   const setOpen = useStore((s) => s.setCoverLetterOpen);
+  const pendingCoverLetter = useStore((s) => s.pendingCoverLetter);
+  const setPendingCoverLetter = useStore((s) => s.setPendingCoverLetter);
   const resume = useStore((s) => s.currentResume);
   const [jobDescription, setJobDescription] = useState('');
   const [letter, setLetter] = useState('');
@@ -20,6 +22,14 @@ export function CoverLetterModal() {
 
   const settings = loadAiSettings();
   const hasKey = Boolean(settings.apiKey.trim());
+
+  useEffect(() => {
+    if (!open) return;
+    if (pendingCoverLetter) {
+      setLetter(pendingCoverLetter);
+      setPendingCoverLetter(null);
+    }
+  }, [open, pendingCoverLetter, setPendingCoverLetter]);
 
   const generate = async () => {
     if (!resume) return;

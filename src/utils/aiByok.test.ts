@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getTemplateDemoResume } from '@/components/templates/templateDemos';
 import {
+  AI_TRANSIENT_MAX_RETRIES,
   LEGACY_MODEL_MAP,
   PROVIDER_MODELS,
   formatProviderError,
+  isTransientProviderError,
   loadAiSettings,
   promptForAtsKeywords,
   promptForCoverLetter,
@@ -12,6 +14,7 @@ import {
   resetAiUsage,
   resolveModel,
   sanitizeLimit,
+  transientRetryDelayMs,
 } from '@/utils/aiByok';
 
 function installMemoryLocalStorage() {
@@ -86,6 +89,39 @@ describe('formatProviderError', () => {
     expect(
       formatProviderError('gemini', { error: { message: 'models/gemini-pro is not found' } }, 404),
     ).toMatch(/Model not available/i);
+  });
+
+  it('marks Gemini overload and rate limits as retryable status messages', () => {
+    const overloaded = formatProviderError(
+      'gemini',
+      { error: { message: 'This model is currently experiencing high demand. Please try again later.' } },
+      503,
+    );
+    expect(overloaded).toMatch(/\(503\)/);
+    expect(overloaded).toMatch(/high demand/i);
+    expect(isTransientProviderError(new Error(overloaded))).toBe(true);
+
+    const rateLimited = formatProviderError('gemini', { error: { message: 'Resource exhausted' } }, 429);
+    expect(rateLimited).toMatch(/\(429\)/);
+    expect(isTransientProviderError(new Error(rateLimited))).toBe(true);
+  });
+});
+
+describe('transient retries', () => {
+  it('classifies overload/rate-limit messages and ignores auth failures', () => {
+    expect(isTransientProviderError(new Error('Gemini error (503): high demand'))).toBe(true);
+    expect(isTransientProviderError(new Error('OpenAI rate-limited this request (429).'))).toBe(true);
+    expect(isTransientProviderError(new Error('Invalid Gemini API key.'))).toBe(false);
+    expect(isTransientProviderError(new Error('Add an API key in AI settings first.'))).toBe(false);
+  });
+
+  it('uses extended exponential backoff before capping', () => {
+    expect(transientRetryDelayMs(0, () => 0)).toBe(2500);
+    expect(transientRetryDelayMs(1, () => 0)).toBe(5000);
+    expect(transientRetryDelayMs(2, () => 0)).toBe(10000);
+    expect(transientRetryDelayMs(4, () => 0)).toBe(40000);
+    expect(transientRetryDelayMs(5, () => 0)).toBe(45000);
+    expect(AI_TRANSIENT_MAX_RETRIES).toBeGreaterThanOrEqual(5);
   });
 });
 

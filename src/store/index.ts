@@ -18,6 +18,8 @@ interface UIState {
   tipsOpen: boolean;
   exportOpen: boolean;
   coverLetterOpen: boolean;
+  /** Seed text for CoverLetterModal (e.g. from Tailor). Cleared when consumed. */
+  pendingCoverLetter: string | null;
   tailorOpen: boolean;
   compareOpen: boolean;
   bulkEditOpen: boolean;
@@ -52,6 +54,7 @@ interface Actions {
   setTipsOpen: (open: boolean) => void;
   setExportOpen: (open: boolean) => void;
   setCoverLetterOpen: (open: boolean) => void;
+  setPendingCoverLetter: (text: string | null) => void;
   setTailorOpen: (open: boolean) => void;
   setCompareOpen: (open: boolean) => void;
   setBulkEditOpen: (open: boolean) => void;
@@ -103,6 +106,7 @@ export const useStore = create<UIState & ResumeState & Actions>((set, get) => ({
   tipsOpen: false,
   exportOpen: false,
   coverLetterOpen: false,
+  pendingCoverLetter: null,
   tailorOpen: false,
   compareOpen: false,
   bulkEditOpen: false,
@@ -131,6 +135,7 @@ export const useStore = create<UIState & ResumeState & Actions>((set, get) => ({
   setTipsOpen: (tipsOpen) => set({ tipsOpen, aiOpen: tipsOpen ? false : get().aiOpen }),
   setExportOpen: (exportOpen) => set({ exportOpen }),
   setCoverLetterOpen: (coverLetterOpen) => set({ coverLetterOpen }),
+  setPendingCoverLetter: (pendingCoverLetter) => set({ pendingCoverLetter }),
   setTailorOpen: (tailorOpen) => set({ tailorOpen }),
   setCompareOpen: (compareOpen) => set({ compareOpen }),
   setBulkEditOpen: (bulkEditOpen) => set({ bulkEditOpen }),

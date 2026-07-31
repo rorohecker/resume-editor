@@ -140,8 +140,8 @@ export function ResumePreview() {
         </div>
       </div>
 
-      <div className="pointer-events-none absolute bottom-4 right-4 flex items-end justify-end">
-        <div className="pointer-events-auto">
+      <div className="pointer-events-none absolute bottom-4 left-4 right-4 flex items-end justify-between gap-3 sm:bottom-4 sm:left-auto sm:right-4 sm:justify-end max-[767px]:bottom-20">
+        <div className="pointer-events-auto ml-auto">
           <ZoomControls onFitToWidth={fitToWidth} />
         </div>
       </div>

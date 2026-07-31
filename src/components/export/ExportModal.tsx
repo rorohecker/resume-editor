@@ -65,6 +65,8 @@ export function ExportModal() {
   const [downloading, setDownloading] = useState(false);
   const [preview, setPreview] = useState<Preview | null>(null);
   const urlsRef = useRef<string[]>([]);
+  const openRef = useRef(open);
+  openRef.current = open;
 
   const clearUrls = () => {
     for (const url of urlsRef.current) {
@@ -90,6 +92,13 @@ export function ExportModal() {
 
   const close = () => {
     setOpen(false);
+  };
+
+  const printResume = () => {
+    close();
+    window.requestAnimationFrame(() => {
+      window.setTimeout(() => window.print(), 50);
+    });
   };
 
   const startPreview = async (format: ExportFormat) => {
@@ -143,8 +152,21 @@ export function ExportModal() {
         }
       }
 
+      if (!openRef.current) {
+        // Modal closed while generating — drop blob URLs created for this run.
+        if (url) {
+          try {
+            URL.revokeObjectURL(url);
+          } catch {
+            // ignore
+          }
+          urlsRef.current = urlsRef.current.filter((item) => item !== url);
+        }
+        return;
+      }
       setPreview({ format, artifact, url, text, images, approximate, totalPages });
     } catch (err) {
+      if (!openRef.current) return;
       const message = err instanceof Error ? err.message : 'Could not generate the export.';
       console.error('[ExportModal] generate failed:', err);
       toast(`Preview failed: ${message}`, { tone: 'danger', ttl: 6000 });
@@ -221,7 +243,7 @@ export function ExportModal() {
           <div className="flex items-center justify-between gap-2">
             <button
               type="button"
-              onClick={() => window.print()}
+              onClick={printResume}
               className="btn-ghost text-xs"
             >
               {t('exportModal.printPreview')}

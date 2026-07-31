@@ -38,7 +38,6 @@ export function EditorPage() {
   const setCurrentResume = useStore((s) => s.setCurrentResume);
   const mobileTab = useStore((s) => s.mobileTab);
   const setMobileTab = useStore((s) => s.setMobileTab);
-  const importReferenceOpen = useStore((s) => s.importReferenceOpen);
   const saveNow = useStore((s) => s.saveNow);
   const undoResume = useStore((s) => s.undoResume);
   const redoResume = useStore((s) => s.redoResume);
@@ -203,9 +202,9 @@ export function EditorPage() {
         <ImportReferencePanel resumeId={resume.id} />
 
         <div
-          className={`min-w-0 w-full md:w-2/5 ${
-            importReferenceOpen ? 'md:max-w-md' : 'md:max-w-xl'
-          } ${isMobile && mobileTab !== 'edit' ? 'hidden' : 'block'}`}
+          className={`min-w-0 w-full md:w-2/5 md:max-w-xl ${
+            isMobile && mobileTab !== 'edit' ? 'hidden' : 'block'
+          }`}
           role={isMobile ? 'tabpanel' : undefined}
         >
           <EditorLeftPanel />

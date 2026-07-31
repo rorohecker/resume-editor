@@ -5,7 +5,7 @@ import { Eye, EyeOff, Sparkles, Wand2 } from 'lucide-react';
 import { Modal } from '@/components/shared/Modal';
 import { useStore } from '@/store';
 import { toast } from '@/hooks/useToast';
-import { loadAiSettings } from '@/utils/aiByok';
+import { loadAiSettings, AI_RETRY_EVENT, type AiRetryInfo } from '@/utils/aiByok';
 import {
   buildPrioritizedVariantResume,
   coverVisibilityMap,
@@ -24,6 +24,7 @@ import {
   type BlockScore,
   type VisibilityMap,
 } from '@/utils/blockSelection';
+import { semanticScoreBlocks } from '@/utils/semanticScoring';
 import { replaceBulletContent, stripHtml } from '@/utils/resumeText';
 import { estimatePageUsage } from '@/utils/styleChecks';
 import type { Entry, Section } from '@/types';
@@ -50,6 +51,7 @@ export function GenerateVariantModal() {
   const [rewrites, setRewrites] = useState<VariantBulletRewrite[]>([]);
   /** Bullet IDs whose rewrite the user wants applied. */
   const [acceptedRewriteIds, setAcceptedRewriteIds] = useState<Set<string>>(new Set());
+  const [retryNote, setRetryNote] = useState('');
 
   useEffect(() => {
     if (!open) {
@@ -62,8 +64,26 @@ export function GenerateVariantModal() {
       setVariantName('');
       setRewrites([]);
       setAcceptedRewriteIds(new Set());
+      setRetryNote('');
     }
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onRetry = (event: Event) => {
+      const detail = (event as CustomEvent<AiRetryInfo>).detail;
+      if (!detail) return;
+      setRetryNote(
+        t('variant.retrying', {
+          attempt: detail.attempt,
+          max: detail.maxRetries,
+          seconds: Math.ceil(detail.delayMs / 1000),
+        }),
+      );
+    };
+    window.addEventListener(AI_RETRY_EVENT, onRetry);
+    return () => window.removeEventListener(AI_RETRY_EVENT, onRetry);
+  }, [open, t]);
 
   useEffect(() => {
     if (open && resume) {
@@ -98,20 +118,24 @@ export function GenerateVariantModal() {
     const liveCanRewrite = rewriteBullets && liveUseAi;
 
     setPhase('scoring');
+    setRetryNote('');
     let computed: BlockScore[];
     let allowRewrite = liveCanRewrite;
     if (liveUseAi) {
       try {
         computed = await scoreBlocksWithAi(liveSettings, resume, job, plan, answers);
+        setRetryNote('');
       } catch (aiErr) {
-        // Fall back to local ranking so the feature still works if the API fails.
-        computed = localScoreBlocks(resume, job);
+        setRetryNote('');
+        // Prefer semantic ranking (same path as silent AI parse fallback), then keyword local.
+        const semantic = semanticScoreBlocks(resume, job);
+        computed = semantic.length > 0 ? semantic : localScoreBlocks(resume, job);
         allowRewrite = false;
         toast(
           aiErr instanceof Error
             ? t('variant.aiFallback', { message: aiErr.message })
             : t('variant.aiFallback', { message: t('variant.failed') }),
-          { tone: 'warn', ttl: 5000 },
+          { tone: 'warn', ttl: 6000 },
         );
       }
     } else {
@@ -131,6 +155,7 @@ export function GenerateVariantModal() {
 
     if (allowRewrite && includedBulletIds.length > 0) {
       setPhase('rewriting');
+      setRetryNote('');
       try {
         const nextRewrites = await rewriteVariantBulletsWithAi(
           liveSettings,
@@ -304,7 +329,9 @@ export function GenerateVariantModal() {
   };
 
   const statusLabel =
-    phase === 'planning'
+    retryNote
+      ? retryNote
+      : phase === 'planning'
       ? t('variant.planning')
       : phase === 'questions'
         ? t('variant.questionsPending')

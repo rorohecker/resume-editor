@@ -150,7 +150,7 @@ export function StickyNotes({ resumeId }: { resumeId: string }) {
       const offsetY = event.clientY - note.y;
       const move = (ev: PointerEvent) => {
         const x = clamp(ev.clientX - offsetX, 4, window.innerWidth - note.w - 4);
-        const y = clamp(ev.clientY - offsetY, 56, window.innerHeight - 44);
+        const y = clamp(ev.clientY - offsetY, 56, window.innerHeight - note.h - 8);
         updateNote(note.id, { x, y });
       };
       const up = () => {

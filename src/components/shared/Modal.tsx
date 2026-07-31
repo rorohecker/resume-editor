@@ -71,6 +71,8 @@ interface DrawerProps {
   title: string;
   icon?: ReactNode;
   badge?: ReactNode;
+  /** Frozen below the title bar (e.g. tab strip) — does not scroll with body content. */
+  toolbar?: ReactNode;
   side?: 'right' | 'left';
   maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl';
   children: ReactNode;
@@ -91,6 +93,7 @@ export function Drawer({
   title,
   icon,
   badge,
+  toolbar,
   side = 'right',
   maxWidth = 'xl',
   children,
@@ -129,6 +132,7 @@ export function Drawer({
             <X size={16} />
           </button>
         </div>
+        {toolbar ? <div className="flex-shrink-0 border-b border-paper-edge bg-paper">{toolbar}</div> : null}
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{children}</div>
       </aside>
     </>

@@ -279,33 +279,55 @@ export function BlockLibraryDrawer() {
             {filteredBullets.length === 0 && (
               <p className="text-xs text-ink-subtle">{t('library.noResults')}</p>
             )}
-            {filteredBullets.map(({ section, entry, bullet }) => (
+            {filteredBullets.map(({ section, entry, bullet }) => {
+              const entryVisible = entry.visible !== false;
+              const effectivelyVisible = entryVisible && bullet.visible !== false;
+              return (
               <div
                 key={bullet.id}
                 className={`rounded-md border p-2 ${
-                  bullet.visible ? 'border-paper-edge bg-paper' : 'border-dashed border-paper-edge bg-paper-tint'
+                  effectivelyVisible ? 'border-paper-edge bg-paper' : 'border-dashed border-paper-edge bg-paper-tint'
                 }`}
               >
                 <div className="mb-1 flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-subtle">
                       {section.title} · {entry.title || entry.subtitle || t('library.untitled')}
+                      {!entryVisible && (
+                        <span className="ml-1 font-normal normal-case tracking-normal">
+                          ({t('library.entryHidden', { defaultValue: 'entry hidden' })})
+                        </span>
+                      )}
                     </div>
                     <div className="text-xs text-ink">{bullet.content.replace(/<[^>]*>/g, '')}</div>
                   </div>
                   <button
                     type="button"
                     onClick={() => toggleBullet(bullet.id, !bullet.visible)}
-                    className={`icon-btn h-7 w-7 ${bullet.visible ? 'text-ink' : 'text-ink-subtle'}`}
-                    title={bullet.visible ? t('library.hideBullet') : t('library.showBullet')}
-                    aria-label={bullet.visible ? t('library.hideBullet') : t('library.showBullet')}
+                    disabled={!entryVisible}
+                    className={`icon-btn h-7 w-7 ${effectivelyVisible ? 'text-ink' : 'text-ink-subtle'} disabled:opacity-40`}
+                    title={
+                      !entryVisible
+                        ? t('library.showEntryFirst', { defaultValue: 'Show the parent entry first' })
+                        : bullet.visible
+                          ? t('library.hideBullet')
+                          : t('library.showBullet')
+                    }
+                    aria-label={
+                      !entryVisible
+                        ? t('library.showEntryFirst', { defaultValue: 'Show the parent entry first' })
+                        : bullet.visible
+                          ? t('library.hideBullet')
+                          : t('library.showBullet')
+                    }
                   >
-                    {bullet.visible ? <Eye size={13} /> : <EyeOff size={13} />}
+                    {effectivelyVisible ? <Eye size={13} /> : <EyeOff size={13} />}
                   </button>
                 </div>
                 <TagEditor tags={bullet.tags ?? []} onChange={(next) => setBulletTags(bullet.id, next)} />
               </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       </div>

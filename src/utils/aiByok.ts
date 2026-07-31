@@ -17,6 +17,15 @@ export interface AiSettings {
 
 export type JsonSchema = Record<string, unknown>;
 
+export interface AiRetryInfo {
+  /** 1-based retry count (1 = first retry after the initial failure). */
+  attempt: number;
+  /** How many retries are allowed after the first failure. */
+  maxRetries: number;
+  delayMs: number;
+  message: string;
+}
+
 export interface AiRequestOptions {
   /** Skip response cache for calls whose output must be validated by the caller. */
   cache?: boolean;
@@ -24,6 +33,8 @@ export interface AiRequestOptions {
     name: string;
     schema: JsonSchema;
   };
+  /** Called before each backoff wait when the provider is temporarily unavailable. */
+  onRetry?: (info: AiRetryInfo) => void;
 }
 
 interface AiUsageRecord {
@@ -229,6 +240,70 @@ export function promptForAtsKeywords(resume: Resume, jobDescription: string): st
 // Hard cap so a hung provider request can't freeze the UI forever.
 const AI_REQUEST_TIMEOUT_MS = 60_000;
 
+/** Initial try + these retries for 503 / rate-limit / overload spikes. */
+export const AI_TRANSIENT_MAX_RETRIES = 5;
+const AI_TRANSIENT_BASE_DELAY_MS = 2_500;
+const AI_TRANSIENT_MAX_DELAY_MS = 45_000;
+
+/** Browser event so UI can surface "waiting / retrying" without coupling to toast. */
+export const AI_RETRY_EVENT = 'resume-editor:ai-retry';
+
+export function isTransientProviderError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    /\((?:408|429|500|502|503|504)\)/.test(message) ||
+    /rate-limited|high demand|try again later|unavailable|overloaded|resource_exhausted|temporarily overloaded|temporary connection/i.test(
+      message,
+    )
+  );
+}
+
+/** Delay before retry `attemptIndex` (0 = first retry). Exported for tests. */
+export function transientRetryDelayMs(attemptIndex: number, random = Math.random): number {
+  const exp = Math.min(
+    AI_TRANSIENT_MAX_DELAY_MS,
+    AI_TRANSIENT_BASE_DELAY_MS * 2 ** Math.max(0, attemptIndex),
+  );
+  return exp + Math.floor(random() * 750);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function notifyAiRetry(info: AiRetryInfo): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(AI_RETRY_EVENT, { detail: info }));
+}
+
+async function callWithTransientRetries(
+  run: () => Promise<string>,
+  onRetry?: AiRequestOptions['onRetry'],
+): Promise<string> {
+  const maxAttempts = AI_TRANSIENT_MAX_RETRIES + 1;
+  let lastError: unknown;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await run();
+    } catch (error) {
+      lastError = error;
+      const retriesLeft = attempt < AI_TRANSIENT_MAX_RETRIES;
+      if (!retriesLeft || !isTransientProviderError(error)) throw error;
+      const delayMs = transientRetryDelayMs(attempt);
+      const info: AiRetryInfo = {
+        attempt: attempt + 1,
+        maxRetries: AI_TRANSIENT_MAX_RETRIES,
+        delayMs,
+        message: error instanceof Error ? error.message : String(error),
+      };
+      onRetry?.(info);
+      notifyAiRetry(info);
+      await sleep(delayMs);
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
 /**
  * In Vite dev (and optional VITE_BYOK_PROXY=1 builds), same-origin `/byok/*`
  * proxies strip CORS for OpenAI/Gemini. Default production static builds still
@@ -283,10 +358,15 @@ async function callByokAi(
   // failed/aborted requests don't burn the user's daily/minute quota.
   enforceUsageLimit(settings);
 
-  let result: string;
-  if (settings.provider === 'anthropic') result = await callAnthropic(settings, prompt, maxTokens, options);
-  else if (settings.provider === 'openai') result = await callOpenAi(settings, prompt, maxTokens, options);
-  else result = await callGemini(settings, prompt, maxTokens, options);
+  const result = await callWithTransientRetries(async () => {
+    if (settings.provider === 'anthropic') {
+      return callAnthropic(settings, prompt, maxTokens, options);
+    }
+    if (settings.provider === 'openai') {
+      return callOpenAi(settings, prompt, maxTokens, options);
+    }
+    return callGemini(settings, prompt, maxTokens, options);
+  }, options.onRetry);
 
   if (!result.trim()) {
     throw new Error(
@@ -519,7 +599,18 @@ export function formatProviderError(provider: AiProvider, data: unknown, status?
   }
 
   if (/rate.?limit|too many requests|resource_exhausted/i.test(lower) || status === 429) {
-    return `${PROVIDER_LABELS[provider]} rate-limited this request. Wait a moment and try again.`;
+    return `${PROVIDER_LABELS[provider]} rate-limited this request (${status ?? 429}). Wait a moment and try again.`;
+  }
+
+  if (
+    status === 503 ||
+    /high demand|unavailable|overloaded|try again later/i.test(lower)
+  ) {
+    return `${PROVIDER_LABELS[provider]} is temporarily overloaded (503): ${raw || 'high demand'}. The app retries automatically; if it keeps failing, wait a minute and try again.`;
+  }
+
+  if (status === 408 || status === 502 || status === 504) {
+    return `${PROVIDER_LABELS[provider]} had a temporary connection issue (${status}). Try again shortly.`;
   }
 
   if (raw) {

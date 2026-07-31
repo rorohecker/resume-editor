@@ -15,10 +15,12 @@ export function TailorModal({ open, onClose }: { open: boolean; onClose: () => v
   const resume = useStore((s) => s.currentResume);
   const updateResume = useStore((s) => s.updateCurrentResume);
   const setCoverLetterOpen = useStore((s) => s.setCoverLetterOpen);
+  const setPendingCoverLetter = useStore((s) => s.setPendingCoverLetter);
   const [job, setJob] = useState('');
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<TailorOutcome | null>(null);
   const [accepted, setAccepted] = useState<Set<string>>(new Set());
+  const [hasKey, setHasKey] = useState(() => Boolean(loadAiSettings().apiKey.trim()));
 
   // Local, instant ATS keyword match — no AI key required. Recomputed as the
   // user pastes/edits the job description.
@@ -32,6 +34,8 @@ export function TailorModal({ open, onClose }: { open: boolean; onClose: () => v
       setOutcome(null);
       setAccepted(new Set());
       setJob('');
+    } else {
+      setHasKey(Boolean(loadAiSettings().apiKey.trim()));
     }
   }, [open]);
 
@@ -66,11 +70,19 @@ export function TailorModal({ open, onClose }: { open: boolean; onClose: () => v
 
   const sendCoverLetter = () => {
     if (!outcome?.coverLetter) return;
-    // Toss the generated cover letter into the cover-letter modal via clipboard.
-    void navigator.clipboard.writeText(outcome.coverLetter);
+    setPendingCoverLetter(outcome.coverLetter);
+    void navigator.clipboard.writeText(outcome.coverLetter).catch(() => {
+      /* clipboard is best-effort; the editor seed is the source of truth */
+    });
     toast(t('tailor.coverLetterCopied'), {
       tone: 'success',
-      action: { label: t('tailor.openEditor'), onClick: () => setCoverLetterOpen(true) },
+      action: {
+        label: t('tailor.openEditor'),
+        onClick: () => {
+          onClose();
+          setCoverLetterOpen(true);
+        },
+      },
     });
   };
 
@@ -108,12 +120,18 @@ export function TailorModal({ open, onClose }: { open: boolean; onClose: () => v
           <button
             type="button"
             className="btn-primary w-full"
-            disabled={busy || !job.trim() || !resume}
+            disabled={busy || !job.trim() || !resume || !hasKey}
+            title={!hasKey ? t('tailor.needsKey', { defaultValue: 'Add a BYOK API key in AI settings first.' }) : undefined}
             onClick={() => void run()}
           >
             <Sparkles size={14} />
             {busy ? t('tailor.tailoring') : t('tailor.tailorBYOK')}
           </button>
+          {!hasKey && (
+            <p className="text-xs text-ink-subtle">
+              {t('tailor.needsKey', { defaultValue: 'Add a BYOK API key in AI settings first.' })}
+            </p>
+          )}
         </div>
 
         <div className="space-y-3 overflow-y-auto">

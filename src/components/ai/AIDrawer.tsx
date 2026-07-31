@@ -16,6 +16,7 @@ import {
   KEY_LINKS,
   PROVIDER_LABELS,
   PROVIDER_MODELS,
+  AI_RETRY_EVENT,
   clearAiSettings,
   generateAiText,
   loadAiSettings,
@@ -27,6 +28,7 @@ import {
   saveAiSettings,
   testAiConnection,
   type AiProvider,
+  type AiRetryInfo,
   type AiSettings,
 } from '@/utils/aiByok';
 import {
@@ -84,6 +86,7 @@ export function AIDrawer() {
   const [copied, setCopied] = useState('');
   const [busy, setBusy] = useState('');
   const [aiError, setAiError] = useState('');
+  const [retryNote, setRetryNote] = useState('');
   const [cloudRewriteOptions, setCloudRewriteOptions] = useState<string[]>([]);
   const [cloudSummary, setCloudSummary] = useState('');
   const [cloudAts, setCloudAts] = useState('');
@@ -110,6 +113,7 @@ export function AIDrawer() {
       const loaded = loadAiSettings();
       setSettings(loaded);
       setCustomModelMode(!PROVIDER_MODELS[loaded.provider].includes(loaded.model));
+      setRetryNote('');
     }
   }, [open]);
 
@@ -117,11 +121,37 @@ export function AIDrawer() {
     setPendingPlan(null);
   }, [tab]);
 
-  // Keep the active AI tab visible when the strip is horizontally scrolled.
+  // Keep the active AI tab visible in the horizontal strip without scrolling the drawer body.
   useEffect(() => {
     const active = document.querySelector<HTMLElement>('[data-ai-tab][aria-selected="true"]');
-    active?.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' });
+    const list = active?.closest<HTMLElement>('[role="tablist"]');
+    if (!active || !list) return;
+    const tabRect = active.getBoundingClientRect();
+    const listRect = list.getBoundingClientRect();
+    if (tabRect.left < listRect.left) {
+      list.scrollLeft -= listRect.left - tabRect.left + 8;
+    } else if (tabRect.right > listRect.right) {
+      list.scrollLeft += tabRect.right - listRect.right + 8;
+    }
   }, [tab]);
+
+  // Surface provider overload retries while a cloud call is in flight.
+  useEffect(() => {
+    if (!open) return;
+    const onRetry = (event: Event) => {
+      const detail = (event as CustomEvent<AiRetryInfo>).detail;
+      if (!detail) return;
+      setRetryNote(
+        t('ai.retrying', {
+          attempt: detail.attempt,
+          max: detail.maxRetries,
+          seconds: Math.ceil(detail.delayMs / 1000),
+        }),
+      );
+    };
+    window.addEventListener(AI_RETRY_EVENT, onRetry);
+    return () => window.removeEventListener(AI_RETRY_EVENT, onRetry);
+  }, [open, t]);
 
   const bullets = useMemo(() => (resume ? collectBullets(resume) : []), [resume]);
   const selectedBullet = bullets.find((b) => b.bulletId === selectedBulletId) ?? bullets[0];
@@ -148,12 +178,15 @@ export function AIDrawer() {
 
   const runCloud = async (label: string, fn: (live: AiSettings) => Promise<void>) => {
     setAiError('');
+    setRetryNote('');
     setBusy(label);
     try {
       const live = loadAiSettings();
       setSettings(live);
       await fn(live);
+      setRetryNote('');
     } catch (err) {
+      setRetryNote('');
       setAiError(err instanceof Error ? err.message : t('ai.requestFailed'));
     } finally {
       setBusy('');
@@ -259,35 +292,41 @@ export function AIDrawer() {
         </span>
       }
       maxWidth="2xl"
-    >
-      <div className="sticky top-0 z-10 border-b border-paper-edge bg-paper/95 px-3 py-2 backdrop-blur-sm">
-        <div
-          role="tablist"
-          aria-label={t('ai.drawerTitle')}
-          className="flex gap-1 overflow-x-auto pb-0.5 [scrollbar-width:thin]"
-        >
-          {TABS.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              role="tab"
-              onClick={() => setTab(item.id)}
-              className={`shrink-0 whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
-                tab === item.id
-                  ? 'bg-ink text-paper'
-                  : 'text-ink-muted hover:bg-paper-tint hover:text-ink'
-              }`}
-              aria-selected={tab === item.id}
-              data-ai-tab
-            >
-              {t(item.labelKey)}
-            </button>
-          ))}
+      toolbar={
+        <div className="bg-paper px-3 py-2">
+          <div
+            role="tablist"
+            aria-label={t('ai.drawerTitle')}
+            className="flex gap-1 overflow-x-auto pb-0.5 [scrollbar-width:thin]"
+          >
+            {TABS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                role="tab"
+                onClick={() => setTab(item.id)}
+                className={`shrink-0 whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                  tab === item.id
+                    ? 'bg-ink text-paper'
+                    : 'text-ink-muted hover:bg-paper-tint hover:text-ink'
+                }`}
+                aria-selected={tab === item.id}
+                data-ai-tab
+              >
+                {t(item.labelKey)}
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-xs leading-relaxed text-ink-subtle">{t('ai.optionalNote')}</p>
         </div>
-        <p className="mt-2 text-xs leading-relaxed text-ink-subtle">{t('ai.optionalNote')}</p>
-      </div>
-
+      }
+    >
       <div className="p-4 text-sm text-ink-muted">
+        {retryNote && (
+          <div className="mb-3 break-words rounded-md border border-paper-edge bg-paper-tint px-3 py-2 text-ink">
+            {retryNote}
+          </div>
+        )}
         {aiError && (
           <div className="mb-3 break-words rounded-md bg-red-50 px-3 py-2 text-danger">{aiError}</div>
         )}
