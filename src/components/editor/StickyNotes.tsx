@@ -107,6 +107,21 @@ export function StickyNotes({ resumeId }: { resumeId: string }) {
     return () => clearTimeout(timer);
   }, [notes, resumeId, flushSave]);
 
+  // Keep notes reachable if the window shrinks after they were placed.
+  useEffect(() => {
+    const onResize = () => {
+      setNotes((cur) =>
+        cur.map((note) => ({
+          ...note,
+          x: clamp(note.x, 4, Math.max(4, window.innerWidth - note.w - 4)),
+          y: clamp(note.y, 56, Math.max(56, window.innerHeight - note.h - 8)),
+        })),
+      );
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
   // Mirror resume persistence: flush pending sticky edits on tab close / hide.
   useEffect(() => {
     const flush = () => {

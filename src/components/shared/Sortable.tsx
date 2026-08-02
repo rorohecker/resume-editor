@@ -96,9 +96,15 @@ function SortableItem({
 }) {
   const { t } = useTranslation();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  // Apply transforms while dragging OR while siblings shift to make room.
+  // Skip idle/zero transforms — they create a containing block that breaks
+  // position:sticky on accordion headers in the sidebar.
+  const shifting =
+    transform != null &&
+    (isDragging || Math.abs(transform.x) > 0.01 || Math.abs(transform.y) > 0.01);
   const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
+    transform: shifting ? CSS.Transform.toString(transform) : undefined,
+    transition: shifting ? transition : undefined,
     opacity: isDragging ? 0.6 : 1,
     zIndex: isDragging ? 10 : 'auto',
   };

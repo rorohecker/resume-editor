@@ -535,9 +535,49 @@ export function AIDrawer() {
                       {hit.replacements.length > 0 && (
                         <div className="mt-2 flex flex-wrap gap-1">
                           {hit.replacements.map((r) => (
-                            <span key={r} className="rounded-md border border-paper-edge bg-paper px-2 py-0.5 text-xs">
+                            <button
+                              key={r}
+                              type="button"
+                              className="rounded-md border border-paper-edge bg-paper px-2 py-0.5 text-xs hover:bg-paper-tint"
+                              title={t('ai.applySuggestion', { defaultValue: 'Apply suggestion' })}
+                              onClick={() => {
+                                const bullet = bullets.find((b) => b.bulletId === hit.bulletId);
+                                if (!bullet) return;
+                                const plain = bullet.content.replace(/<[^>]*>/g, '');
+                                let next: string;
+                                if (plain === bullet.content) {
+                                  next =
+                                    plain.slice(0, hit.offset) +
+                                    r +
+                                    plain.slice(hit.offset + hit.length);
+                                } else {
+                                  const snippet = plain.slice(hit.offset, hit.offset + hit.length);
+                                  next = snippet
+                                    ? bullet.content.replace(snippet, r)
+                                    : bullet.content;
+                                }
+                                if (next === bullet.content) {
+                                  void copyText(r, r);
+                                  return;
+                                }
+                                updateResume((current) =>
+                                  replaceBulletContent(current, hit.bulletId, next),
+                                );
+                                setGrammarHits((cur) =>
+                                  cur.filter(
+                                    (item) =>
+                                      !(
+                                        item.bulletId === hit.bulletId &&
+                                        item.offset === hit.offset &&
+                                        item.length === hit.length
+                                      ),
+                                  ),
+                                );
+                                toast(t('ai.bulletReplaced'), { tone: 'success', ttl: 1500 });
+                              }}
+                            >
                               {r}
-                            </span>
+                            </button>
                           ))}
                         </div>
                       )}

@@ -320,7 +320,7 @@ function PreviewPane({ preview }: { preview: Preview }) {
   const { format, artifact, url, text, images, approximate, totalPages } = preview;
   const sizeLabel = formatBytes(artifact.blob.size);
   const truncated =
-    format === 'pdf' && images != null && totalPages != null && totalPages > images.length;
+    images != null && totalPages != null && totalPages > images.length;
 
   return (
     <div className="flex flex-col gap-3 px-5 py-4">

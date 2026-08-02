@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import {
@@ -271,7 +271,7 @@ export function EditorLeftPanel() {
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-3 py-3">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-3">
         <div className="flex flex-col gap-2">
           <ApplicationEditor
             resume={resume}
@@ -853,17 +853,27 @@ function SectionEditor({
   const [open, setOpen] = useState(section.entries.length === 0);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // When the preview asks us to focus this section, expand it and scroll it
-  // into view. We watch the focusedSectionToken counter rather than just the
-  // id so re-clicking the same section header still re-fires the effect.
+  // When the preview asks us to focus this section, expand it and pin its
+  // header to the top of the sidebar so close/collapse stays reachable.
   const focusedSectionId = useStore((s) => s.focusedSectionId);
   const focusedSectionToken = useStore((s) => s.focusedSectionToken);
   useEffect(() => {
     if (focusedSectionId !== section.id) return;
     setOpen(true);
-    // Slight delay so the accordion has expanded before we scroll into view.
     const timer = window.setTimeout(() => {
-      containerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const root = containerRef.current;
+      if (!root) return;
+      const scrollParent = findScrollParent(root);
+      if (!scrollParent) {
+        root.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+      }
+      const parentTop = scrollParent.getBoundingClientRect().top;
+      const headerTop = root.getBoundingClientRect().top;
+      scrollParent.scrollTo({
+        top: scrollParent.scrollTop + (headerTop - parentTop),
+        behavior: 'smooth',
+      });
     }, 50);
     return () => window.clearTimeout(timer);
   }, [focusedSectionId, focusedSectionToken, section.id]);
@@ -1790,6 +1800,40 @@ function BulletEditor({
   );
 }
 
+/** Nearest vertical scrollport — used to pin/unpin accordion headers without jumping. */
+function findScrollParent(el: HTMLElement): HTMLElement | null {
+  let node: HTMLElement | null = el.parentElement;
+  while (node) {
+    const { overflowY } = getComputedStyle(node);
+    if (overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay') {
+      return node;
+    }
+    node = node.parentElement;
+  }
+  return null;
+}
+
+// Only one open accordion keeps a sticky header so multiple sections don't stack.
+let stickyAccordionId: string | null = null;
+const stickyAccordionListeners = new Set<() => void>();
+
+function subscribeStickyAccordion(onStoreChange: () => void) {
+  stickyAccordionListeners.add(onStoreChange);
+  return () => {
+    stickyAccordionListeners.delete(onStoreChange);
+  };
+}
+
+function getStickyAccordionId() {
+  return stickyAccordionId;
+}
+
+function setStickyAccordionId(id: string | null) {
+  if (stickyAccordionId === id) return;
+  stickyAccordionId = id;
+  stickyAccordionListeners.forEach((listener) => listener());
+}
+
 function AccordionShell({
   title,
   toggleLabel,
@@ -1807,13 +1851,85 @@ function AccordionShell({
   actions?: ReactNode;
   children: ReactNode;
 }) {
+  const accordionId = useId();
+  const stickyId = useSyncExternalStore(
+    subscribeStickyAccordion,
+    getStickyAccordionId,
+    getStickyAccordionId,
+  );
+  const sticky = open && stickyId === accordionId;
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  // After collapse, keep the header at the same viewport Y so the sidebar doesn't jump.
+  const pendingCloseTop = useRef<number | null>(null);
+  // After expand, pin the header to the top of the sidebar for easy closure.
+  const pendingOpenPin = useRef(false);
+
+  const setOpen = (next: boolean) => {
+    const root = rootRef.current;
+    if (root) {
+      if (!next && open) {
+        pendingCloseTop.current = root.getBoundingClientRect().top;
+        pendingOpenPin.current = false;
+        if (stickyAccordionId === accordionId) setStickyAccordionId(null);
+      } else if (next && !open) {
+        pendingOpenPin.current = true;
+        pendingCloseTop.current = null;
+        setStickyAccordionId(accordionId);
+      }
+    } else if (next) {
+      setStickyAccordionId(accordionId);
+    } else if (stickyAccordionId === accordionId) {
+      setStickyAccordionId(null);
+    }
+    onOpenChange(next);
+  };
+
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const scrollParent = findScrollParent(root);
+    if (!scrollParent) {
+      pendingCloseTop.current = null;
+      pendingOpenPin.current = false;
+      return;
+    }
+
+    if (!open && pendingCloseTop.current != null) {
+      const afterTop = root.getBoundingClientRect().top;
+      scrollParent.scrollTop += afterTop - pendingCloseTop.current;
+      pendingCloseTop.current = null;
+      return;
+    }
+
+    if (open && pendingOpenPin.current) {
+      pendingOpenPin.current = false;
+      const parentTop = scrollParent.getBoundingClientRect().top;
+      const headerTop = root.getBoundingClientRect().top;
+      scrollParent.scrollTop += headerTop - parentTop;
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open && stickyAccordionId === accordionId) {
+      setStickyAccordionId(null);
+    }
+  }, [open, accordionId]);
+
   return (
-    <div className="rounded-md border border-paper-edge bg-paper">
-      <div className="flex items-center gap-1 px-2 py-2">
+    <div ref={rootRef} className="rounded-md border border-paper-edge bg-paper">
+      <div
+        className={`flex items-center gap-1 px-2 py-2 ${
+          sticky
+            ? 'sticky top-0 z-20 rounded-t-[5px] border-b border-paper-edge bg-paper'
+            : open
+              ? 'border-b border-paper-edge'
+              : ''
+        }`}
+      >
         {leading}
         <button
           type="button"
-          onClick={() => onOpenChange(!open)}
+          onClick={() => setOpen(!open)}
           className="flex h-7 w-7 flex-none items-center justify-center rounded text-ink-muted hover:bg-paper-tint hover:text-ink"
           aria-expanded={open}
           aria-label={toggleLabel ?? (typeof title === 'string' ? title : undefined)}
@@ -1824,7 +1940,7 @@ function AccordionShell({
         {typeof title === 'string' ? (
           <button
             type="button"
-            onClick={() => onOpenChange(!open)}
+            onClick={() => setOpen(!open)}
             className="min-w-0 flex-1 rounded px-1 py-0.5 text-left text-sm font-medium text-ink hover:bg-paper-tint"
             aria-expanded={open}
           >
@@ -1835,7 +1951,7 @@ function AccordionShell({
         )}
         {actions && <div className="flex items-center gap-1">{actions}</div>}
       </div>
-      {open && <div className="border-t border-paper-edge px-4 py-4">{children}</div>}
+      {open && <div className="px-4 py-4">{children}</div>}
     </div>
   );
 }

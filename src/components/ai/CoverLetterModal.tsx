@@ -7,6 +7,7 @@ import { generateAiText, loadAiSettings, promptForCoverLetter } from '@/utils/ai
 import { fileBaseName } from '@/utils/exportFiles';
 import { Modal } from '@/components/shared/Modal';
 import { toast } from '@/hooks/useToast';
+import { copyToClipboard } from '@/utils/clipboard';
 import { CoverLetterEditor } from './CoverLetterEditor';
 
 export function CoverLetterModal() {
@@ -120,8 +121,14 @@ export function CoverLetterModal() {
               className="btn-ghost text-xs"
               disabled={!letter}
               onClick={() => {
-                void navigator.clipboard.writeText(letter);
-                toast(t('cover.copied'), { tone: 'success', ttl: 1500 });
+                void (async () => {
+                  const ok = await copyToClipboard(letter);
+                  if (!ok) {
+                    toast(t('editor.copyFailed'), { tone: 'danger' });
+                    return;
+                  }
+                  toast(t('cover.copied'), { tone: 'success', ttl: 1500 });
+                })();
               }}
             >
               <Copy size={13} /> {t('common.copy')}

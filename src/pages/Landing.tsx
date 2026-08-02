@@ -86,8 +86,14 @@ export function LandingPage() {
       const link = document.createElement('a');
       link.href = url;
       link.download = `resume-editor-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      link.rel = 'noopener';
+      link.style.display = 'none';
+      document.body.appendChild(link);
       link.click();
-      window.setTimeout(() => URL.revokeObjectURL(url), 4000);
+      window.setTimeout(() => {
+        link.remove();
+        URL.revokeObjectURL(url);
+      }, 4000);
       recordBackup();
       toast(t('landing.backupSaved'), { tone: 'success', ttl: 2000 });
     });
@@ -510,6 +516,11 @@ function KanbanCard({ resume, onOpen }: { resume: Resume; onOpen: () => void }) 
   const style: CSSProperties | undefined = transform
     ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
     : undefined;
+  // Ignore the click that follows a drag so cards don't open after reorder.
+  const suppressClick = useRef(false);
+  useEffect(() => {
+    if (isDragging) suppressClick.current = true;
+  }, [isDragging]);
 
   return (
     <button
@@ -518,7 +529,13 @@ function KanbanCard({ resume, onOpen }: { resume: Resume; onOpen: () => void }) 
       style={style}
       {...listeners}
       {...attributes}
-      onClick={onOpen}
+      onClick={() => {
+        if (suppressClick.current) {
+          suppressClick.current = false;
+          return;
+        }
+        onOpen();
+      }}
       className={`rounded-md border border-paper-edge bg-paper p-2 text-left hover:shadow-page ${
         isDragging ? 'opacity-40' : ''
       }`}

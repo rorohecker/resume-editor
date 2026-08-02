@@ -74,16 +74,8 @@ export function TailorModal({ open, onClose }: { open: boolean; onClose: () => v
     void navigator.clipboard.writeText(outcome.coverLetter).catch(() => {
       /* clipboard is best-effort; the editor seed is the source of truth */
     });
-    toast(t('tailor.coverLetterCopied'), {
-      tone: 'success',
-      action: {
-        label: t('tailor.openEditor'),
-        onClick: () => {
-          onClose();
-          setCoverLetterOpen(true);
-        },
-      },
-    });
+    onClose();
+    setCoverLetterOpen(true);
   };
 
   return (
