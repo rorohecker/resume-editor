@@ -56,7 +56,10 @@ function start(): () => void {
     pointerEvents: 'none',
     imageRendering: 'pixelated',
   });
-  document.body.appendChild(canvas);
+  // Sit behind #root so translucent chrome can show the starfield.
+  const root = document.getElementById('root');
+  if (root?.parentNode) root.parentNode.insertBefore(canvas, root);
+  else document.body.appendChild(canvas);
 
   const ctx = canvas.getContext('2d');
   if (!ctx) {
@@ -182,7 +185,15 @@ function start(): () => void {
   };
 
   const render = () => {
-    ctx.clearRect(0, 0, width, height);
+    // Deep-space fill so stars stay visible even under light chrome tokens.
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#07051a';
+    ctx.fillRect(0, 0, width, height);
+    // Soft nebula wash (blocky, not smooth gradients).
+    ctx.fillStyle = 'rgba(109,40,217,0.18)';
+    px(Math.floor(cols * 0.12), Math.floor(rows * 0.08), Math.floor(cols * 0.22), Math.floor(rows * 0.18));
+    ctx.fillStyle = 'rgba(34,211,238,0.12)';
+    px(Math.floor(cols * 0.62), Math.floor(rows * 0.55), Math.floor(cols * 0.28), Math.floor(rows * 0.22));
 
     // Stars.
     for (const star of stars) {

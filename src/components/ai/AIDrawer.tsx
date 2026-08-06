@@ -762,6 +762,11 @@ export function AIDrawer() {
                   <div className="rounded-md border border-yellow-200 bg-yellow-50 p-3 text-xs text-warn">
                     {t('ai.securityWarning')}
                   </div>
+                  {settings.provider === 'openai' && (
+                    <div className="rounded-md border border-yellow-200 bg-yellow-50 p-3 text-xs text-warn">
+                      {t('ai.openaiSubscriptionNote')}
+                    </div>
+                  )}
                   <Field label={t('ai.provider')}>
                     <select
                       value={settings.provider}

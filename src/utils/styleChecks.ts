@@ -16,9 +16,9 @@ const PAGE_WIDTH_IN = {
 };
 
 // Average glyph advance as a fraction of the font size for the resume fonts we
-// ship. Tuned slightly under 0.5 so wraps match Georgia / Carlito / Inter better
-// than a conservative 0.5 (which over-counted lines and inflated page %).
-const AVG_CHAR_WIDTH_EM = 0.44;
+// ship. Tuned under 0.5 so wraps match Georgia / Carlito / Inter; slightly
+// lower than before so the heuristic no longer over-counts vs PDF/HTML render.
+const AVG_CHAR_WIDTH_EM = 0.41;
 
 // Sidebar template geometry — mirrors createPdfStyles' leftColumn (30% width,
 // 12pt gutter) so two-column resumes aren't measured as one tall stack.
@@ -28,6 +28,20 @@ const COL_GAP_PT = 12;
 export interface PageUsageStats {
   percent: number;
   estimatedPages: number;
+}
+
+/** Prefer this in the editor UI when the live preview has measured itself. */
+export function measureRenderedPageStats(
+  contentHeightPx: number,
+  usableHeightPx: number,
+  forcedBreakCount = 0,
+): PageUsageStats {
+  const usable = Math.max(1, usableHeightPx);
+  const used = Math.max(0, contentHeightPx);
+  const flowPages = Math.max(1, Math.ceil(used / usable - 1e-6));
+  const estimatedPages = Math.max(1, forcedBreakCount + 1, flowPages);
+  const percent = Math.round((used / usable) * 100);
+  return { percent, estimatedPages };
 }
 
 export function estimatePageUsage(resume: Resume): number {

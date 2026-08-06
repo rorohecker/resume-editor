@@ -1,28 +1,28 @@
 # Resume Editor
 
-Local-first resume editor that runs entirely in your browser. Write a long master resume, tag every block, then generate a tailored one-pager for a specific job in one click. Bring your own AI key, or use the offline heuristics.
+A resume editor that runs in your browser. Keep one long master resume, then cut a shorter version for each job. Your files stay on your device. Cloud rewrite tools are optional and use a key you paste yourself.
 
-Live demo: https://rorohecker.github.io/resume-editor/
+**Try it:** https://rorohecker.github.io/resume-editor/
 
-Or run locally with `npm install && npm run dev`.
+Or locally: `npm install && npm run dev`
 
-## Why this exists
+## Why it exists
 
-Most resume tools are SaaS that store your data on their servers. This one keeps everything in IndexedDB in your own browser. No accounts, no uploads, no tracking. AI features use your own provider key so the developer never sees your data or pays for your usage.
+Most resume sites store your data on their servers. This one keeps resumes in IndexedDB in your own browser — no account, no upload, no tracking. If you turn on cloud tools, the request goes from your browser to the provider you choose. The app author never sees your resume or your key.
 
-## What it does
+## What you can do
 
-**Master resume and variants.** Keep a long resume with every experience and bullet you have ever written. Tag each block. Paste a job description and the variant generator picks the most relevant blocks to fit one page. Each variant is saved as its own resume, linked back to the master.
+**Master resume and job variants.** Write everything once. Tag and hide blocks as needed. Paste a job description and Generate variant picks what to keep, can reword bullets, and opens the new tailored resume. The master is unchanged.
 
-**Multi-format export.** PDF with embedded fonts, DOCX, ATS-safe plain text, PNG, and JSON for backup. PDF rendering runs in a Web Worker when available.
+**Export.** PDF with embedded fonts, Word, plain text for ATS forms, PNG, and JSON backup. PDF work can run in a Web Worker when the browser allows it.
 
-**Real import.** PDF text-layer extraction with two-column detection, DOCX via mammoth, scanned PDFs and images via Tesseract OCR, plain text, and JSON round-trip. LinkedIn exports get a specialized parser.
+**Import.** PDF (including two-column layouts), Word, plain text, JSON, and images. Scanned PDFs and photos go through OCR — that often misreads columns and bullets, so prefer a Word file or text PDF when you can, and always check the parse before you open it.
 
-**Bring-your-own-key AI.** Pick Claude, OpenAI, or Gemini. Paste your key once. Calls go directly from your browser to the provider. Every cloud feature has a local heuristic fallback so the app is useful without a key.
+**Optional API key.** Claude, Gemini, or OpenAI. Paste a key in the AI panel settings. Local checks still work with no key. Claude or Gemini usually need the least fuss here. A ChatGPT Plus or Team plan does **not** include API access — OpenAI needs a separate key with API billing from [platform.openai.com](https://platform.openai.com/api-keys).
 
-**Job tracker.** Each resume has a target role, company, status, and notes. The manager has a kanban view grouped by status.
+**Job tracker.** Each resume can have a company, role, status, and notes. The home page has a list and a status board.
 
-**Other things.** Live HTML preview with a real PDF preview toggle. Five templates. Block library with tag filtering. Inline XYZ feedback on each bullet. Drag and drop with touch and keyboard support. Auto-save plus idle snapshots. Snapshot diff before restore. Cross-tab sync. Anonymize mode. Light and dark themes. English and Spanish. PWA installable. Onboarding tour with spotlight.
+**Also.** Live preview (and a PDF preview toggle), five templates, block library, bullet quality hints, drag-and-drop, autosave, snapshots, share links, anonymize mode, light/dark and accent themes (including Cosmic pixel starfield), English and Spanish, installable PWA, and a How it works guide under the home header or the editor More menu.
 
 ## Quick start
 
@@ -33,52 +33,55 @@ npm install
 npm run dev
 ```
 
-Open the URL the dev server prints. Pick a template. Start typing.
+Open the URL Vite prints, pick a template, and start editing.
 
-## AI setup (optional)
+## Optional API setup
 
-1. Open the AI panel from the editor.
-2. Switch to the Settings tab.
-3. Pick a provider and paste your own API key.
-4. Test the connection.
+1. Open the sparkle panel in the editor.
+2. Go to Settings.
+3. Pick a provider and paste your key.
+4. Hit Test connection.
 
-The key never leaves your browser. The app enforces per-minute and per-day call caps you can adjust.
+The key stays in this browser. You can set local per-minute and per-day call caps; those are not your provider bill.
 
-AI feature behavior, provider notes, and the QA process are documented in
-[guides.md](guides.md) and [docs/AI_GUIDES.md](docs/AI_GUIDES.md).
-
-Where to get a key:
+Keys:
 
 - Claude: https://console.anthropic.com/settings/keys
-- OpenAI: https://platform.openai.com/api-keys
 - Gemini: https://aistudio.google.com/app/apikey
+- OpenAI: https://platform.openai.com/api-keys
+
+More detail: [guides.md](guides.md) and [docs/AI_GUIDES.md](docs/AI_GUIDES.md).
 
 ## Stack
 
-React 18, TypeScript strict, Vite 8, Tailwind, Zustand, TipTap, dnd-kit, @react-pdf/renderer, idb-keyval, vite-plugin-pwa, pdfjs, mammoth, tesseract.js, react-i18next.
+React 18, TypeScript, Vite 8, Tailwind, Zustand, TipTap, dnd-kit, @react-pdf/renderer, idb-keyval, vite-plugin-pwa, pdf.js, mammoth, tesseract.js, react-i18next.
 
-## Building for production
+## Production build
 
 ```bash
 npm run build
 ```
 
-Outputs a static SPA under `dist/`. Drop it on any static host (Vercel, Netlify, GitHub Pages, Cloudflare Pages, S3, your own server). No backend required.
+You get a static site in `dist/`. Host it anywhere (GitHub Pages, Netlify, Cloudflare, S3, your own server). No backend required for the core app.
+
+```bash
+npm run build:single
+```
+
+Builds a self-contained HTML file under `dist-single/` for offline / file:// use.
 
 ## Privacy
 
-Everything happens in your browser:
+- Resumes live in IndexedDB under this origin.
+- Snapshots are compressed before write when the browser supports it.
+- Cloud calls go straight from your browser to your provider over HTTPS.
+- The developer never sees your data, key, or usage.
 
-- Resumes live in IndexedDB under your origin.
-- Snapshots are gzipped before write.
-- AI calls go from your browser straight to your chosen provider over HTTPS.
-- The developer never sees your data, your key, or your usage.
-
-A one-time disclosure modal explains this before the first AI-enriched action.
+A one-time notice appears before the first cloud-enriched action.
 
 ## Contributing
 
-Issues and pull requests welcome. The project is single-author for now so response times will vary.
+Issues and pull requests are welcome. This is mostly a single-author project, so replies may take a bit.
 
 ## License
 

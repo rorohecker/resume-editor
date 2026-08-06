@@ -4,6 +4,7 @@ import type { Bullet, ContactField, Entry, Resume, RuleStyle, Section } from '@/
 import { formatDateRange } from '@/utils/dateFormat';
 import { displayContactValue } from '@/utils/contactIcon';
 import { resumeForPagedExport } from '@/utils/resumeLayout';
+import { measureRenderedPageStats } from '@/utils/styleChecks';
 import {
   headerAlignFor,
   splitSectionsForLayout,
@@ -47,6 +48,7 @@ export function PreviewRenderer({
   const features = templateFeatures(displayResume.template);
   const contentRef = useRef<HTMLDivElement>(null);
   const [breakPositions, setBreakPositions] = useState<number[]>([]);
+  const setLivePageUsage = useStore((s) => s.setLivePageUsage);
 
   useLayoutEffect(() => {
     if (!showPageBreaks || !contentRef.current) {
@@ -57,9 +59,11 @@ export function PreviewRenderer({
     const blocks = root.querySelectorAll<HTMLElement>('[data-page-block]');
     const positions: number[] = [];
     let pageBottom = marginTopPx + usableHeightPx;
+    let forcedBreaks = 0;
 
     blocks.forEach((block) => {
       if (block.dataset.pageBreak === 'force') {
+        forcedBreaks += 1;
         const top = block.offsetTop;
         if (top > pageBottom - 4) {
           positions.push(pageBottom);
@@ -80,7 +84,12 @@ export function PreviewRenderer({
     });
 
     setBreakPositions(positions);
-  }, [displayResume, showPageBreaks, usableHeightPx, marginTopPx, visibleSections.length]);
+
+    // Prefer rendered height over the text heuristic — matches preview / print /
+    // PDF page geometry the user actually sees.
+    const stats = measureRenderedPageStats(root.scrollHeight, usableHeightPx, forcedBreaks);
+    setLivePageUsage(stats);
+  }, [displayResume, showPageBreaks, usableHeightPx, marginTopPx, visibleSections.length, setLivePageUsage]);
 
   const renderSection = (section: Section) => (
     <SectionBlock

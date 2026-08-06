@@ -593,7 +593,8 @@ function AppearanceControls({
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
-  const pageStats = estimatePageStats(resume);
+  const livePageUsage = useStore((s) => s.livePageUsage);
+  const pageStats = livePageUsage ?? estimatePageStats(resume);
   const pageUsage = pageStats.percent;
   const contrast = contrastRatio(resume.styles.colors.body, '#ffffff');
   const hasAtsColorWarning = !isDarkProfessionalColor(resume.styles.colors.body);
@@ -650,6 +651,9 @@ function AppearanceControls({
               style={{ width: `${Math.min(pageUsage, 120)}%` }}
             />
           </div>
+          {livePageUsage && (
+            <p className="mt-1 text-[10px] text-ink-subtle">{t('editor.pageUsageLive')}</p>
+          )}
         </div>
 
         <Field label={t('editor.font')}>

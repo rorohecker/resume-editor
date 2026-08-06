@@ -23,7 +23,7 @@ export default {
     open: 'Open',
     noKanbanItems: 'No resumes',
     emptyTitle: 'You haven\'t started yet',
-    emptyHint: 'Pick a template below, import an existing resume, or paste text from a file. Everything saves locally.',
+    emptyHint: 'Pick a template below, import an existing resume, or paste text from a file. Everything saves locally. Open How it works anytime if you want the walkthrough.',
     variantBadge: 'Variant',
     viewMode: 'View',
     renameAria: 'Rename {{name}}',
@@ -199,6 +199,8 @@ export default {
     dateFormatYearOnly: '2023 - Present',
     appearance: 'Appearance & Page',
     pageUsage: 'Page usage',
+    pageUsageLive: 'From preview render',
+    pageCountEstimate: '~{{count}} pg',
     font: 'Font',
     sectionHeaders: 'Section headers',
     entryTitles: 'Entry titles',
@@ -224,7 +226,6 @@ export default {
     paperLetter: 'US Letter',
     paperA4: 'A4',
     onePageMode: 'One-page mode',
-    pageCountEstimate: '~{{count}} pg',
     pageNumbers: 'Show page numbers when content exceeds one page',
     summaryPresetStudent: 'Student / new grad',
     summaryPresetSwe: 'Software engineer',
@@ -432,12 +433,16 @@ export default {
     localFallback: 'Local fallback',
     addKey: 'Add key',
     noKey: 'Cloud AI not configured',
-    noKeyHint: 'Add a Claude, OpenAI, or Gemini key from a free-tier or paid account. The key stays in this browser.',
-    optionalNote: 'BYOK is optional. Without a key, the app uses local heuristic tools and makes no network calls.',
+    noKeyHint:
+      'Paste a Claude, Gemini, or OpenAI API key. The key stays in this browser. Claude or Gemini usually work best here.',
+    optionalNote:
+      'A key is optional. Without one, local checks still work and nothing is sent to a provider.',
     corsWarning:
-      'OpenAI and Gemini often block browser requests (CORS) outside local `npm run dev`. Prefer Claude for static/single-file builds, or run a small proxy — see api/README.md.',
+      'OpenAI and Gemini often block browser requests outside local `npm run dev`. Prefer Claude for the single-file / static build, or run the small proxy in api/README.md.',
     corsDevHint:
-      'Dev server proxies OpenAI and Gemini through /byok/* so CORS is handled. Production/static builds still need Claude or a proxy.',
+      'In `npm run dev`, OpenAI and Gemini go through /byok/* so CORS is handled. Static builds still prefer Claude or a proxy.',
+    openaiSubscriptionNote:
+      'ChatGPT Plus / Team does not include API access. You need a separate key from platform.openai.com with API billing enabled. Claude or Gemini is usually simpler for this app.',
     bulletRewriter: 'Bullet Rewriter',
     selectBullet: 'Select bullet',
     rewriteInstruction: 'make it more concise, add a metric, make it senior-level',
@@ -488,7 +493,7 @@ export default {
     callsPerMinute: 'Calls per minute',
     callsPerDay: 'Calls per day',
     localLimitsHint:
-      'These are local browser safeguards only — not your OpenAI/Claude/Gemini bill. Provider billing errors mean the API key has no API credits (ChatGPT Plus ≠ API access).',
+      'These caps only limit calls from this browser. They are not your provider bill. A ChatGPT subscription does not pay for the API — that needs separate API credits.',
     usageDashboard: 'Local call usage',
     usageDay: 'Today',
     usageMinute: 'This minute',
@@ -693,12 +698,14 @@ export default {
   importer: {
     title: 'Import Resume',
     titleMerge: 'Import & Merge Resume',
-    hint: 'PDF, DOCX, image OCR, plain text, and JSON are parsed locally with an ATS-style heading lexicon, smarter date/contact detection, two-column PDF reading, and OCR preprocessing. AI enrichment is opt-in if you have added a BYOK key.',
+    hint: 'PDF, Word, plain text, JSON, and images are read in your browser. Scanned PDFs and photos use OCR, which is often messy — expect to fix headings and bullets. Optional enrichment needs your own API key.',
     dropHere: 'Drop a resume file here',
     extracting: 'Extracting…',
-    accepts: 'PDF, DOCX, TXT, JSON, PNG, JPG. Everything parses in your browser.',
+    accepts: 'PDF, DOCX, TXT, JSON, PNG, JPG. Parsed on your device.',
     chooseFile: 'Choose file',
-    offline: 'Offline / no AI enrichment',
+    offline: 'Skip cloud enrichment',
+    ocrCaveat:
+      'OCR (scanned PDFs and photos) often misreads columns, bullets, and small text. Prefer a DOCX, text PDF, or pasted text when you can. Always review the parse before opening.',
     pasteLabel: 'Paste resume text',
     pastePlaceholder: 'Paste text copied from Word, Google Docs, Notion, or an ATS export',
     parseThis: 'Parse this',
@@ -823,7 +830,7 @@ export default {
     healthHeaderOk: 'Name is set.',
     healthHeaderMissing: 'Add your name to the header.',
     pageUsageTitle: 'Page Usage',
-    pageUsageHint: 'Estimated one-page usage',
+    pageUsageHint: 'Based on the live preview / PDF page size',
     rememberTitle: 'Always Remember',
     rememberOnePage: 'Keep early-career resumes to one page when possible.',
     rememberTense: 'Use past tense for previous roles and present tense for current roles.',
@@ -894,17 +901,60 @@ export default {
     titles: [
       'Edit on the left, preview on the right',
       'Drag handles appear on hover',
-      'AI is BYOK',
-      'Tailor to a role in one click',
-      'Your work is local',
+      'Optional cloud tools',
+      'Tailor for a job',
+      'Your work stays here',
     ],
     bodies: [
-      'Your changes appear in the live preview immediately. The dashed lines on the page mark where the printed PDF will paginate.',
-      'Hover any section, entry, or contact field to drag it. Keyboard reordering also works once focused.',
-      'Click the sparkle button to open the AI panel. Local heuristics work without a key; cloud features need your own Claude / OpenAI / Gemini key.',
-      'Use the Tailor button to rewrite bullets and draft a cover letter for a specific job description, all in one orchestrated flow.',
-      'Everything is saved to IndexedDB in this browser. Export a backup from the Resume Manager any time.',
+      'Edits show up in the live preview right away. Dashed lines mark where the PDF will break pages.',
+      'Hover a section, entry, or contact field to drag it. You can also reorder with the keyboard when focused.',
+      'The sparkle button opens tools for rewriting, scanning, and more. Local checks work with no key. Cloud features need your own Claude, Gemini, or OpenAI API key.',
+      'Use Tailor or Generate variant to reshape bullets for a job description. Review everything before you keep it.',
+      'Everything saves in this browser. Export a backup from the Resume Manager whenever you want.',
     ],
+  },
+  tutorial: {
+    title: 'How it works',
+    open: 'How it works',
+    close: 'Close',
+    intro:
+      'This app keeps a long master resume on your device, then helps you cut and reword a short version for each job. Here is the short version of how to use it.',
+    what: {
+      title: 'What you are looking at',
+      body: 'Resumes live in this browser only. There is no account. If you clear site data or switch computers, export a backup first. The Resume Manager on the home page lists everything you have saved.',
+    },
+    start: {
+      title: 'Start or import',
+      body: 'Pick a template to start blank, or import an existing file. After that you edit sections, entries, and bullets on the left while the preview updates on the right.',
+    },
+    edit: {
+      title: 'Editing',
+      body: 'Click any text to change it. Hover to drag sections and entries. Use the eye icons to hide a bullet or whole entry without deleting it. Tags on blocks help when you build a job-specific version later.',
+    },
+    import: {
+      title: 'Import',
+      body: 'You can import PDF, Word, text, JSON, or an image. Clean Word files and text PDFs usually come through fine. Always skim the parse result before you open it in the editor.',
+      caveat:
+        'Scanned PDFs and photos go through OCR. That often jumbles columns, bullets, and contact lines. Prefer DOCX or copy-paste when you can, and fix anything the parser missed before you rely on it.',
+    },
+    master: {
+      title: 'Master resume',
+      body: 'Keep one long master with extra bullets and detail. Hide what you do not need for a given application. Hidden content stays on the master for the next job.',
+    },
+    variant: {
+      title: 'A version for one job',
+      body: 'Open Generate variant for role, paste the job description, and review the plan and preview. The app picks what to keep, can rewrite kept bullets, then saves a separate tailored resume and opens it. Your master stays unchanged.',
+    },
+    ai: {
+      title: 'Optional API key',
+      body: 'Cloud rewrite, scoring, and enrichment use a key you paste yourself. Without a key, local checks still run. Open the sparkle panel → Settings to add a key. Claude or Gemini usually work with the least fuss in this app.',
+      caveat:
+        'A ChatGPT Plus or Team subscription does not include API access. OpenAI needs a separate key from platform.openai.com with API billing turned on. If that sounds like a hassle, use Claude or Gemini instead.',
+    },
+    save: {
+      title: 'Save, export, backup',
+      body: 'Edits save automatically in this browser. Use Export for PDF, Word, text, or PNG. Use Export backup on the home page for a full copy of all resumes. Keyboard shortcuts are under More (⋯) → Keyboard shortcuts.',
+    },
   },
   template: {
     switchHint: 'Switching keeps your content; only styles and section order change.',
@@ -940,7 +990,7 @@ export default {
   variant: {
     title: 'Generate variant for role',
     tooltip: 'Generate a role-specific resume variant from tagged blocks',
-    hint: 'Paste a job description. AI researches the company and role (public web snippets + Glassdoor-style themes when available), plans how to reframe your bullets, scores blocks, optionally rewrites them, and lets you show or hide Skills / Additional Information before creating the variant.',
+    hint: 'Paste the job description. The app looks up the company and role from public sources when it can, plans what to keep and reword, scores your blocks, can rewrite kept bullets, then lets you hide Skills / Additional Information before you create the version.',
     footerHint: 'Creating the variant opens it immediately; the master resume is unchanged.',
     defaultName: '{{name}} Tailored',
     defaultNameRole: '{{name}} for {{role}}',

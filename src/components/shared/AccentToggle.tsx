@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import {
   Check,
   ChevronDown,
@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useAccent, type AccentTheme } from '@/hooks/useAccent';
 import { tooltipProps } from '@/components/shared/tooltipProps';
+import { ChromeMenuRoot } from '@/components/shared/ChromeMenuRoot';
 
 const OPTIONS: {
   value: AccentTheme;
@@ -64,11 +65,16 @@ const OPTIONS: {
   },
 ];
 
-// Rich palette picker. A dropdown keeps six options usable in the compact top
-// navigation while giving the expressive themes room for previews.
-export function AccentToggle({ compact = false }: { compact?: boolean }) {
+function AccentMenu({
+  compact,
+  open,
+  setOpen,
+}: {
+  compact: boolean;
+  open: boolean;
+  setOpen: (next: boolean) => void;
+}) {
   const { accent, setAccent } = useAccent();
-  const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const active = OPTIONS.find((option) => option.value === accent) ?? OPTIONS[1];
   const ActiveIcon = active.Icon;
@@ -87,13 +93,13 @@ export function AccentToggle({ compact = false }: { compact?: boolean }) {
       window.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [open]);
+  }, [open, setOpen]);
 
   return (
     <div ref={rootRef} className="relative">
       <button
         type="button"
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => setOpen(!open)}
         className={`inline-flex h-8 items-center gap-1.5 rounded-md border border-paper-edge bg-paper px-2 text-xs text-ink transition-all hover:-translate-y-0.5 hover:shadow-sm ${
           open ? 'ring-2 ring-accent/30' : ''
         }`}
@@ -111,7 +117,7 @@ export function AccentToggle({ compact = false }: { compact?: boolean }) {
         <div
           role="menu"
           aria-label="App theme"
-          className="absolute right-0 top-full z-50 mt-2 w-72 overflow-hidden rounded-xl border border-paper-edge bg-paper/95 p-2 shadow-page backdrop-blur-xl"
+          className="absolute right-0 top-full z-[80] mt-2 w-72 overflow-hidden rounded-xl border border-paper-edge bg-paper/95 p-2 shadow-page backdrop-blur-xl"
         >
           <div className="px-2 pb-2 pt-1">
             <p className="text-xs font-semibold text-ink">Choose your atmosphere</p>
@@ -159,5 +165,13 @@ export function AccentToggle({ compact = false }: { compact?: boolean }) {
         </div>
       )}
     </div>
+  );
+}
+
+export function AccentToggle({ compact = false }: { compact?: boolean }) {
+  return (
+    <ChromeMenuRoot>
+      {({ open, setOpen }) => <AccentMenu compact={compact} open={open} setOpen={setOpen} />}
+    </ChromeMenuRoot>
   );
 }

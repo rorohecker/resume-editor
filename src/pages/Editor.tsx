@@ -29,6 +29,7 @@ import { ShareModal } from '@/components/editor/ShareModal';
 import { ShortcutsModal } from '@/components/editor/ShortcutsModal';
 import { StickyNotes } from '@/components/editor/StickyNotes';
 import { ImportReferencePanel } from '@/components/editor/ImportReferencePanel';
+import { TutorialModal } from '@/components/shared/TutorialModal';
 import { getFocusedRichEditor } from '@/utils/focusedRichEditor';
 
 export function EditorPage() {
@@ -202,7 +203,7 @@ export function EditorPage() {
         <ImportReferencePanel resumeId={resume.id} />
 
         <div
-          className={`min-w-0 w-full md:w-2/5 md:max-w-xl ${
+          className={`min-w-0 w-full md:w-[min(40%,22rem)] lg:w-2/5 lg:max-w-xl ${
             isMobile && mobileTab !== 'edit' ? 'hidden' : 'block'
           }`}
           role={isMobile ? 'tabpanel' : undefined}
@@ -210,10 +211,10 @@ export function EditorPage() {
           <EditorLeftPanel />
         </div>
 
-        <div className="hidden w-px bg-paper-edge md:block" />
+        <div className="hidden w-px flex-shrink-0 bg-paper-edge md:block" />
 
         <div
-          className={`w-full flex-1 ${
+          className={`min-w-0 w-full flex-1 ${
             isMobile && mobileTab !== 'preview' ? 'hidden' : 'block'
           }`}
           role={isMobile ? 'tabpanel' : undefined}
@@ -233,6 +234,7 @@ export function EditorPage() {
       <GenerateVariantModal />
       <ShareModal />
       <ShortcutsModal />
+      <TutorialModal />
       <StickyNotes resumeId={resume.id} />
       <FloatingAIButton />
       <ToastViewport />

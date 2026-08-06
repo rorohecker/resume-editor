@@ -22,6 +22,7 @@ import { ToastViewport } from '@/components/shared/ToastViewport';
 import { ThemeToggle } from '@/components/shared/ThemeToggle';
 import { AccentToggle } from '@/components/shared/AccentToggle';
 import { LocaleToggle } from '@/components/shared/LocaleToggle';
+import { TutorialButton, TutorialModal } from '@/components/shared/TutorialModal';
 import { STATUS_META, STATUS_ORDER } from '@/components/jobs/jobStatus';
 import { useStatusLabel } from '@/components/jobs/statusLabels';
 import { toast } from '@/hooks/useToast';
@@ -142,17 +143,18 @@ export function LandingPage() {
   return (
     <div className="min-h-full bg-paper-tint">
       <header className="border-b border-paper-edge bg-paper">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
           <div className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-md bg-ink text-paper">
               <FileText size={18} />
             </div>
             <span className="font-semibold tracking-tight">{t('app.name')}</span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="relative z-30 flex flex-wrap items-center justify-end gap-2 isolate">
             <LocaleToggle />
             <AccentToggle compact />
             <ThemeToggle compact />
+            <TutorialButton />
             <button className="btn-secondary" type="button" onClick={() => setImportOpen(true)}>
               <Upload size={16} />
               {t('landing.importExisting')}
@@ -166,6 +168,9 @@ export function LandingPage() {
           <section className="mb-12 rounded-lg border border-dashed border-paper-edge bg-paper p-8 text-center">
             <h2 className="text-lg font-semibold text-ink">{t('landing.emptyTitle')}</h2>
             <p className="mt-2 text-sm text-ink-muted">{t('landing.emptyHint')}</p>
+            <div className="mt-4 flex justify-center">
+              <TutorialButton />
+            </div>
           </section>
         )}
         {recents.length > 0 && (
@@ -401,6 +406,7 @@ export function LandingPage() {
           navigate(`/editor/${resume.id}`);
         }}
       />
+      <TutorialModal />
       <ToastViewport />
     </div>
   );

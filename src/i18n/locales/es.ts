@@ -27,7 +27,7 @@ export default {
     open: 'Abrir',
     noKanbanItems: 'Sin currículums',
     emptyTitle: 'Aún no has empezado',
-    emptyHint: 'Elige una plantilla abajo, importa un currículum existente o pega texto de un archivo. Todo se guarda localmente.',
+    emptyHint: 'Elige una plantilla abajo, importa un currículum existente o pega texto de un archivo. Todo se guarda localmente. Abre Cómo funciona cuando quieras el recorrido.',
     variantBadge: 'Variante',
     viewMode: 'Vista',
     renameAria: 'Renombrar {{name}}',
@@ -204,6 +204,8 @@ export default {
     dateFormatYearOnly: '2023 - Actual',
     appearance: 'Apariencia y página',
     pageUsage: 'Uso de la página',
+    pageUsageLive: 'Según la vista previa',
+    pageCountEstimate: '~{{count}} pág',
     font: 'Fuente',
     sectionHeaders: 'Cabeceras de sección',
     entryTitles: 'Títulos de entradas',
@@ -229,7 +231,6 @@ export default {
     paperLetter: 'Carta (US)',
     paperA4: 'A4',
     onePageMode: 'Modo de una página',
-    pageCountEstimate: '~{{count}} pág.',
     pageNumbers: 'Mostrar números de página cuando el contenido excede una página',
     summaryPresetStudent: 'Estudiante / recién graduado',
     summaryPresetSwe: 'Ingeniero de software',
@@ -437,12 +438,16 @@ export default {
     localFallback: 'Modo local',
     addKey: 'Añadir clave',
     noKey: 'IA en la nube no configurada',
-    noKeyHint: 'Añade tu propia clave de Claude, OpenAI o Gemini. La clave se queda en este navegador.',
-    optionalNote: 'BYOK es opcional. Sin clave, la app usa heurísticas locales y no hace llamadas de red.',
+    noKeyHint:
+      'Pega una clave de API de Claude, Gemini u OpenAI. La clave se queda en este navegador. Claude o Gemini suelen funcionar mejor aquí.',
+    optionalNote:
+      'La clave es opcional. Sin ella, las comprobaciones locales siguen disponibles y no se envía nada a un proveedor.',
     corsWarning:
       'OpenAI y Gemini suelen bloquear peticiones del navegador (CORS) fuera de `npm run dev`. Prefiere Claude en builds estáticos, o un proxy pequeño — ver api/README.md.',
     corsDevHint:
       'El servidor de desarrollo proxyea OpenAI y Gemini por /byok/* para evitar CORS. Los builds de producción/estáticos siguen necesitando Claude o un proxy.',
+    openaiSubscriptionNote:
+      'ChatGPT Plus / Team no incluye acceso a la API. Necesitas una clave aparte en platform.openai.com con facturación de API. Claude o Gemini suele ser más sencillo para esta app.',
     bulletRewriter: 'Reescritor de viñetas',
     selectBullet: 'Seleccionar viñeta',
     rewriteInstruction: 'hazlo más conciso, añade una métrica, hazlo más senior',
@@ -493,7 +498,7 @@ export default {
     callsPerMinute: 'Llamadas por minuto',
     callsPerDay: 'Llamadas por día',
     localLimitsHint:
-      'Solo son límites locales del navegador, no tu factura de OpenAI/Claude/Gemini. Un error de facturación del proveedor significa que la clave no tiene créditos de API (ChatGPT Plus ≠ acceso a la API).',
+      'Estos topes solo limitan llamadas desde este navegador. No son tu factura del proveedor. Una suscripción a ChatGPT no paga la API: hace falta créditos de API por separado.',
     usageDashboard: 'Uso local de llamadas',
     usageDay: 'Hoy',
     usageMinute: 'Este minuto',
@@ -698,12 +703,14 @@ export default {
   importer: {
     title: 'Importar currículum',
     titleMerge: 'Importar y combinar currículum',
-    hint: 'PDF, DOCX, OCR de imágenes, texto plano y JSON se procesan localmente con un léxico de encabezados estilo ATS, mejor detección de fechas/contactos, lectura PDF a dos columnas y preprocesado OCR. La mejora con IA es opcional si tienes una clave BYOK.',
+    hint: 'PDF, Word, texto, JSON e imágenes se leen en tu navegador. Los PDF escaneados y las fotos usan OCR, que suele fallar — espera corregir encabezados y viñetas. La mejora opcional necesita tu propia clave de API.',
     dropHere: 'Suelta un archivo de currículum aquí',
     extracting: 'Extrayendo…',
-    accepts: 'PDF, DOCX, TXT, JSON, PNG, JPG. Todo se procesa en tu navegador.',
+    accepts: 'PDF, DOCX, TXT, JSON, PNG, JPG. Se procesa en tu dispositivo.',
     chooseFile: 'Elegir archivo',
-    offline: 'Sin conexión / sin mejora con IA',
+    offline: 'Sin mejora en la nube',
+    ocrCaveat:
+      'El OCR (PDF escaneados y fotos) suele leer mal columnas, viñetas y texto pequeño. Prefiere DOCX, PDF de texto o pegar texto cuando puedas. Revisa siempre el resultado antes de abrir.',
     pasteLabel: 'Pegar texto del currículum',
     pastePlaceholder: 'Pega texto copiado de Word, Google Docs, Notion o un export ATS',
     parseThis: 'Procesar esto',
@@ -828,7 +835,7 @@ export default {
     healthHeaderOk: 'El nombre está configurado.',
     healthHeaderMissing: 'Agrega tu nombre al encabezado.',
     pageUsageTitle: 'Uso de la página',
-    pageUsageHint: 'Uso estimado de una página',
+    pageUsageHint: 'Basado en la vista previa / tamaño de página del PDF',
     rememberTitle: 'Recuerda siempre',
     rememberOnePage: 'Mantén los currículums iniciales en una página cuando sea posible.',
     rememberTense: 'Usa pasado para roles previos y presente para roles actuales.',
@@ -899,17 +906,60 @@ export default {
     titles: [
       'Edita a la izquierda, vista previa a la derecha',
       'Las asas de arrastre aparecen al pasar el ratón',
-      'IA es BYOK',
-      'Adapta a un puesto con un clic',
-      'Tu trabajo es local',
+      'Herramientas en la nube opcionales',
+      'Adapta para un puesto',
+      'Tu trabajo se queda aquí',
     ],
     bodies: [
-      'Tus cambios aparecen en la vista previa inmediatamente. Las líneas discontinuas marcan dónde se paginará el PDF impreso.',
-      'Pasa el ratón sobre cualquier sección, entrada o campo de contacto para arrastrarlo. El reordenamiento con teclado también funciona al enfocarlo.',
-      'Pulsa el botón de chispa para abrir el panel de IA. La heurística local funciona sin clave; las funciones en la nube necesitan tu propia clave de Claude / OpenAI / Gemini.',
-      'Usa el botón Adaptar para reescribir viñetas y redactar una carta de presentación para una descripción de puesto específica, todo en un único flujo.',
-      'Todo se guarda en IndexedDB en este navegador. Exporta una copia de seguridad desde el Gestor de currículums en cualquier momento.',
+      'Los cambios aparecen en la vista previa al momento. Las líneas discontinuas marcan dónde cortará el PDF.',
+      'Pasa el ratón sobre una sección, entrada o contacto para arrastrarlo. También puedes reordenar con el teclado al enfocarlo.',
+      'El botón de chispa abre herramientas para reescribir, escanear y más. Las comprobaciones locales funcionan sin clave. Lo de la nube necesita tu clave de Claude, Gemini u OpenAI.',
+      'Usa Adaptar o Generar variante para ajustar viñetas a una descripción de puesto. Revisa todo antes de quedártelo.',
+      'Todo se guarda en este navegador. Exporta una copia desde el Gestor cuando quieras.',
     ],
+  },
+  tutorial: {
+    title: 'Cómo funciona',
+    open: 'Cómo funciona',
+    close: 'Cerrar',
+    intro:
+      'Esta app guarda un currículum maestro largo en tu dispositivo y te ayuda a recortar y reescribir una versión corta para cada puesto. Esto es lo esencial.',
+    what: {
+      title: 'Qué estás viendo',
+      body: 'Los currículums viven solo en este navegador. No hay cuenta. Si borras datos del sitio o cambias de ordenador, exporta una copia antes. El Gestor en la página de inicio lista lo que tienes guardado.',
+    },
+    start: {
+      title: 'Empezar o importar',
+      body: 'Elige una plantilla en blanco o importa un archivo. Luego editas secciones, entradas y viñetas a la izquierda mientras la vista previa se actualiza a la derecha.',
+    },
+    edit: {
+      title: 'Editar',
+      body: 'Haz clic en cualquier texto para cambiarlo. Pasa el ratón para arrastrar secciones y entradas. Usa el ojo para ocultar una viñeta o una entrada sin borrarla. Las etiquetas ayudan cuando prepares una versión para un puesto.',
+    },
+    import: {
+      title: 'Importar',
+      body: 'Puedes importar PDF, Word, texto, JSON o una imagen. Los Word limpios y los PDF de texto suelen salir bien. Revisa siempre el resultado antes de abrirlo en el editor.',
+      caveat:
+        'Los PDF escaneados y las fotos pasan por OCR. Eso suele revolver columnas, viñetas y contactos. Prefiere DOCX o copiar y pegar cuando puedas, y corrige lo que falte antes de fiarte del resultado.',
+    },
+    master: {
+      title: 'Currículum maestro',
+      body: 'Mantén uno largo con viñetas y detalle de sobra. Oculta lo que no necesites para una solicitud. Lo oculto sigue en el maestro para el siguiente puesto.',
+    },
+    variant: {
+      title: 'Una versión para un puesto',
+      body: 'Abre Generar variante para un puesto, pega la descripción y revisa el plan y la vista previa. La app elige qué conservar, puede reescribir viñetas y guarda un currículum aparte que se abre al crearlo. El maestro no cambia.',
+    },
+    ai: {
+      title: 'Clave de API opcional',
+      body: 'Reescritura, puntuación y mejora en la nube usan una clave que pegas tú. Sin clave, las comprobaciones locales siguen. Abre el panel de chispa → Ajustes para añadirla. Claude o Gemini suelen dar menos fricción en esta app.',
+      caveat:
+        'Una suscripción a ChatGPT Plus o Team no incluye la API. OpenAI necesita una clave aparte en platform.openai.com con facturación de API. Si eso complica, usa Claude o Gemini.',
+    },
+    save: {
+      title: 'Guardar, exportar, copia',
+      body: 'Los cambios se guardan solos en este navegador. Usa Exportar para PDF, Word, texto o PNG. Usa Exportar copia en la página de inicio para una copia completa. Los atajos están en Más (⋯) → Atajos de teclado.',
+    },
   },
   template: {
     switchHint: 'Cambiar conserva tu contenido; solo cambian estilos y orden de secciones.',
@@ -945,7 +995,7 @@ export default {
   variant: {
     title: 'Generar variante para un puesto',
     tooltip: 'Generar una variante del currículum específica para un puesto',
-    hint: 'Pega una descripción del puesto. La IA investiga la empresa y el rol (snippets públicos + temas tipo Glassdoor cuando hay), planifica cómo reencuadrar tus viñetas, puntúa bloques, opcionalmente las reescribe y te deja mostrar u ocultar Skills / Información adicional antes de crear la variante.',
+    hint: 'Pega la descripción del puesto. La app busca la empresa y el rol en fuentes públicas cuando puede, planifica qué conservar y reescribir, puntúa tus bloques, puede reescribir viñetas y te deja ocultar Skills / Información adicional antes de crear la versión.',
     footerHint: 'Al crear la variante se abre de inmediato; el currículum maestro no se modifica.',
     defaultName: '{{name}} adaptado',
     defaultNameRole: '{{name}} para {{role}}',

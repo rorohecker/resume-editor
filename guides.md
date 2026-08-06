@@ -1,5 +1,8 @@
 # Guides
 
+Open **How it works** in the app (home page or editor → More) for a plain walkthrough of
+the master resume, import caveats, job variants, and optional API keys.
+
 ## Job-Tailored Resume Workflow
 
 1. Open the master resume.

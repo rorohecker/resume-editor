@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Resume } from '@/types';
 import { renderPdfBlob, renderPdfBlobToImages } from '@/utils/exportFiles';
+import { useStore } from '@/store';
 
 export function PdfPreview({ resume }: { resume: Resume }) {
   const { t } = useTranslation();
+  const setLivePageUsage = useStore((s) => s.setLivePageUsage);
   const [url, setUrl] = useState<string | null>(null);
   const [images, setImages] = useState<string[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -25,7 +27,19 @@ export function PdfPreview({ resume }: { resume: Resume }) {
         // browsers won't render a blob-URL PDF inside an iframe.
         try {
           const rendered = await renderPdfBlobToImages(blob, { scale: 2, maxPages: 10 });
-          if (!cancelled && rendered.images.length > 0) setImages(rendered.images);
+          if (cancelled) return;
+          if (rendered.images.length > 0) setImages(rendered.images);
+          // PDF page count is ground truth for overflow. One PDF page cannot be
+          // "134%" — cap fill at 100%. Multiple pages report N×100 as capacity used.
+          const pages = Math.max(1, rendered.totalPages || rendered.images.length);
+          const prev = useStore.getState().livePageUsage?.percent;
+          setLivePageUsage({
+            estimatedPages: pages,
+            percent:
+              pages <= 1
+                ? Math.min(100, typeof prev === 'number' && prev > 0 ? prev : 95)
+                : pages * 100,
+          });
         } catch {
           // Fall back to the iframe below.
         }
@@ -37,7 +51,7 @@ export function PdfPreview({ resume }: { resume: Resume }) {
       cancelled = true;
       if (nextUrl) URL.revokeObjectURL(nextUrl);
     };
-  }, [resumeKey, t]);
+  }, [resumeKey, t, setLivePageUsage]);
 
   if (err) {
     return (

@@ -400,6 +400,9 @@ export function ImportResumeModal({
         </div>
 
         <p className="mb-2 text-[11px] text-ink-subtle">{t('importer.hint')}</p>
+        <p className="mb-3 rounded-md border border-yellow-200 bg-yellow-50 px-3 py-2 text-[11px] text-warn">
+          {t('importer.ocrCaveat')}
+        </p>
 
         {/* Split screen: left = source text to read/copy from, right = parsed review. */}
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-2">

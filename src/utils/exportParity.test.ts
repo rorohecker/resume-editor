@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createResumeFromTemplate } from '@/components/templates/createFromTemplate';
 import { getTemplateDemoResume } from '@/components/templates/templateDemos';
 import { getTemplate, TEMPLATES } from '@/components/templates/registry';
-import { estimatePageStats } from '@/utils/styleChecks';
+import { estimatePageStats, measureRenderedPageStats } from '@/utils/styleChecks';
 import { resumeToPlainText } from '@/utils/resumeText';
 import { upsertSummarySection } from '@/utils/summarySection';
 
@@ -81,6 +81,21 @@ describe('page usage estimate', () => {
     const stats = estimatePageStats(resume);
     expect(stats.estimatedPages).toBe(1);
     expect(stats.percent).toBeLessThan(60);
+  });
+
+  it('measures rendered height against the printable page', () => {
+    const usable = (11 - 0.5 - 0.5) * 96;
+    const half = measureRenderedPageStats(usable * 0.5, usable);
+    expect(half.estimatedPages).toBe(1);
+    expect(half.percent).toBe(50);
+
+    const over = measureRenderedPageStats(usable * 1.34, usable);
+    expect(over.percent).toBe(134);
+    expect(over.estimatedPages).toBe(2);
+
+    const fits = measureRenderedPageStats(usable * 0.98, usable);
+    expect(fits.percent).toBe(98);
+    expect(fits.estimatedPages).toBe(1);
   });
 
   it('does not treat a typical one-page resume as overflowing', () => {

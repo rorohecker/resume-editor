@@ -96,8 +96,8 @@ export function EditorTopNav() {
 
   return (
     <>
-    <header className="relative z-50 flex h-14 flex-shrink-0 items-center justify-between border-b border-paper-edge bg-paper px-4">
-      <div className="flex items-center gap-3 min-w-0">
+    <header className="relative z-50 flex h-14 flex-shrink-0 items-center justify-between gap-2 overflow-hidden border-b border-paper-edge bg-paper px-2 sm:px-4">
+      <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
         <Link
           to="/"
           className="flex items-center gap-2 text-ink hover:text-ink-soft"
@@ -153,7 +153,7 @@ export function EditorTopNav() {
           ) : (
             <BackupHint />
           )}
-          <div className="ml-2 hidden md:block">
+          <div className="ml-2 hidden lg:block">
             <ApplicationEditor
               resume={resume}
               compact
@@ -163,7 +163,7 @@ export function EditorTopNav() {
         </div>
       </div>
 
-      <div className="flex items-center gap-1">
+      <div className="flex flex-shrink-0 items-center gap-0.5 sm:gap-1">
         <button
           type="button"
           className="icon-btn"
@@ -253,7 +253,7 @@ export function EditorTopNav() {
           )}
         </div>
 
-        <div className="mx-2 h-6 w-px bg-paper-edge" />
+        <div className="mx-1 hidden h-6 w-px bg-paper-edge sm:mx-2 sm:block" />
 
         <ChangeTemplateMenu />
         <button
@@ -418,7 +418,7 @@ export function EditorTopNav() {
         </button>
 
         <div className="mx-2 hidden h-6 w-px bg-paper-edge md:block" />
-        <div className="hidden items-center gap-1 md:flex">
+        <div className="relative z-30 hidden items-center gap-1 isolate md:flex">
           <AccentToggle compact />
           <ThemeToggle compact />
         </div>

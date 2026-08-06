@@ -10,7 +10,8 @@ export function TipsPanel() {
   const open = useStore((s) => s.tipsOpen);
   const setOpen = useStore((s) => s.setTipsOpen);
   const resume = useStore((s) => s.currentResume);
-  const pageStats = resume ? estimatePageStats(resume) : null;
+  const livePageUsage = useStore((s) => s.livePageUsage);
+  const pageStats = resume ? livePageUsage ?? estimatePageStats(resume) : null;
   const pageUsage = pageStats?.percent ?? 0;
   const health = resume ? computeHealthScore(resume) : null;
 

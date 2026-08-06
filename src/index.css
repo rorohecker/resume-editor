@@ -164,8 +164,7 @@
   }
 
   html.accent-sakura body,
-  html.accent-sunset body,
-  html.accent-cosmic body {
+  html.accent-sunset body {
     background-attachment: fixed;
     background-size: 180% 180%;
     animation: atmosphere-drift 18s ease-in-out infinite alternate;
@@ -194,17 +193,16 @@
       radial-gradient(circle at 85% 10%, rgb(251 191 36 / 0.13), transparent 30%),
       linear-gradient(145deg, rgb(21 8 16), rgb(68 25 38) 52%, rgb(55 30 20));
   }
+  /* Cosmic atmosphere comes from the pixel canvas. Keep the body dark so
+     stars/UFOs stay readable in both light and dark chrome modes. */
   html.accent-cosmic body {
-    background-image:
-      radial-gradient(circle at 18% 15%, rgb(192 132 252 / 0.28), transparent 34%),
-      radial-gradient(circle at 82% 82%, rgb(34 211 238 / 0.2), transparent 32%),
-      linear-gradient(145deg, rgb(248 247 255), rgb(236 232 255) 55%, rgb(236 254 255));
+    background-color: #07051a;
+    background-image: none;
+    animation: none;
   }
   html.accent-cosmic.dark body {
-    background-image:
-      radial-gradient(circle at 18% 15%, rgb(192 132 252 / 0.2), transparent 36%),
-      radial-gradient(circle at 82% 82%, rgb(34 211 238 / 0.15), transparent 32%),
-      linear-gradient(145deg, rgb(5 5 16), rgb(17 10 44) 55%, rgb(3 24 35));
+    background-color: #05040f;
+    background-image: none;
   }
 
   html.accent-sakura body::before,
@@ -236,24 +234,25 @@
     transform: translateX(-55%);
     animation: sunset-light-leak 12s ease-in-out infinite;
   }
-  /* The Cosmic accent's animated pixel art is rendered by the
-     CosmicBackground canvas (mounted to <body>), not CSS gradients. */
+  /* Cosmic pixel art is drawn by CosmicBackground on a canvas behind #root. */
 
   html.accent-sakura #root,
   html.accent-sunset #root,
   html.accent-cosmic #root {
     position: relative;
     z-index: 1;
+    background: transparent;
   }
-  html.accent-sakura #root > .bg-paper-tint,
-  html.accent-sunset #root > .bg-paper-tint,
-  html.accent-cosmic #root > .bg-paper-tint {
+  /* Match nested pages too — Router wraps routes, so #root > .bg-paper-tint never hits. */
+  html.accent-sakura .bg-paper-tint,
+  html.accent-sunset .bg-paper-tint,
+  html.accent-cosmic .bg-paper-tint {
     background-color: transparent;
   }
   html.accent-sakura .bg-paper,
   html.accent-sunset .bg-paper,
   html.accent-cosmic .bg-paper {
-    background-color: rgb(var(--c-paper) / 0.9);
+    background-color: rgb(var(--c-paper) / 0.88);
     backdrop-filter: blur(14px) saturate(125%);
   }
   html.accent-sakura .shadow-page {

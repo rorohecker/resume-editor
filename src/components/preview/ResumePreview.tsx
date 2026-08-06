@@ -69,6 +69,12 @@ export function ResumePreview() {
     fitToWidth();
   }, [fitToWidth]);
 
+  useEffect(() => {
+    const onResize = () => fitToWidth();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [fitToWidth]);
+
   // Pinch-to-zoom on touch devices. We track the initial distance between two
   // touches and scale zoom proportionally. Native browser pinch-zoom is
   // disabled inside the scroller via touch-action so we don't fight it.
@@ -121,7 +127,7 @@ export function ResumePreview() {
     >
       <div
         ref={scrollerRef}
-        className="flex-1 overflow-auto p-8 touch-pan-x touch-pan-y"
+        className="flex-1 overflow-auto p-4 touch-pan-x touch-pan-y sm:p-6 lg:p-8"
         onClick={handlePreviewClick}
       >
         <div className="mx-auto flex justify-center">

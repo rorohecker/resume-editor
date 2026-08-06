@@ -27,6 +27,7 @@ interface UIState {
   variantOpen: boolean;
   shareOpen: boolean;
   shortcutsOpen: boolean;
+  tutorialOpen: boolean;
   stickyNotesOpen: boolean;
   importReferenceOpen: boolean;
   importReferenceAvailable: boolean;
@@ -34,6 +35,8 @@ interface UIState {
   pdfPreviewMode: boolean;
   anonymized: boolean;
   zoom: number;
+  /** Live page fill from the rendered preview / PDF (preferred over heuristic). */
+  livePageUsage: { percent: number; estimatedPages: number } | null;
   mobileTab: 'edit' | 'preview';
   lastSavedAt: number | null;
   persistError: string | null;
@@ -62,6 +65,7 @@ interface Actions {
   setVariantOpen: (open: boolean) => void;
   setShareOpen: (open: boolean) => void;
   setShortcutsOpen: (open: boolean) => void;
+  setTutorialOpen: (open: boolean) => void;
   setStickyNotesOpen: (open: boolean) => void;
   setImportReferenceOpen: (open: boolean) => void;
   setImportReferenceAvailable: (available: boolean) => void;
@@ -69,6 +73,7 @@ interface Actions {
   setPdfPreviewMode: (on: boolean) => void;
   setAnonymized: (on: boolean) => void;
   setZoom: (zoom: number) => void;
+  setLivePageUsage: (stats: { percent: number; estimatedPages: number } | null) => void;
   setMobileTab: (tab: 'edit' | 'preview') => void;
   focusSection: (sectionId: string) => void;
   clearPersistError: () => void;
@@ -114,6 +119,7 @@ export const useStore = create<UIState & ResumeState & Actions>((set, get) => ({
   variantOpen: false,
   shareOpen: false,
   shortcutsOpen: false,
+  tutorialOpen: false,
   stickyNotesOpen: false,
   importReferenceOpen: false,
   importReferenceAvailable: false,
@@ -121,6 +127,7 @@ export const useStore = create<UIState & ResumeState & Actions>((set, get) => ({
   pdfPreviewMode: false,
   anonymized: false,
   zoom: 1,
+  livePageUsage: null,
   mobileTab: 'edit',
   lastSavedAt: null,
   persistError: null,
@@ -143,6 +150,7 @@ export const useStore = create<UIState & ResumeState & Actions>((set, get) => ({
   setVariantOpen: (variantOpen) => set({ variantOpen }),
   setShareOpen: (shareOpen) => set({ shareOpen }),
   setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),
+  setTutorialOpen: (tutorialOpen) => set({ tutorialOpen }),
   setStickyNotesOpen: (stickyNotesOpen) => set({ stickyNotesOpen }),
   setImportReferenceOpen: (importReferenceOpen) => set({ importReferenceOpen }),
   setImportReferenceAvailable: (importReferenceAvailable) => set({ importReferenceAvailable }),
@@ -155,6 +163,7 @@ export const useStore = create<UIState & ResumeState & Actions>((set, get) => ({
   setPdfPreviewMode: (pdfPreviewMode) => set({ pdfPreviewMode }),
   setAnonymized: (anonymized) => set({ anonymized }),
   setZoom: (zoom) => set({ zoom: clamp(zoom, 0.5, 1.5) }),
+  setLivePageUsage: (livePageUsage) => set({ livePageUsage }),
   setMobileTab: (mobileTab) => set({ mobileTab }),
   clearPersistError: () => set({ persistError: null }),
   setPersistError: (persistError) => set({ persistError }),

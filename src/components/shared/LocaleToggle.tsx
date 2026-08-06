@@ -1,12 +1,18 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { Check, ChevronDown, Globe } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { SUPPORTED_LOCALES } from '@/i18n';
 import { tooltipProps } from '@/components/shared/tooltipProps';
+import { ChromeMenuRoot } from '@/components/shared/ChromeMenuRoot';
 
-export function LocaleToggle() {
+function LocaleMenu({
+  open,
+  setOpen,
+}: {
+  open: boolean;
+  setOpen: (next: boolean) => void;
+}) {
   const { i18n, t } = useTranslation();
-  const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const activeCode = (i18n.resolvedLanguage ?? i18n.language ?? 'en').split('-')[0];
   const activeLocale =
@@ -26,7 +32,7 @@ export function LocaleToggle() {
       document.removeEventListener('mousedown', closeOnOutsideClick);
       document.removeEventListener('keydown', closeOnEscape);
     };
-  }, [open]);
+  }, [open, setOpen]);
 
   return (
     <div ref={rootRef} className="relative">
@@ -37,7 +43,7 @@ export function LocaleToggle() {
         {...tooltipProps(t('common.language'), 'end')}
         aria-haspopup="menu"
         aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => setOpen(!open)}
       >
         <Globe size={14} className="text-ink-muted" aria-hidden />
         <span className="hidden sm:inline">{activeLocale.label}</span>
@@ -53,7 +59,7 @@ export function LocaleToggle() {
         <div
           role="menu"
           aria-label={t('common.language')}
-          className="absolute right-0 z-50 mt-2 min-w-52 overflow-hidden rounded-lg border border-paper-edge bg-paper p-1 shadow-page"
+          className="absolute right-0 z-[80] mt-2 min-w-52 overflow-hidden rounded-lg border border-paper-edge bg-paper p-1 shadow-page"
         >
           {SUPPORTED_LOCALES.map((locale) => {
             const selected = locale.value === activeCode;
@@ -87,5 +93,13 @@ export function LocaleToggle() {
         </div>
       )}
     </div>
+  );
+}
+
+export function LocaleToggle() {
+  return (
+    <ChromeMenuRoot>
+      {({ open, setOpen }) => <LocaleMenu open={open} setOpen={setOpen} />}
+    </ChromeMenuRoot>
   );
 }

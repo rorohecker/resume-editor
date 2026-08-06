@@ -11,6 +11,7 @@ import {
   Layers,
   Library,
   ListChecks,
+  BookOpen,
   MoreHorizontal,
   PanelLeftOpen,
   Printer,
@@ -37,6 +38,7 @@ export function MoreActionsMenu() {
   const setVariantOpen = useStore((s) => s.setVariantOpen);
   const setShareOpen = useStore((s) => s.setShareOpen);
   const setShortcutsOpen = useStore((s) => s.setShortcutsOpen);
+  const setTutorialOpen = useStore((s) => s.setTutorialOpen);
   const stickyNotesOpen = useStore((s) => s.stickyNotesOpen);
   const setStickyNotesOpen = useStore((s) => s.setStickyNotesOpen);
   const importReferenceOpen = useStore((s) => s.importReferenceOpen);
@@ -163,6 +165,14 @@ export function MoreActionsMenu() {
       onClick: () => {
         setOpen(false);
         setStickyNotesOpen(!stickyNotesOpen);
+      },
+    },
+    {
+      label: t('tutorial.open'),
+      icon: BookOpen,
+      onClick: () => {
+        setOpen(false);
+        setTutorialOpen(true);
       },
     },
     {
