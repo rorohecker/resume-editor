@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23bf5700'/%3E%3Cpath d='M10 6h9l5 5v15H10z' fill='%23fff'/%3E%3Cpath d='M19 6v5h5' fill='%23f8d8c4'/%3E%3Cpath d='M13 14h10v1.7H13zm0 4h8v1.7h-8zm0 4h6v1.7h-6z' fill='%231f2937'/%3E%3C/svg%3E"
+    />
+    <meta name="theme-color" content="#bf5700" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Browser resume editor. Keep a master resume, cut a tailored version per job. Files stay on your device. Optional API key for rewrites."
+    />
+    <title>Resume Editor</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=EB+Garamond:ital,wght@0,400;0,600;1,400&display=swap"
+      rel="stylesheet"
+    />
+    <script type="module" crossorigin src="/resume-editor/assets/index-DERkJ0UE.js"></script>
+    <link rel="stylesheet" crossorigin href="/resume-editor/assets/index-D8Zzb72w.css">
+  <link rel="manifest" href="/resume-editor/manifest.webmanifest"></head>
+  <body class="bg-paper-tint text-ink antialiased">
+    <div id="root"></div>
+    <script>
+      // Self-heal: if the app fails to mount within 6s (almost always a stale
+      // service-worker shell pointing at obsolete asset URLs), unregister all
+      // workers, drop caches, and reload once. Guarded so we never loop.
+      (function () {
+        var KEY = '__resume_editor_self_heal';
+        setTimeout(function () {
+          var root = document.getElementById('root');
+          if (root && root.children.length > 0) return;
+          if (sessionStorage.getItem(KEY)) return;
+          sessionStorage.setItem(KEY, '1');
+          var done = function () { window.location.reload(); };
+          var jobs = [];
+          if ('serviceWorker' in navigator) {
+            jobs.push(
+              navigator.serviceWorker.getRegistrations().then(function (regs) {
+                return Promise.all(regs.map(function (r) { return r.unregister(); }));
+              }).catch(function () {}),
+            );
+          }
+          if (window.caches && caches.keys) {
+            jobs.push(
+              caches.keys().then(function (keys) {
+                return Promise.all(keys.map(function (k) { return caches.delete(k); }));
+              }).catch(function () {}),
+            );
+          }
+          Promise.all(jobs).then(done, done);
+        }, 6000);
+      })();
+    </script>
+  </body>
+</html>

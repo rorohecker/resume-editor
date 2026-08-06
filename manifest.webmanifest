@@ -1,0 +1,1 @@
+{"name":"Resume Editor","short_name":"Resume Editor","description":"Local-first BYOK resume editor with live preview, AI tailoring, and offline support.","start_url":".","display":"standalone","background_color":"#ffffff","theme_color":"#0a0a0a","lang":"en","scope":".","icons":[{"src":"favicon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]}
