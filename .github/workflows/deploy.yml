@@ -6,19 +6,17 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
   group: pages
-  # Cancel stuck/queued deploys so a fresh push isn't blocked behind
-  # GitHub's deployment_queued hang.
+  # Cancel stuck/queued deploys so a fresh push isn't blocked.
   cancel-in-progress: true
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -42,16 +40,13 @@ jobs:
         # the single-file build running from file:// can fetch this URL with
         # CORS:* and then write the bytes to the user-picked local file.
         run: cp dist-single/index.html dist/single.html
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - name: Deploy to gh-pages
+        # Branch deploy avoids the Actions "deployment_queued" hang that
+        # repeatedly stalled actions/deploy-pages. Site source is gh-pages.
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          path: dist
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          publish_branch: gh-pages
+          force_orphan: true
+          enable_jekyll: false
