@@ -53,6 +53,10 @@ AI-drafted bullets, summaries, and cover letters follow
 [docs/THE_SANITIZER.md](docs/THE_SANITIZER.md) (The Sanitizer writing system).
 Compact rules are injected into writing prompts via `RESUME_WRITING_RULES`.
 
+Bullet rewrites (cloud and local) also follow the XYZ method (action verb +
+task/project + result/impact), prefer verbs from the shared `ACTION_VERBS`
+bank, quantify only when truthful, and imply skills through the work done.
+
 ## AI QA Process
 
 Use this checklist before changing or releasing AI features:

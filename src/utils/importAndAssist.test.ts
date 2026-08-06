@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { parseResumeText } from '@/utils/importParser';
 import {
+  ACTION_VERBS,
   detectWeakLanguage,
   findWeakPhrasesInText,
   replaceWeakPhrase,
+  rewriteBullet,
 } from '@/utils/aiAssist';
 import { isFallbackPdfFont } from '@/utils/pdfFonts';
 import { collectBullets } from '@/utils/resumeText';
@@ -32,6 +34,20 @@ describe('importParser', () => {
     expect(result.resume.sections.some((s) => s.type === 'experience' || /experience/i.test(s.title))).toBe(
       true,
     );
+  });
+});
+
+describe('local rewriteBullet', () => {
+  it('opens with action-verb-bank verbs and does not invent metric padding', () => {
+    const options = rewriteBullet('Helped build the payments API', '');
+    expect(options).toHaveLength(3);
+    const bank = new Set(Object.values(ACTION_VERBS).flat().map((v) => v.toLowerCase()));
+    for (const option of options) {
+      const first = option.split(/\s+/)[0]?.toLowerCase() ?? '';
+      expect(bank.has(first)).toBe(true);
+      expect(option.toLowerCase()).not.toContain('measurable team outcomes');
+      expect(option.toLowerCase()).toContain('payments api');
+    }
   });
 });
 

@@ -34,7 +34,7 @@ Return a JSON object with this exact shape (no commentary, no fences):
 
 Rules:
 - Rewrite at most 10 bullets. Choose only the highest-value changes for this exact role.
-- Each rewritten bullet must follow action verb + task + impact, be truthful, and at most 32 words.
+- Each rewritten bullet must follow XYZ form (verb-bank action verb + task/project + result/impact), be truthful, at most 32 words, quantify only from evidence, and imply skill/tool through the work — no soft-skill fluff.
 - "summary" is a 2-sentence professional summary tailored to the role.
 - "coverLetter" is a concise letter (~150 words). Do not invent facts.
 - "emphasizedSkills" / "deprioritizedSkills" are short lists (max 8 each) from the provided EXISTING SKILLS list only.`;

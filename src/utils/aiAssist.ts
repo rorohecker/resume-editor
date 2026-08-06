@@ -10,6 +10,13 @@ export const ACTION_VERBS = {
   Impact: ['Reduced', 'Increased', 'Generated', 'Improved', 'Accelerated', 'Delivered'],
 } as const;
 
+/** Compact verb-bank string for BYOK prompts (same bank as the AI drawer Verbs tab). */
+export function formatActionVerbBankForPrompt(): string {
+  return Object.entries(ACTION_VERBS)
+    .map(([category, verbs]) => `${category}: ${verbs.join(', ')}`)
+    .join(' | ');
+}
+
 export const WEAK_LANGUAGE = [
   { phrase: 'helped', replacements: ['Supported', 'Contributed to', 'Enabled'] },
   { phrase: 'worked on', replacements: ['Developed', 'Built', 'Advanced'] },
@@ -90,17 +97,24 @@ export interface KeywordHit {
 
 export function rewriteBullet(content: string, instruction: string): string[] {
   const clean = stripHtml(content);
-  const object = clean.replace(/^(helped|worked on|assisted|was responsible for|participated in|involved in)\s+/i, '');
-  const metricHint = /\d|%|\$|users?|customers?|hours?|minutes?/i.test(clean)
-    ? ''
-    : ' to improve measurable team outcomes';
+  const object = clean.replace(
+    /^(helped|worked on|assisted|was responsible for|participated in|involved in)\s+/i,
+    '',
+  );
   const concise = instruction.toLowerCase().includes('concise');
+  const body = lowercaseFirst(object);
 
-  const options = [
-    `Improved ${lowercaseFirst(object)}${metricHint}`,
-    `Delivered ${lowercaseFirst(object)}${metricHint}`,
-    `Optimized ${lowercaseFirst(object)}${metricHint}`,
-  ].map((value) => (concise ? trimToWords(value, 18) : value));
+  // Local fallback: open with bank verbs (Impact / Engineering). Keep source facts;
+  // never invent metrics or soft-skill padding.
+  const bankOpeners = [
+    ACTION_VERBS.Impact[3], // Improved
+    ACTION_VERBS.Impact[5], // Delivered
+    ACTION_VERBS.Engineering[3], // Optimized
+  ] as const;
+
+  const options = bankOpeners
+    .map((verb) => `${verb} ${body}`)
+    .map((value) => (concise ? trimToWords(value, 18) : value));
 
   return Array.from(new Set(options));
 }

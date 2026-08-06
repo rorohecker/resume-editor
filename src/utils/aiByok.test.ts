@@ -174,6 +174,8 @@ describe('BYOK prompt guides', () => {
       expect(prompt).toContain('Truth only');
     }
     expect(prompts[0]).toContain('FEATURE: Single-bullet rewrite options');
+    expect(prompts[0]).toContain('XYZ');
+    expect(prompts[0]).toContain('ACTION VERB BANK');
     expect(prompts[1]).toContain('FEATURE: Professional summary');
     expect(prompts[2]).toContain('FEATURE: Cover letter draft');
     expect(prompts[3]).toContain('FEATURE: ATS keyword scan');

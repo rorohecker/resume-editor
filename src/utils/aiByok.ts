@@ -202,7 +202,8 @@ export async function generateAiText(
 export function promptForRewrite(resume: Resume, bullet: string, instruction: string): string {
   return buildFeaturePrompt('bullet-rewrite',
     'Rewrite this resume bullet into 3 options.',
-    'Each option must follow action verb + task + impact. Keep it truthful and concise.',
+    'Each option must follow XYZ form: verb-bank action verb + task/project + result/impact.',
+    'Quantify only when metrics exist in the source; imply skill/tool through the work. Keep it truthful and concise.',
     instruction ? `User instruction: ${instruction}` : '',
     `Resume context:\n${resumeToPlainText(resume)}`,
     `Original bullet:\n${bullet}`,

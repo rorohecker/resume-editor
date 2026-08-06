@@ -31,8 +31,8 @@ All model prompts must include these rules:
 1. Truth only: never invent employers, schools, titles, dates, tools, metrics,
    or outcomes.
 2. Use exact inventory IDs when IDs are required.
-3. Prefer concise ATS-friendly wording: strong action verb, concrete task,
-   impact when possible.
+3. Prefer concise ATS-friendly wording in XYZ form: strong action verb +
+   task/project + result/impact when possible.
 4. If JSON is requested, return only valid JSON: no markdown fences, preamble,
    or trailing commentary.
 5. If a step cannot be completed honestly, omit that item instead of
@@ -49,6 +49,22 @@ In short: lead with information; name actors and mechanisms; prefer weighted
 details over inflated vocabulary; cut stock phrases and corporate filler; match
 certainty to evidence; no em dashes or unearned slogans; never invent facts or
 fake imperfections to sound human.
+
+### Bullet writing (XYZ + verb bank)
+
+When drafting or rewriting bullets, models also receive:
+
+1. **XYZ method:** action verb + task/project + result/impact.
+2. **Action verb bank:** prefer openers from `ACTION_VERBS` in `aiAssist.ts`
+   (same bank as the AI drawer Verbs tab), injected into `RESUME_WRITING_RULES`.
+3. **Quantify truthfully:** use %, $, users, time, or volume only when present
+   in the source bullet, resume context, or user clarifications — never invent
+   metrics.
+4. **Skill through work:** prefer wording that demonstrates a skill, tool, or
+   domain via what was done — not generic soft-skill fluff.
+
+Local bullet rewrite (`rewriteBullet` in `aiAssist.ts`) opens with bank verbs
+and preserves source facts without inventing metric padding.
 
 ## Provider Implementation Rules
 
@@ -190,7 +206,9 @@ Model steps:
 
 1. Consider only kept bullet IDs.
 2. Rewrite only when an honest keyword-aware improvement exists.
-3. Preserve facts, approximate length, and action/task/impact shape.
+3. Preserve facts and approximate length; use XYZ form (verb-bank action verb +
+   task/project + result/impact). Quantify only from source/clarifications;
+   imply skill/tool through the work.
 4. Only rewrite Experience, Projects, and Leadership bullets.
 5. Do not create two bullets in the same entry that say the same thing. Keep
    the stronger distinct claim and skip the weaker duplicate.
@@ -216,7 +234,8 @@ User steps:
 Model steps:
 
 1. Match job requirements to existing resume evidence only.
-2. Return at most 10 bullet rewrites.
+2. Return at most 10 bullet rewrites in XYZ form (verb-bank opener preferred;
+   quantify only from evidence; imply skill/tool through the work).
 3. Use exact bullet IDs.
 4. Choose skills only from existing skill inventory.
 5. Write a 2-sentence summary and short cover letter.
@@ -240,7 +259,9 @@ User steps:
 Model steps:
 
 1. Return exactly three alternatives, one per line.
-2. Keep each truthful and concise.
+2. Keep each truthful and concise in XYZ form (verb-bank action verb +
+   task/project + result/impact). Quantify only from the source; imply
+   skill/tool through the work.
 3. Avoid numbering, bullets, or commentary.
 
 ### Summary
@@ -297,7 +318,9 @@ Model steps:
 
 1. Operate through JSON ops only.
 2. Prefer consolidation over deleting unique evidence.
-3. Use catalog IDs only.
+3. When rewriting bullets, use XYZ form, verb-bank openers, truthful
+   quantification, and skill-through-work wording.
+4. Use catalog IDs only.
 
 ### Freeform Agent
 
@@ -310,8 +333,10 @@ User steps:
 Model steps:
 
 1. Plan the smallest truthful set of ops.
-2. Use only allowed ops and catalog IDs.
-3. Never invent new resume facts.
+2. When writing or rewriting bullets, use XYZ form, verb-bank openers,
+   truthful quantification, and skill-through-work wording.
+3. Use only allowed ops and catalog IDs.
+4. Never invent new resume facts.
 
 ### Import Enrichment
 

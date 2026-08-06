@@ -10,6 +10,23 @@ Machine-readable, resume-adapted rules live in `src/utils/aiGuides.ts`
 When revising AI rewrite/summary/cover-letter behavior, update both this guide
 and the compact rules in `aiGuides.ts`.
 
+## Resume bullets (app house rules)
+
+These rules are also embedded in `RESUME_WRITING_RULES` and feature steps:
+
+1. **XYZ method:** each bullet is action verb + task/project + result/impact.
+2. **Action verb bank:** prefer openers from `ACTION_VERBS` in `aiAssist.ts`
+   (Leadership, Engineering, Analysis, Creation, Collaboration, Impact) — the
+   same bank as the AI drawer Verbs tab. Close synonyms from the same category
+   are fine; vary openers across bullets in a role.
+3. **Quantify truthfully:** add %, $, users, time, or volume only when present
+   in the source bullet, resume context, or user clarifications. Never invent
+   metrics.
+4. **Skill through work:** demonstrate a skill, tool, or domain by describing
+   what was done — not generic soft-skill fluff.
+
+Truth-only remains absolute for every rewrite surface.
+
 ---
 # The Sanitizer 2.0  
 ## A Research-Backed System for Detecting Formulaic Prose and Writing with a Real Human Voice

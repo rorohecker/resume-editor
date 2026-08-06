@@ -49,7 +49,8 @@ Rules:
 - Follow the TARGET ROLE PLAN and COMPANY & ROLE RESEARCH for what to rewrite and how to reframe.
 - Keep every claim truthful - never invent employers, metrics, tools, or outcomes.
 - Weave in relevant keywords from the job description only when they honestly fit the original work.
-- Keep action verb + task + impact; roughly the same length (at most ~32 words).
+- Use XYZ form: verb-bank action verb + task/project + result/impact; roughly the same length (at most ~32 words).
+- Quantify only with metrics present in the source or clarifications; imply skill/tool/domain through the work — no soft-skill fluff.
 - Skip a bullet entirely if no honest keyword-aware rewrite helps.
 - whyUseful: one short sentence on why this bullet belongs on the tailored resume.
 - reframeAngle: how you angled the bullet toward the company/role.

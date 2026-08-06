@@ -138,7 +138,20 @@ describe('buildFeaturePrompt writing rules', () => {
     const score = buildFeaturePrompt('variant-score', 'BODY');
     expect(rewrite).toContain(RESUME_WRITING_RULES.slice(0, 40));
     expect(rewrite).toContain('no em dashes');
+    expect(rewrite).toContain('XYZ method');
+    expect(rewrite).toContain('ACTION VERB BANK');
+    expect(rewrite).toContain('Engineered');
+    expect(rewrite).toContain('never invent numbers');
     expect(score).not.toContain('RESUME WRITING STYLE');
+  });
+
+  it('embeds XYZ and verb-bank guidance in bullet rewrite / tailor / organize / agent steps', async () => {
+    const { buildFeaturePrompt } = await import('./aiGuides');
+    for (const feature of ['bullet-rewrite', 'tailor', 'organize', 'agent'] as const) {
+      const prompt = buildFeaturePrompt(feature, 'BODY');
+      expect(prompt).toContain('XYZ');
+      expect(prompt).toContain('verb-bank');
+    }
   });
 });
 

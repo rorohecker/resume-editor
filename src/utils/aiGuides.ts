@@ -5,6 +5,8 @@
  * Writing style follows docs/THE_SANITIZER.md (resume-adapted rules below).
  */
 
+import { formatActionVerbBankForPrompt } from './aiAssist';
+
 export type AiFeatureId =
   | 'variant-research'
   | 'variant-plan'
@@ -24,7 +26,7 @@ export type AiFeatureId =
 export const UNIVERSAL_AI_RULES = `UNIVERSAL RULES (apply to every task):
 1. Truth only - never invent employers, schools, titles, dates, tools, metrics, or outcomes.
 2. Use exact IDs from the prompt inventory when IDs are required. Never invent or rewrite IDs.
-3. Prefer concise ATS-friendly wording: strong action verb + concrete task + impact when possible.
+3. Prefer concise ATS-friendly wording in XYZ form: strong action verb + task/project + result/impact when possible.
 4. Output format is mandatory. If JSON is requested, return ONLY valid JSON (no markdown fences, no preamble, no trailing commentary).
 5. If you cannot complete a step honestly, omit that item rather than fabricating.
 6. Work for any model size: be decisive, avoid hedging essays, keep lists short.`;
@@ -42,7 +44,13 @@ export const RESUME_WRITING_RULES = `RESUME WRITING STYLE (The Sanitizer — app
 6. Match certainty to evidence. One level of caution is enough; no hedge stacking and no unearned slogans.
 7. Across bullets in the same role, vary the claim — do not repeat the same task, tool, metric, or outcome.
 8. House style: no em dashes; no dramatic one-line endings; no automatic three-part adjective/example stacks; plain ATS-friendly English; keep technical terms that carry meaning.
-9. Do not add fake imperfections (typos, slang, fragments) to sound human.`;
+9. Do not add fake imperfections (typos, slang, fragments) to sound human.
+10. When drafting or rewriting bullets, use the XYZ method: action verb + task/project + result/impact.
+11. Prefer opening verbs from the ACTION VERB BANK below (or close synonyms from the same category). Vary openers across bullets in a role.
+12. Quantify impact by frequency, scale, or outcome (%, $, users, time, volume) ONLY when the metric appears in the source bullet, resume context, or user clarifications — never invent numbers.
+13. Prefer wording that demonstrates a skill, tool, or domain through the work done — not generic soft-skill fluff ("team player", "hard worker", "passionate", "detail-oriented").
+
+ACTION VERB BANK: ${formatActionVerbBankForPrompt()}`;
 
 const WRITING_FEATURES = new Set<AiFeatureId>([
   'variant-research',
@@ -139,7 +147,7 @@ STEPS:
 3. For each selected bullet, decide if an honest keyword-aware rewrite / reframe helps. If not, skip it.
 4. Prefer reframes that match research usefulForTailoring and the plan's targetingNotes. When USER CLARIFICATIONS are present, you may use those facts to complete a reframe — still do not invent beyond the resume plus clarifications.
 5. Keep claims truthful; never add tools/metrics/employers absent from the original or clarifications.
-6. Keep roughly the same length (<=32 words). Preserve action verb + task + impact.
+6. Keep roughly the same length (<=32 words). Write in XYZ form: verb-bank action verb + task/project + result/impact. Quantify only with metrics present in the source or clarifications. Imply a skill/tool/domain through the work — no soft-skill fluff.
 7. Within the same entry/block, do not create two bullets that communicate the same task, tool, metric, or outcome. Keep the stronger distinct claim and skip the weaker duplicate.
 8. Only rewrite Experience, Projects, and Leadership bullets. Do not rewrite Education, classes/coursework, summaries, awards, certifications, publications, or research.
 9. For each rewrite, include whyUseful (one short sentence: why this bullet belongs on the tailored resume) and reframeAngle (how you angled it toward the company/role).
@@ -153,7 +161,7 @@ GOAL: Offer 3 stronger truthful rewrites of one bullet.
 STEPS:
 1. Read resume context and the original bullet.
 2. Honor any user instruction if provided.
-3. Produce exactly 3 alternatives, each action verb + task + impact, truthful, concise.
+3. Produce exactly 3 alternatives in XYZ form (verb-bank action verb + task/project + result/impact), truthful and concise. Prefer different bank verbs. Quantify only when metrics exist in the source; demonstrate a skill/tool/domain through the work — no soft-skill fluff.
 4. Return ONLY the 3 bullets, one per line - no numbering, no bullet markers, no intro.`,
 
   summary: `FEATURE: Professional summary
@@ -188,12 +196,13 @@ GOAL: Suggest selective bullet rewrites + skill emphasis + summary + short cover
 STEPS:
 1. Match the job's must-haves to existing resume evidence.
 2. Rewrite ONLY bullets that truly benefit (skip the rest). Return at most 10 bullet rewrites.
-3. Do not return multiple rewrites from the same role that say the same thing. Preserve distinct evidence.
-4. Pick emphasizedSkills / deprioritizedSkills only from skills already on the resume (max 8 each).
-5. Write a 2-sentence tailored summary and a ~150-word cover letter - truth only.
-6. Return ONLY JSON:
+3. Each rewritten bullet must use XYZ form (verb-bank action verb + task/project + result/impact), stay truthful, imply skill/tool through the work, and quantify only from evidence — never invent metrics. At most 32 words.
+4. Do not return multiple rewrites from the same role that say the same thing. Preserve distinct evidence.
+5. Pick emphasizedSkills / deprioritizedSkills only from skills already on the resume (max 8 each).
+6. Write a 2-sentence tailored summary and a ~150-word cover letter - truth only.
+7. Return ONLY JSON:
    {"emphasizedSkills":[],"deprioritizedSkills":[],"bulletRewrites":[{"bulletId":"...","rewritten":"..."}],"summary":"...","coverLetter":"..."}
-7. Use exact bulletId values from the inventory.`,
+8. Use exact bulletId values from the inventory.`,
 
   organize: `FEATURE: Organize / consolidate bullets
 GOAL: Deduplicate and tighten via structured ops - no invented content.
@@ -201,9 +210,10 @@ GOAL: Deduplicate and tighten via structured ops - no invented content.
 STEPS:
 1. Find redundant or overlapping bullets within each role.
 2. Prefer consolidating into stronger bullets over deleting unique wins.
-3. Return ONLY JSON: {"summary":"...","ops":[...]}
-4. Allowed ops: set_entry_bullets, replace_bullet, delete_bullet, reorder_sections.
-5. Use only catalog IDs.`,
+3. When rewriting or consolidating bullet text, use XYZ form (verb-bank action verb + task/project + result/impact), quantify only from existing evidence, and imply skill/tool through the work — never invent metrics or soft-skill fluff.
+4. Return ONLY JSON: {"summary":"...","ops":[...]}
+5. Allowed ops: set_entry_bullets, replace_bullet, delete_bullet, reorder_sections.
+6. Use only catalog IDs.`,
 
   agent: `FEATURE: Freeform agent edits
 GOAL: Apply the user's request via structured ops only.
@@ -211,9 +221,10 @@ GOAL: Apply the user's request via structured ops only.
 STEPS:
 1. Interpret the user request against the resume catalog.
 2. Plan the smallest set of truthful ops that satisfy the request.
-3. Return ONLY JSON: {"summary":"...","ops":[...]}
-4. Allowed ops: replace_bullet, delete_bullet, set_entry_bullets, reorder_sections.
-5. Use only catalog IDs. Never invent facts.`,
+3. When writing or rewriting bullets, use XYZ form (verb-bank action verb + task/project + result/impact), quantify only from evidence, and imply skill/tool through the work — never invent facts or soft-skill fluff.
+4. Return ONLY JSON: {"summary":"...","ops":[...]}
+5. Allowed ops: replace_bullet, delete_bullet, set_entry_bullets, reorder_sections.
+6. Use only catalog IDs. Never invent facts.`,
 
   'import-enrich': `FEATURE: Import enrichment / structure repair
 GOAL: Correct structure of a preliminary parse without changing meaning.
