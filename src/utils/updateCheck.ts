@@ -52,12 +52,37 @@ export interface ReleaseInfo {
   publishedAt: string | null;
 }
 
+type GhAsset = { name?: string; browser_download_url?: string };
+
+/** Prefer resume-editor-vX.Y.Z.html, then any .html asset. */
+export function pickReleaseHtmlAsset(
+  tagName: string,
+  assets: GhAsset[] | undefined,
+): string | null {
+  if (!assets?.length) return null;
+  const htmlAssets = assets.filter((a) => a.name?.toLowerCase().endsWith('.html') && a.browser_download_url);
+  if (htmlAssets.length === 0) return null;
+  const version = tagName.replace(/^v/, '');
+  const preferred =
+    htmlAssets.find((a) => a.name?.toLowerCase() === `resume-editor-v${version}.html`) ||
+    htmlAssets.find((a) => a.name?.toLowerCase().startsWith('resume-editor') && a.name.toLowerCase().endsWith('.html')) ||
+    htmlAssets[0];
+  return preferred?.browser_download_url ?? null;
+}
+
 export async function fetchLatestRelease(): Promise<ReleaseInfo | null> {
   if (typeof fetch === 'undefined') return null;
   try {
-    const resp = await fetch(`https://api.github.com/repos/${__APP_REPO__}/releases/latest`, {
-      headers: { Accept: 'application/vnd.github+json' },
-    });
+    // Cache-bust so long-lived tabs don't keep a stale "latest" after a release.
+    const resp = await fetch(
+      `https://api.github.com/repos/${__APP_REPO__}/releases/latest?_=${Date.now()}`,
+      {
+        headers: {
+          Accept: 'application/vnd.github+json',
+          'Cache-Control': 'no-cache',
+        },
+      },
+    );
     if (!resp.ok) return null;
     const data = (await resp.json()) as {
       tag_name?: string;
@@ -65,13 +90,12 @@ export async function fetchLatestRelease(): Promise<ReleaseInfo | null> {
       body?: string;
       html_url?: string;
       published_at?: string;
-      assets?: { name?: string; browser_download_url?: string }[];
+      assets?: GhAsset[];
     };
     if (!data.tag_name) return null;
-    const htmlAsset = data.assets?.find((a) => a.name?.toLowerCase().endsWith('.html'));
     return {
       version: data.tag_name,
-      htmlAssetUrl: htmlAsset?.browser_download_url ?? null,
+      htmlAssetUrl: pickReleaseHtmlAsset(data.tag_name, data.assets),
       releaseUrl: data.html_url ?? `https://github.com/${__APP_REPO__}/releases/latest`,
       name: data.name ?? null,
       body: data.body ?? null,
@@ -80,6 +104,11 @@ export async function fetchLatestRelease(): Promise<ReleaseInfo | null> {
   } catch {
     return null;
   }
+}
+
+/** True when GitHub's latest release is newer than this build. */
+export function isNewerRelease(latestTag: string, currentVersion = __APP_VERSION__): boolean {
+  return compareVersions(latestTag, `v${currentVersion}`) > 0;
 }
 
 // --- Backup tracking ---------------------------------------------------------

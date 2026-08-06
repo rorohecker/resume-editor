@@ -23,6 +23,7 @@ import { ThemeToggle } from '@/components/shared/ThemeToggle';
 import { AccentToggle } from '@/components/shared/AccentToggle';
 import { LocaleToggle } from '@/components/shared/LocaleToggle';
 import { TutorialButton, TutorialModal } from '@/components/shared/TutorialModal';
+import { AppVersion } from '@/components/shared/AppVersion';
 import { STATUS_META, STATUS_ORDER } from '@/components/jobs/jobStatus';
 import { useStatusLabel } from '@/components/jobs/statusLabels';
 import { toast } from '@/hooks/useToast';
@@ -159,6 +160,7 @@ export function LandingPage() {
               <Upload size={16} />
               {t('landing.importExisting')}
             </button>
+            <AppVersion className="ml-1" />
           </div>
         </div>
       </header>

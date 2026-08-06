@@ -43,6 +43,7 @@ import { lastBackupAt, recordBackup } from '@/utils/updateCheck';
 import { FileSyncControl } from './FileSyncControl';
 import { appendImportReference } from '@/utils/importReference';
 import { tooltipProps } from '@/components/shared/tooltipProps';
+import { AppVersion } from '@/components/shared/AppVersion';
 
 export function EditorTopNav() {
   const { t } = useTranslation();
@@ -433,6 +434,7 @@ export function EditorTopNav() {
           <Download size={14} />
           {t('editor.export')}
         </button>
+        <AppVersion className="ml-2 hidden sm:inline" />
       </div>
     </header>
     <ImportResumeModal

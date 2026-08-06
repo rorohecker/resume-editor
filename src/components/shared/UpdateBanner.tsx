@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, Download, FileText, Loader2, Rocket, X } from 'lucide-react';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import {
-  compareVersions,
   fetchLatestRelease,
+  isNewerRelease,
   recordBackup,
   type ReleaseInfo,
 } from '@/utils/updateCheck';
@@ -213,15 +213,22 @@ export function UpdateBanner() {
     };
   }, []);
 
-  // Single-file path: poll the GitHub releases API.
+  // Both modes: poll GitHub releases. Hosted also relies on the service worker,
+  // but Pages can lag behind a published tag — the banner covers that gap.
   useEffect(() => {
-    if (!__APP_SINGLE_FILE__) return;
     let cancelled = false;
     const check = async () => {
       const latest = await fetchLatestRelease();
       if (cancelled || !latest) return;
-      if (compareVersions(latest.version, `v${__APP_VERSION__}`) > 0 && latest.htmlAssetUrl) {
-        setRelease(latest);
+      if (!isNewerRelease(latest.version)) {
+        setRelease(null);
+        return;
+      }
+      setRelease(latest);
+      // Nudge the SW in case Pages already has the new assets but this tab
+      // hasn't picked them up yet.
+      if (!__APP_SINGLE_FILE__) {
+        void registrationRef.current?.update().catch(() => {});
       }
     };
     void check();
@@ -232,9 +239,22 @@ export function UpdateBanner() {
     };
   }, []);
 
-  // Hosted updates auto-reload; only keep the interactive banner for single-file.
-  if (!__APP_SINGLE_FILE__) return null;
   if (!release || dismissed) return null;
+
+  const tryHostedReload = () => {
+    void (async () => {
+      await flushBeforeReload();
+      try {
+        await registrationRef.current?.update();
+      } catch {
+        // ignore — hard reload still helps after a Pages deploy
+      }
+      if (!reloadStartedRef.current) {
+        reloadStartedRef.current = true;
+        window.location.reload();
+      }
+    })();
+  };
 
   const downloadBackup = () => {
     void exportAllData()
@@ -320,8 +340,9 @@ export function UpdateBanner() {
             Version {release.name || release.version} is available
           </div>
           <p className="mt-1 text-xs text-ink-muted">
-            Move to the auto-updating web app in this tab with all your resumes—no file picker or
-            separate window required.
+            {__APP_SINGLE_FILE__
+              ? 'Move to the auto-updating web app in this tab with all your resumes—no file picker or separate window required.'
+              : `You're on v${__APP_VERSION__}. Reload to pick up the new build, or download the offline HTML if the site is still catching up.`}
           </p>
 
           {release.body && (
@@ -349,15 +370,22 @@ export function UpdateBanner() {
             <button type="button" onClick={downloadBackup} className="btn-secondary text-xs">
               Back up data
             </button>
-            <button
-              type="button"
-              onClick={migrateAndRelaunch}
-              disabled={migrating}
-              className="btn-primary text-xs"
-            >
-              {migrating ? <Loader2 size={12} className="animate-spin" /> : <Rocket size={12} />}
-              {migrating ? 'Moving your data…' : 'Update & relaunch'}
-            </button>
+            {__APP_SINGLE_FILE__ ? (
+              <button
+                type="button"
+                onClick={migrateAndRelaunch}
+                disabled={migrating}
+                className="btn-primary text-xs"
+              >
+                {migrating ? <Loader2 size={12} className="animate-spin" /> : <Rocket size={12} />}
+                {migrating ? 'Moving your data…' : 'Update & relaunch'}
+              </button>
+            ) : (
+              <button type="button" onClick={tryHostedReload} className="btn-primary text-xs">
+                <Rocket size={12} />
+                Reload to update
+              </button>
+            )}
             {release.htmlAssetUrl && (
               <a
                 href={release.htmlAssetUrl}
