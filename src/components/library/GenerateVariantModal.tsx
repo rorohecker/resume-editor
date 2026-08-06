@@ -20,6 +20,11 @@ import {
   type VariantRolePlan,
 } from '@/utils/aiVariant';
 import {
+  localCompanyRoleResearch,
+  researchCompanyAndRole,
+  type CompanyRoleResearch,
+} from '@/utils/companyResearch';
+import {
   localScoreBlocks,
   type BlockScore,
   type VisibilityMap,
@@ -29,7 +34,7 @@ import { replaceBulletContent, stripHtml } from '@/utils/resumeText';
 import { estimatePageUsage } from '@/utils/styleChecks';
 import type { Entry, Section } from '@/types';
 
-type ProgressPhase = 'idle' | 'planning' | 'questions' | 'scoring' | 'rewriting' | 'done';
+type ProgressPhase = 'idle' | 'researching' | 'planning' | 'questions' | 'scoring' | 'rewriting' | 'done';
 
 export function GenerateVariantModal() {
   const { t } = useTranslation();
@@ -37,12 +42,14 @@ export function GenerateVariantModal() {
   const setOpen = useStore((s) => s.setVariantOpen);
   const resume = useStore((s) => s.currentResume);
   const createVariantFrom = useStore((s) => s.createVariantFrom);
+  const loadResume = useStore((s) => s.loadResume);
   const navigate = useNavigate();
   const [job, setJob] = useState('');
   const [phase, setPhase] = useState<ProgressPhase>('idle');
   const [scores, setScores] = useState<BlockScore[] | null>(null);
   const [visibility, setVisibility] = useState<VisibilityMap | null>(null);
   const [rolePlan, setRolePlan] = useState<VariantRolePlan | null>(null);
+  const [companyResearch, setCompanyResearch] = useState<CompanyRoleResearch | null>(null);
   const [clarifyingAnswers, setClarifyingAnswers] = useState<Record<string, string>>({});
   const [maxPages, setMaxPages] = useState(1);
   const [variantName, setVariantName] = useState('');
@@ -59,6 +66,7 @@ export function GenerateVariantModal() {
       setScores(null);
       setVisibility(null);
       setRolePlan(null);
+      setCompanyResearch(null);
       setClarifyingAnswers({});
       setPhase('idle');
       setVariantName('');
@@ -99,10 +107,19 @@ export function GenerateVariantModal() {
   // Re-read settings whenever the modal opens so a key added in AI settings applies.
   const settings = useMemo(() => loadAiSettings(), [open]);
   const hasKey = Boolean(settings.apiKey.trim());
-  const busy = phase === 'planning' || phase === 'scoring' || phase === 'rewriting';
+  const busy =
+    phase === 'researching' ||
+    phase === 'planning' ||
+    phase === 'scoring' ||
+    phase === 'rewriting';
   const canRewrite = hasKey && useAi;
   const needsJob = true;
   const awaitingQuestions = phase === 'questions' && Boolean(rolePlan?.clarifyingQuestions.length);
+
+  const researchHints = () => ({
+    companyName: resume?.application?.companyName?.trim() || undefined,
+    targetRole: resume?.application?.targetRole?.trim() || undefined,
+  });
 
   const answersList = (plan: VariantRolePlan): ClarifyingAnswer[] =>
     plan.clarifyingQuestions.map((q) => ({
@@ -110,7 +127,11 @@ export function GenerateVariantModal() {
       answer: clarifyingAnswers[q.id] ?? '',
     }));
 
-  const runScoreAndRewrite = async (plan: VariantRolePlan, answers: ClarifyingAnswer[]) => {
+  const runScoreAndRewrite = async (
+    plan: VariantRolePlan,
+    answers: ClarifyingAnswer[],
+    research: CompanyRoleResearch | null,
+  ) => {
     if (!resume) return;
     const liveSettings = loadAiSettings();
     const liveHasKey = Boolean(liveSettings.apiKey.trim());
@@ -123,7 +144,7 @@ export function GenerateVariantModal() {
     let allowRewrite = liveCanRewrite;
     if (liveUseAi) {
       try {
-        computed = await scoreBlocksWithAi(liveSettings, resume, job, plan, answers);
+        computed = await scoreBlocksWithAi(liveSettings, resume, job, plan, answers, research);
         setRetryNote('');
       } catch (aiErr) {
         setRetryNote('');
@@ -164,6 +185,7 @@ export function GenerateVariantModal() {
           includedBulletIds,
           plan,
           answers,
+          research,
         );
         setRewrites(nextRewrites);
         setAcceptedRewriteIds(new Set(nextRewrites.map((item) => item.bulletId)));
@@ -202,18 +224,58 @@ export function GenerateVariantModal() {
       toast(t('variant.emptyResume'), { tone: 'warn' });
       return;
     }
-    setPhase('planning');
+    setPhase('researching');
     setRewrites([]);
     setAcceptedRewriteIds(new Set());
     setVisibility(null);
     setScores(null);
     setRolePlan(null);
+    setCompanyResearch(null);
     setClarifyingAnswers({});
     try {
+      let research: CompanyRoleResearch;
+      try {
+        research = await researchCompanyAndRole(
+          liveUseAi ? liveSettings : null,
+          job,
+          researchHints(),
+        );
+      } catch {
+        research = localCompanyRoleResearch(job, researchHints());
+        toast(t('variant.researchFallback'), { tone: 'warn', ttl: 4000 });
+      }
+      setCompanyResearch(research);
+
+      // Prefer researched names for the variant title when the user left the default.
+      if (research.companyName && research.companyName !== 'Company') {
+        const role = research.roleTitle;
+        const company = research.companyName;
+        setVariantName((prev) => {
+          const defaults = [
+            t('variant.defaultName', { name: resume.name }),
+            t('variant.defaultNameRole', { name: resume.name, role: resume.application?.targetRole ?? '' }),
+            t('variant.defaultNameCompany', {
+              name: resume.name,
+              company: resume.application?.companyName ?? '',
+            }),
+            t('variant.defaultNameRoleCompany', {
+              name: resume.name,
+              role: resume.application?.targetRole ?? '',
+              company: resume.application?.companyName ?? '',
+            }),
+          ];
+          if (!prev.trim() || defaults.includes(prev)) {
+            return t('variant.defaultNameRoleCompany', { name: resume.name, role, company });
+          }
+          return prev;
+        });
+      }
+
+      setPhase('planning');
       let plan: VariantRolePlan;
       if (liveUseAi) {
         try {
-          plan = await planVariantForRole(liveSettings, resume, job);
+          plan = await planVariantForRole(liveSettings, resume, job, research);
         } catch {
           plan = localVariantRolePlan(job);
           toast(t('variant.planFallback'), { tone: 'warn', ttl: 4000 });
@@ -231,12 +293,13 @@ export function GenerateVariantModal() {
         return;
       }
 
-      await runScoreAndRewrite(plan, []);
+      await runScoreAndRewrite(plan, [], research);
     } catch (err) {
       setPhase('idle');
       setScores(null);
       setVisibility(null);
       setRolePlan(null);
+      setCompanyResearch(null);
       toast(err instanceof Error ? err.message : t('variant.failed'), { tone: 'danger' });
     }
   };
@@ -245,7 +308,7 @@ export function GenerateVariantModal() {
     if (!resume || !rolePlan) return;
     const answers = skipAnswers ? [] : answersList(rolePlan);
     try {
-      await runScoreAndRewrite(rolePlan, answers);
+      await runScoreAndRewrite(rolePlan, answers, companyResearch);
     } catch (err) {
       setPhase('questions');
       toast(err instanceof Error ? err.message : t('variant.failed'), { tone: 'danger' });
@@ -317,21 +380,42 @@ export function GenerateVariantModal() {
       if (!acceptedRewriteIds.has(rewrite.bulletId)) continue;
       next = replaceBulletContent(next, rewrite.bulletId, rewrite.rewritten);
     }
+    if (companyResearch) {
+      const company =
+        companyResearch.companyName && companyResearch.companyName !== 'Company'
+          ? companyResearch.companyName
+          : resume.application?.companyName;
+      const targetRole =
+        companyResearch.roleTitle?.trim() || resume.application?.targetRole;
+      if (company || targetRole) {
+        next = {
+          ...next,
+          application: {
+            status: next.application?.status ?? 'drafting',
+            ...next.application,
+            ...(company ? { companyName: company } : {}),
+            ...(targetRole ? { targetRole } : {}),
+          },
+        };
+      }
+    }
     const variant = createVariantFrom(
       next,
       variantName.trim() || `${resume.name} variant`,
     );
-    toast(t('variant.created'), {
-      tone: 'success',
-      action: { label: t('common.open'), onClick: () => navigate(`/editor/${variant.id}`) },
-    });
+    // Switch straight into the tailored resume — no trip back to the menu.
     setOpen(false);
+    loadResume(variant.id);
+    navigate(`/editor/${variant.id}`, { replace: false });
+    toast(t('variant.createdAndOpened'), { tone: 'success' });
   };
 
   const statusLabel =
     retryNote
       ? retryNote
-      : phase === 'planning'
+      : phase === 'researching'
+        ? t('variant.researching')
+        : phase === 'planning'
       ? t('variant.planning')
       : phase === 'questions'
         ? t('variant.questionsPending')
@@ -527,6 +611,47 @@ export function GenerateVariantModal() {
             </div>
           )}
 
+          {companyResearch && (
+            <div className="space-y-2 rounded-md border border-paper-edge p-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-ink">
+                {t('variant.researchTitle')}
+              </h3>
+              <p className="text-[11px] text-ink-subtle">{t('variant.researchHint')}</p>
+              <p className="text-xs font-medium text-ink">
+                {companyResearch.roleTitle}
+                {companyResearch.companyName && companyResearch.companyName !== 'Company'
+                  ? ` · ${companyResearch.companyName}`
+                  : ''}
+              </p>
+              {companyResearch.companyOverview && (
+                <p className="text-[11px] text-ink-muted">{companyResearch.companyOverview}</p>
+              )}
+              {companyResearch.roleOverview && (
+                <p className="text-[11px] text-ink-muted">{companyResearch.roleOverview}</p>
+              )}
+              {companyResearch.hiringSignals.length > 0 && (
+                <PlanList label={t('variant.researchHiring')} items={companyResearch.hiringSignals} />
+              )}
+              {companyResearch.cultureAndReviews.length > 0 && (
+                <PlanList
+                  label={t('variant.researchCulture')}
+                  items={companyResearch.cultureAndReviews}
+                />
+              )}
+              {companyResearch.usefulForTailoring.length > 0 && (
+                <PlanList
+                  label={t('variant.researchTailoring')}
+                  items={companyResearch.usefulForTailoring}
+                />
+              )}
+              {companyResearch.sources.length > 0 && (
+                <p className="text-[10px] text-ink-subtle">
+                  {t('variant.researchSources', { count: companyResearch.sources.length })}
+                </p>
+              )}
+            </div>
+          )}
+
           {rolePlan && (
             <div className="space-y-2 rounded-md border border-paper-edge p-3">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-ink">
@@ -601,6 +726,14 @@ export function GenerateVariantModal() {
                             {rewrite.original}
                           </span>
                           <span className="block font-medium text-ink">{rewrite.rewritten}</span>
+                          {rewrite.whyUseful && (
+                            <span className="block text-ink-muted">{rewrite.whyUseful}</span>
+                          )}
+                          {rewrite.reframeAngle && (
+                            <span className="block text-[10px] text-ink-subtle">
+                              {rewrite.reframeAngle}
+                            </span>
+                          )}
                           {rewrite.keywordsUsed.length > 0 && (
                             <span className="flex flex-wrap gap-1 pt-0.5">
                               {rewrite.keywordsUsed.map((kw) => (

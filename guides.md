@@ -7,14 +7,17 @@
 3. Paste the full job description. This is required for both AI and local
    scoring so the output is actually tailored.
 4. Keep the page target tight, usually 1 page.
-5. Run generation. With BYOK, the app first plans for the target role (key
-   factors, what to highlight/reframe/rewrite/deprioritize). If the planner has
-   a reframe idea but needs a metric, scope, or outcome you have not written
-   yet, it pauses and asks clarifying questions — answer or skip, then scoring
-   continues with your details. Without a key, it uses a local plan + semantic
-   scoring.
-6. Review the target-role plan and the preview. A tailored variant should hide
-   weak or unrelated bullets instead of preserving every detail.
+5. Run generation. With BYOK, the app first researches the company and role
+   from the JD plus public web snippets (Wikipedia / search, including
+   Glassdoor-style themes when snippets exist), then plans for the target
+   role (key factors, what to highlight/reframe/rewrite/deprioritize) using
+   the full bullet inventory. If the planner has a reframe idea but needs a
+   metric, scope, or outcome you have not written yet, it pauses and asks
+   clarifying questions — answer or skip, then scoring continues with your
+   details. Without a key, it uses local research + plan + semantic scoring.
+6. Review the company research, target-role plan, and the preview. A tailored
+   variant should hide weak or unrelated bullets instead of preserving every
+   detail.
 7. Use the eye toggles on Skills / Additional Information (in the editor and in
    the variant preview) to show or hide categories before creating the variant.
 8. Education is always pinned as the first section in the generated variant and
@@ -26,7 +29,8 @@
    exceeding the page target. Page-usage % should track the live preview closely.
 11. Bullets from the same role/project should not repeat the same information;
    the scoring and rewrite prompts tell the model to keep distinct claims.
-12. Review optional keyword rewrites, then create the variant.
+12. Review optional keyword rewrites (each includes why it is useful), then
+   create the variant — the app opens the tailored resume immediately.
 13. Use **Tailor** for in-place suggestions: selective bullet rewrites, a
    two-sentence summary, skills to emphasize/deprioritize, and a short cover
    letter draft.

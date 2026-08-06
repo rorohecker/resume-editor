@@ -68,9 +68,10 @@ fake imperfections to sound human.
 
 | Feature | UI entry | Code entry | Output type | Reliability guardrails |
 | --- | --- | --- | --- | --- |
-| Generate variant - role plan | Generate variant for role | `planVariantForRole` | JSON plan (role, key factors, highlight/reframe/rewrite/deprioritize, optional clarifyingQuestions) | Provider JSON schema, local plan fallback, may pause for user answers before scoring + rewrite. |
-| Generate variant - AI scoring | Generate variant for role | `scoreBlocksWithAi` | JSON object/array of Experience, Skills, Projects, and Leadership entry/bullet scores | Provider JSON schema, chunked inventories, semantic marker fallback, ID validation, duplicate-bullet pressure, clustered-score calibration, page-fill packing around fixed Education, plan-aware scoring (uses clarifications when present). |
-| Generate variant - keyword rewrite | Generate variant for role | `rewriteVariantBulletsWithAi` | JSON rewrites | Provider JSON schema, known bullet IDs only, unchanged text ignored, duplicate rewrite avoidance, rewrite review before create, plan-aware reframes (uses clarifications when present). |
+| Generate variant - company research | Generate variant for role | `researchCompanyAndRole` | JSON research brief (company/role overview, hiring signals, culture/review themes, tailoring notes, sources) | Public Wikipedia + DuckDuckGo Instant Answer snippets, AI synthesis when keyed, local fallback from JD, no invented Glassdoor quotes. |
+| Generate variant - role plan | Generate variant for role | `planVariantForRole` | JSON plan (role, key factors, highlight/reframe/rewrite/deprioritize, optional clarifyingQuestions) | Provider JSON schema, local plan fallback, full bullet inventory + research context, may pause for user answers before scoring + rewrite. |
+| Generate variant - AI scoring | Generate variant for role | `scoreBlocksWithAi` | JSON object/array of Experience, Skills, Projects, and Leadership entry/bullet scores | Provider JSON schema, chunked inventories, semantic marker fallback, ID validation, duplicate-bullet pressure, clustered-score calibration, page-fill packing around fixed Education, plan-aware scoring (uses clarifications + research when present). |
+| Generate variant - keyword rewrite | Generate variant for role | `rewriteVariantBulletsWithAi` | JSON rewrites with whyUseful / reframeAngle | Provider JSON schema, known bullet IDs only, full-bullet context for inference, unchanged text ignored, duplicate rewrite avoidance, rewrite review before create, plan + research-aware reframes (uses clarifications when present). |
 | Generate variant - visibility | Generate variant preview | `isManualVisibilitySection` + eye toggles | Manual entry show/hide for Skills / Additional Information / custom | Overrides packing for those sections before create; Education stays pinned. Editor left panel also has eye toggles on skill categories. |
 | Tailor to job | Tailor modal | `generateTailoring` | JSON outcome | Provider JSON schema, max 10 rewrites, fake-skill filtering, duplicate/unchanged rewrite removal, summary/cover length caps. |
 | Bullet rewrite | AI drawer, Bulk edit | `promptForRewrite` | 3 plain text lines | Shared guide prompt, local rewrite fallback, UI keeps first 3 clean options. |
@@ -97,10 +98,12 @@ User steps:
 2. Open Generate variant for role.
 3. Paste a full job description. This is required for AI and local scoring.
 4. Keep target pages tight, usually 1 page.
-5. Run generation. AI first builds a target-role plan. If it has a reframe idea
-   that needs a metric/scope/outcome missing from the resume, it asks clarifying
-   questions — answer or skip, then scoring (and optional rewrite) continue with
-   those details. Review the plan and preview before creating.
+5. Run generation. AI researches the company/role from the JD plus public web
+   snippets, then builds a target-role plan from the full bullet inventory. If
+   it has a reframe idea that needs a metric/scope/outcome missing from the
+   resume, it asks clarifying questions — answer or skip, then scoring (and
+   optional rewrite) continue with those details. Review research, plan, and
+   preview before creating. Creating the variant opens it immediately.
 6. Education stays fixed at the top of the generated variant.
 7. Use eye toggles on Skills / Additional Information (editor + variant preview)
    to show or hide categories.
@@ -111,7 +114,8 @@ User steps:
 
 Model steps:
 
-1. Extract must-have job skills, tools, domain, seniority, and impact themes.
+1. Use company/role research + must-have job skills, tools, domain, seniority,
+   and impact themes.
 2. Score only Experience, Skills, Projects, and Leadership entries/bullets on a
    harsh 0-10 scale.
 3. Force score spread: many bullets should be low relevance; only direct

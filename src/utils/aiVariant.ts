@@ -9,42 +9,50 @@ import {
   type VisibilityMap,
 } from './blockSelection';
 import { buildFeaturePrompt } from './aiGuides';
+import {
+  formatCompanyResearchForPrompt,
+  type CompanyRoleResearch,
+} from './companyResearch';
 import { stripHtml, resumeToPlainText } from './resumeText';
 import { semanticMarkersForText, semanticScoreBlocks } from './semanticScoring';
 import { estimatePageUsage } from './styleChecks';
 import type { Resume } from '@/types';
 
-const SCORE_TASK = `You score each resume block for relevance to a job description.
+const SCORE_TASK = `You score each resume block for relevance to a job description and company/role research.
 Return ONLY JSON (no commentary, no fences). Prefer this object shape:
 { "scores": [
   { "entryId": "...", "bulletId": "", "classId": "", "score": 0-10, "reason": "" },
   { "entryId": "...", "bulletId": "...", "classId": "", "score": 0-10, "reason": "..." }
 ] }
 - Score 10 = highly relevant; 0 = irrelevant.
-- Follow the TARGET ROLE PLAN when deciding what to highlight vs deprioritize.
+- Follow the TARGET ROLE PLAN and COMPANY & ROLE RESEARCH when deciding what to highlight vs deprioritize.
 - Only score Experience, Skills, Projects, and Leadership inventory rows.
 - Do not score or rework Education; the app keeps Education fixed at the top.
 - Include EVERY entry and EVERY bullet from the inventory (bullet rows must include bulletId).
 - Prefer scoring bullets individually; still include an entry row for each entry.
 - If two bullets in the same entry say the same thing, score the weaker duplicate lower.
-- "reason" is optional, 5-12 words for bullets if you want to explain the score.
+- "reason" is optional, 5-12 words for bullets if you want to explain why it is useful (or not).
 - For entry-only rows, set "bulletId", "classId", and "reason" to empty strings.
 - For bullet rows, set "classId" to an empty string.
 - Do not invent ids; use the exact ids provided.
 - Scores must be numbers, not strings.`;
 
-const REWRITE_TASK = `You rewrite selected resume bullets so they better match a job description.
+const REWRITE_TASK = `You rewrite selected resume bullets so they better match a company and job.
 Return ONLY JSON (no commentary, no fences). Prefer this object shape:
 { "rewrites": [
-  { "bulletId": "...", "rewritten": "...", "keywordsUsed": ["keyword"] }
+  { "bulletId": "...", "rewritten": "...", "keywordsUsed": ["keyword"], "whyUseful": "...", "reframeAngle": "..." }
 ] }
 
 Rules:
-- Follow the TARGET ROLE PLAN for what to rewrite and how to reframe experiences.
+- Read FULL BULLET CONTEXT first to infer how experiences relate and what can be reframed.
+- Only emit rewrites for BULLETS TO REWRITE ids.
+- Follow the TARGET ROLE PLAN and COMPANY & ROLE RESEARCH for what to rewrite and how to reframe.
 - Keep every claim truthful - never invent employers, metrics, tools, or outcomes.
 - Weave in relevant keywords from the job description only when they honestly fit the original work.
 - Keep action verb + task + impact; roughly the same length (at most ~32 words).
 - Skip a bullet entirely if no honest keyword-aware rewrite helps.
+- whyUseful: one short sentence on why this bullet belongs on the tailored resume.
+- reframeAngle: how you angled the bullet toward the company/role.
 - Use the exact bulletId values provided.
 - Only rewrite bullets from Experience, Projects, or Leadership sections.
 - Within the same entry/block, do not produce two bullets that say the same thing; keep the stronger claim distinct or skip the weaker duplicate.`;
@@ -127,8 +135,10 @@ const REWRITE_SCHEMA: JsonSchema = {
           bulletId: { type: 'string' },
           rewritten: { type: 'string' },
           keywordsUsed: { type: 'array', items: { type: 'string' } },
+          whyUseful: { type: 'string' },
+          reframeAngle: { type: 'string' },
         },
-        required: ['bulletId', 'rewritten', 'keywordsUsed'],
+        required: ['bulletId', 'rewritten', 'keywordsUsed', 'whyUseful', 'reframeAngle'],
         additionalProperties: false,
       },
     },
@@ -180,6 +190,8 @@ export interface VariantBulletRewrite {
   original: string;
   rewritten: string;
   keywordsUsed: string[];
+  whyUseful: string;
+  reframeAngle: string;
 }
 
 export interface ClarifyingQuestion {
@@ -230,6 +242,7 @@ export function coverVisibilityMap(resume: Resume, map: VisibilityMap): Visibili
 export function formatRolePlanForPrompt(
   plan: VariantRolePlan,
   answers: ClarifyingAnswer[] = [],
+  research?: CompanyRoleResearch | null,
 ): string {
   const { clarifyingQuestions, ...planBody } = plan;
   const answered = answers
@@ -244,6 +257,7 @@ export function formatRolePlanForPrompt(
       };
     });
   return [
+    research ? formatCompanyResearchForPrompt(research) : '',
     `--- TARGET ROLE PLAN ---\n${JSON.stringify(planBody, null, 2)}`,
     answered.length > 0
       ? `--- USER CLARIFICATIONS (use these details when scoring/rewriting; do not invent beyond them) ---\n${JSON.stringify(answered, null, 2)}`
@@ -298,25 +312,29 @@ export async function planVariantForRole(
   settings: AiSettings,
   resume: Resume,
   jobDescription: string,
+  research?: CompanyRoleResearch | null,
 ): Promise<VariantRolePlan> {
   if (!settings.apiKey.trim()) throw new Error('Add a BYOK API key first.');
   if (!jobDescription.trim()) throw new Error('Paste a job description first.');
 
+  const bulletInventory = buildFullBulletInventory(resume);
   const prompt = buildFeaturePrompt(
     'variant-plan',
+    research ? formatCompanyResearchForPrompt(research) : '',
     `--- JOB DESCRIPTION ---\n${jobDescription}`,
     `--- RESUME SNAPSHOT ---\n${resumeToPlainText(resume).slice(0, 6000)}`,
+    `--- FULL BULLET INVENTORY (infer context + reframes from these; do not invent facts) ---\n${JSON.stringify(bulletInventory, null, 2)}`,
   );
 
   let raw: string;
   try {
-    raw = await generateAiText(settings, prompt, 1800, {
+    raw = await generateAiText(settings, prompt, 2200, {
       cache: false,
       jsonSchema: { name: 'resume_variant_role_plan', schema: PLAN_SCHEMA },
     });
   } catch (error) {
     if (!isStructuredOutputCompatibilityError(error)) throw error;
-    raw = await generateAiText(settings, prompt, 1800, { cache: false });
+    raw = await generateAiText(settings, prompt, 2200, { cache: false });
   }
 
   const parsed = parseLooseJsonObject(raw);
@@ -416,6 +434,7 @@ export async function scoreBlocksWithAi(
   jobDescription: string,
   plan?: VariantRolePlan,
   answers: ClarifyingAnswer[] = [],
+  research?: CompanyRoleResearch | null,
 ): Promise<BlockScore[]> {
   if (!settings.apiKey.trim()) throw new Error('Add a BYOK API key first.');
   if (!jobDescription.trim()) throw new Error('Paste a job description first.');
@@ -442,6 +461,7 @@ export async function scoreBlocksWithAi(
       inventories.length,
       rolePlan,
       answers,
+      research,
     );
     if (parsed) parsedRows.push(...parsed);
   }
@@ -510,12 +530,22 @@ export async function rewriteVariantBulletsWithAi(
   bulletIds: string[],
   plan?: VariantRolePlan,
   answers: ClarifyingAnswer[] = [],
+  research?: CompanyRoleResearch | null,
 ): Promise<VariantBulletRewrite[]> {
   if (!settings.apiKey.trim()) throw new Error('Add a BYOK API key first.');
   if (!jobDescription.trim()) throw new Error('Paste a job description first.');
   if (bulletIds.length === 0) return [];
 
   const wanted = new Set(bulletIds);
+  const fullContextRaw = buildFullBulletInventory(resume);
+  // Prefer sibling bullets from selected entries so context stays useful under token limits.
+  const selectedEntryIds = new Set(
+    fullContextRaw.filter((item) => wanted.has(item.bulletId)).map((item) => item.entryId),
+  );
+  const prioritizedContext = [
+    ...fullContextRaw.filter((item) => selectedEntryIds.has(item.entryId)),
+    ...fullContextRaw.filter((item) => !selectedEntryIds.has(item.entryId)),
+  ].slice(0, 80);
   const inventory: { bulletId: string; section: string; entry: string; content: string }[] = [];
   for (const section of resume.sections) {
     if (!isVariantBulletRewriteSection(section)) continue;
@@ -539,15 +569,22 @@ export async function rewriteVariantBulletsWithAi(
   const prompt = buildFeaturePrompt(
     'variant-rewrite',
     REWRITE_TASK,
-    formatRolePlanForPrompt(rolePlan, answers),
+    formatRolePlanForPrompt(rolePlan, answers, research),
     `--- JOB DESCRIPTION ---\n${jobDescription}`,
-    `--- BULLETS TO CONSIDER ---\n${JSON.stringify(batch, null, 2)}`,
+    `--- FULL BULLET CONTEXT (read all; infer reframes; do not rewrite ids outside BULLETS TO REWRITE) ---\n${JSON.stringify(prioritizedContext, null, 2)}`,
+    `--- BULLETS TO REWRITE ---\n${JSON.stringify(batch, null, 2)}`,
   );
 
-  const raw = await generateAiText(settings, prompt, 4000, {
-    cache: false,
-    jsonSchema: { name: 'resume_variant_rewrites', schema: REWRITE_SCHEMA },
-  });
+  let raw: string;
+  try {
+    raw = await generateAiText(settings, prompt, 4500, {
+      cache: false,
+      jsonSchema: { name: 'resume_variant_rewrites', schema: REWRITE_SCHEMA },
+    });
+  } catch (error) {
+    if (!isStructuredOutputCompatibilityError(error)) throw error;
+    raw = await generateAiText(settings, prompt, 4500, { cache: false });
+  }
   const parsed = parseLooseJsonArray(raw);
   if (!parsed) throw new Error('Provider returned malformed rewrite JSON.');
 
@@ -571,6 +608,18 @@ export async function rewriteVariantBulletsWithAi(
             .map((kw) => kw.trim())
             .slice(0, 6)
         : [],
+      whyUseful:
+        typeof row.whyUseful === 'string'
+          ? row.whyUseful.trim()
+          : typeof row.why_useful === 'string'
+            ? row.why_useful.trim()
+            : '',
+      reframeAngle:
+        typeof row.reframeAngle === 'string'
+          ? row.reframeAngle.trim()
+          : typeof row.reframe_angle === 'string'
+            ? row.reframe_angle.trim()
+            : '',
     });
   }
   return out;
@@ -717,6 +766,38 @@ function isVariantPinnedTopSection(section: Resume['sections'][number]): boolean
 
 function isVariantBulletRewriteSection(section: Resume['sections'][number]): boolean {
   return section.type === 'experience' || section.type === 'projects' || section.type === 'leadership';
+}
+
+/** All Experience/Projects/Leadership bullets for planner + rewriter context. */
+export function buildFullBulletInventory(resume: Resume): {
+  bulletId: string;
+  section: string;
+  entryId: string;
+  entry: string;
+  content: string;
+}[] {
+  const inventory: {
+    bulletId: string;
+    section: string;
+    entryId: string;
+    entry: string;
+    content: string;
+  }[] = [];
+  for (const section of resume.sections) {
+    if (!isVariantBulletRewriteSection(section)) continue;
+    for (const entry of section.entries) {
+      for (const bullet of entry.bullets ?? []) {
+        inventory.push({
+          bulletId: bullet.id,
+          section: section.title,
+          entryId: entry.id,
+          entry: entry.title || entry.subtitle || section.title,
+          content: stripHtml(bullet.content),
+        });
+      }
+    }
+  }
+  return inventory.slice(0, 120);
 }
 
 function buildPriorityLookup(scores: BlockScore[]): {
@@ -909,11 +990,12 @@ async function scoreInventoryChunkWithAi(
   chunkCount: number,
   plan: VariantRolePlan,
   answers: ClarifyingAnswer[] = [],
+  research?: CompanyRoleResearch | null,
 ): Promise<unknown[] | null> {
   const prompt = buildFeaturePrompt(
     'variant-score',
     SCORE_TASK,
-    formatRolePlanForPrompt(plan, answers),
+    formatRolePlanForPrompt(plan, answers, research),
     `--- JOB DESCRIPTION ---\n${jobDescription}`,
     `--- LOCAL SEMANTIC MARKERS ---\n${JSON.stringify(semanticMarkers)}`,
     `--- BLOCK INVENTORY CHUNK ${chunkIndex} OF ${chunkCount} ---\n${JSON.stringify(inventory, null, 2)}`,
@@ -934,7 +1016,7 @@ async function scoreInventoryChunkWithAi(
   if (!parsed) {
     raw = await generateAiText(
       settings,
-      retryScorePrompt(jobDescription, inventory, semanticMarkers, plan, answers),
+      retryScorePrompt(jobDescription, inventory, semanticMarkers, plan, answers, research),
       3200,
       { cache: false },
     );
@@ -988,6 +1070,7 @@ function retryScorePrompt(
   semanticMarkers: string[],
   plan: VariantRolePlan,
   answers: ClarifyingAnswer[] = [],
+  research?: CompanyRoleResearch | null,
 ): string {
   return buildFeaturePrompt(
     'variant-score',
@@ -998,7 +1081,7 @@ function retryScorePrompt(
     'Do not score Education or classes/coursework; keep classId as an empty string.',
     'For entry rows, use empty strings for bulletId, classId, and reason.',
     'For bullet rows, use the exact bulletId from the inventory.',
-    formatRolePlanForPrompt(plan, answers),
+    formatRolePlanForPrompt(plan, answers, research),
     `--- JOB DESCRIPTION ---\n${jobDescription}`,
     `--- LOCAL SEMANTIC MARKERS ---\n${JSON.stringify(semanticMarkers)}`,
     `--- BLOCK INVENTORY ---\n${JSON.stringify(inventory, null, 2)}`,

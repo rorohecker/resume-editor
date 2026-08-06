@@ -6,6 +6,7 @@
  */
 
 export type AiFeatureId =
+  | 'variant-research'
   | 'variant-plan'
   | 'variant-score'
   | 'variant-rewrite'
@@ -44,6 +45,7 @@ export const RESUME_WRITING_RULES = `RESUME WRITING STYLE (The Sanitizer — app
 9. Do not add fake imperfections (typos, slang, fragments) to sound human.`;
 
 const WRITING_FEATURES = new Set<AiFeatureId>([
+  'variant-research',
   'variant-plan',
   'variant-rewrite',
   'bullet-rewrite',
@@ -56,18 +58,42 @@ const WRITING_FEATURES = new Set<AiFeatureId>([
 ]);
 
 const FEATURE_STEPS: Record<AiFeatureId, string> = {
-  'variant-plan': `FEATURE: Target-role planning (before scoring)
-GOAL: Think like a recruiting coach for THIS job, then produce a short plan the scorer and rewriter will follow.
+  'variant-research': `FEATURE: Company and role research brief
+GOAL: Turn the job description plus public web snippets into a concise research brief the planner, scorer, and rewriter will use.
 
 STEPS:
-1. Infer the target role title and seniority from the job description.
-2. List 5-8 key factors that decide who gets an interview (must-have skills, tools, domains, soft skills, impact themes).
-3. Decide what to HIGHLIGHT from a typical candidate resume for this role (skills categories, experience themes, project types).
-4. Decide what to REWRITE or REFRAME (how to angle bullets toward the role without inventing facts).
-5. Decide what to DEPRIORITIZE or hide (generic bullets, unrelated activities, weak skill noise).
-6. Note how to reframe experiences for this role in 2-4 concrete guidance bullets.
-7. SELF-PROMPT: If you have a promising reframe idea but the resume lacks a metric, scope, tool, audience, or outcome needed to write it truthfully, add 1-4 clarifyingQuestions for the user. Each question must be specific, answerable in one short sentence, and include why you need it. If the resume already has enough detail, return an empty clarifyingQuestions array.
-8. Return ONLY JSON:
+1. Identify the company and role title (prefer hints + JD; use snippets to confirm).
+2. Summarize what the company does (products, customers, domain) in 2-4 sentences grounded in snippets + JD.
+3. Summarize what the role does day-to-day and what success looks like.
+4. List hiringSignals: what tends to get candidates interviews/offers for THIS role (skills, impact themes, domain proof). Prefer snippet evidence; otherwise infer carefully from the JD and label uncertainty in researchNotes.
+5. List cultureAndReviews: public culture / Glassdoor-style themes from snippets only when supported. If snippets lack review data, say so and extract culture cues from the JD instead — never invent fake review quotes or ratings.
+6. List usefulForTailoring: concrete guidance for which resume themes matter and why.
+7. Return ONLY JSON:
+{
+  "companyName": "...",
+  "roleTitle": "...",
+  "companyOverview": "...",
+  "roleOverview": "...",
+  "hiringSignals": ["..."],
+  "cultureAndReviews": ["..."],
+  "usefulForTailoring": ["..."],
+  "researchNotes": "1-3 sentences on source quality / gaps"
+}
+8. Do not invent candidate resume facts. Do not invent Glassdoor scores or employee quotes.`,
+
+  'variant-plan': `FEATURE: Target-role planning (before scoring)
+GOAL: Think like a recruiting coach for THIS company and job, then produce a short plan the scorer and rewriter will follow.
+
+STEPS:
+1. Read the COMPANY & ROLE RESEARCH brief (if present) and the job description. Infer the target role title and seniority.
+2. Read the FULL BULLET INVENTORY. Infer context for each experience/project: what the work actually shows, how it could be reframed for this role, and which bullets are useful vs noise.
+3. List 5-8 keyFactors that decide who gets an interview (must-have skills, tools, domains, soft skills, impact themes) — blend JD + research hiringSignals.
+4. Decide what to HIGHLIGHT from THIS resume (skills categories, experience themes, project types) with reasons tied to the role/company.
+5. Decide what to REWRITE or REFRAME: name specific entries/themes from the inventory and how to angle them toward the company/role without inventing facts.
+6. Decide what to DEPRIORITIZE or hide (generic bullets, unrelated activities, weak skill noise) and why.
+7. experiencesToReframe must be concrete (entry/theme + how to reframe + why it helps for this company/role), not generic advice.
+8. SELF-PROMPT: If you have a promising reframe idea but the resume lacks a metric, scope, tool, audience, or outcome needed to write it truthfully, add 1-4 clarifyingQuestions for the user. Each question must be specific, answerable in one short sentence, and include why you need it. If the resume already has enough detail, return an empty clarifyingQuestions array.
+9. Return ONLY JSON:
 {
   "targetRole": "...",
   "keyFactors": ["..."],
@@ -75,21 +101,21 @@ STEPS:
   "experiencesToReframe": ["..."],
   "whatToRewrite": ["..."],
   "whatToDeprioritize": ["..."],
-  "targetingNotes": "2-4 sentences of packing/rewrite strategy",
+  "targetingNotes": "2-4 sentences of packing/rewrite strategy that cites company/role fit",
   "clarifyingQuestions": [
     { "id": "q1", "topic": "Project or role name", "question": "...?", "why": "So we can reframe X without inventing Y" }
   ]
 }
-9. Keep lists short and specific to THIS job. Never invent facts in questions — ask only for missing detail that would unlock an honest reframe.`,
+10. Keep lists short and specific to THIS job and THIS resume. Never invent facts in questions — ask only for missing detail that would unlock an honest reframe.`,
 
   'variant-score': `FEATURE: Role-variant block scoring
 GOAL: Rank which resume blocks belong on a tailored short resume for THIS job - not keep everything.
 
 STEPS:
-1. Read the job description AND the target-role plan (key factors, highlight/deprioritize lists, reframe guidance).
+1. Read the job description, COMPANY & ROLE RESEARCH (if present), AND the target-role plan (key factors, highlight/deprioritize lists, reframe guidance).
 2. Score EVERY inventory entry and EVERY bullet on a harsh 0-10 scale:
-   - 9-10: Direct evidence for a core job requirement or plan highlight
-   - 7-8: Strong supporting evidence
+   - 9-10: Direct evidence for a core job requirement, research hiringSignal, or plan highlight
+   - 7-8: Strong supporting evidence or honest reframe candidate for company/role themes
    - 5-6: Weak/tangential overlap
    - 1-4: Little relevance (generic soft skills, unrelated work, plan deprioritize items)
    - 0: Irrelevant or empty
@@ -101,23 +127,25 @@ STEPS:
 8. For Skills / Additional Information rows: keep categories that match keyFactors/skillsToHighlight; score unrelated skill categories low so the user can still un-hide them later.
 9. The app will prioritize and pack selected reworkable content to fill at least one page when enough relevant resume detail exists.
 10. Return ONLY a JSON array or an object with a scores array:
-   [{"entryId":"...","bulletId":"","classId":"","score":0-10,"reason":""},{"entryId":"...","bulletId":"...","classId":"","score":0-10,"reason":"5-12 words"}]
+   [{"entryId":"...","bulletId":"","classId":"","score":0-10,"reason":""},{"entryId":"...","bulletId":"...","classId":"","score":0-10,"reason":"5-12 words why useful or not"}]
 11. Use exact inventory ids. Numbers only for score. Keep classId empty.`,
 
   'variant-rewrite': `FEATURE: Keyword rewrite for kept variant bullets
-GOAL: Lightly retarget already-selected bullets toward the job - without lying.
+GOAL: Retarget already-selected bullets toward the company and role — using full resume context — without lying.
 
 STEPS:
-1. Read the job description, the target-role plan (especially whatToRewrite and experiencesToReframe), any USER CLARIFICATIONS, and the bullet inventory.
-2. For each bullet, decide if an honest keyword-aware rewrite helps. If not, skip it.
-3. Prefer reframes that match the plan's targetingNotes. When USER CLARIFICATIONS are present, you may use those facts to complete a reframe — still do not invent beyond the resume plus clarifications.
-4. Keep claims truthful; never add tools/metrics/employers absent from the original or clarifications.
-5. Keep roughly the same length (<=32 words). Preserve action verb + task + impact.
-6. Within the same entry/block, do not create two bullets that communicate the same task, tool, metric, or outcome. Keep the stronger distinct claim and skip the weaker duplicate.
-7. Only rewrite Experience, Projects, and Leadership bullets. Do not rewrite Education, classes/coursework, summaries, awards, certifications, publications, or research.
-8. Return ONLY a JSON array or an object with a rewrites array:
-   [{"bulletId":"...","rewritten":"...","keywordsUsed":["..."]}]
-9. Use exact bulletId values. Omit bullets you skip.`,
+1. Read the job description, COMPANY & ROLE RESEARCH, the target-role plan (especially whatToRewrite and experiencesToReframe), any USER CLARIFICATIONS, the FULL BULLET CONTEXT (all experience/project/leadership bullets for inference), and BULLETS TO REWRITE (selected only).
+2. Infer context across the full inventory: what each kept bullet truly shows, how sibling bullets in the same entry relate, and which experiences can be reframed for this company/role.
+3. For each selected bullet, decide if an honest keyword-aware rewrite / reframe helps. If not, skip it.
+4. Prefer reframes that match research usefulForTailoring and the plan's targetingNotes. When USER CLARIFICATIONS are present, you may use those facts to complete a reframe — still do not invent beyond the resume plus clarifications.
+5. Keep claims truthful; never add tools/metrics/employers absent from the original or clarifications.
+6. Keep roughly the same length (<=32 words). Preserve action verb + task + impact.
+7. Within the same entry/block, do not create two bullets that communicate the same task, tool, metric, or outcome. Keep the stronger distinct claim and skip the weaker duplicate.
+8. Only rewrite Experience, Projects, and Leadership bullets. Do not rewrite Education, classes/coursework, summaries, awards, certifications, publications, or research.
+9. For each rewrite, include whyUseful (one short sentence: why this bullet belongs on the tailored resume) and reframeAngle (how you angled it toward the company/role).
+10. Return ONLY a JSON array or an object with a rewrites array:
+   [{"bulletId":"...","rewritten":"...","keywordsUsed":["..."],"whyUseful":"...","reframeAngle":"..."}]
+11. Use exact bulletId values from BULLETS TO REWRITE only. Omit bullets you skip.`,
 
   'bullet-rewrite': `FEATURE: Single-bullet rewrite options
 GOAL: Offer 3 stronger truthful rewrites of one bullet.
@@ -220,6 +248,7 @@ export function buildFeaturePrompt(feature: AiFeatureId, ...parts: Array<string 
 
 /** Short human labels for docs/UI. */
 export const AI_FEATURE_LABELS: Record<AiFeatureId, string> = {
+  'variant-research': 'Generate variant - company research',
   'variant-plan': 'Generate variant - role plan',
   'variant-score': 'Generate variant - AI scoring',
   'variant-rewrite': 'Generate variant - keyword rewrite',
