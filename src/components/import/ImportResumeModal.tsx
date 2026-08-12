@@ -11,6 +11,7 @@ import {
 } from '@/utils/importParser';
 import { extractFromFile } from '@/utils/fileExtractors';
 import { enrichWithBYOK } from '@/utils/importEnrichment';
+import { isFullAppBackup, importAllData } from '@/store/persistence';
 import { isUnclassified } from '@/utils/importParser';
 import { loadAiSettings, PROVIDER_LABELS } from '@/utils/aiByok';
 import { captureImportOriginal } from '@/utils/importReference';
@@ -58,6 +59,7 @@ export function ImportResumeModal({
   const [offlineOnly, setOfflineOnly] = useState(true);
   const [enriching, setEnriching] = useState(false);
   const [disclosureOpen, setDisclosureOpen] = useState(false);
+  const [backupDetected, setBackupDetected] = useState<unknown | null>(null);
   const [selectedSectionIds, setSelectedSectionIds] = useState<Set<string>>(new Set());
   const settings = useMemo(() => loadAiSettings(), [open]);
   const hasKey = Boolean(settings.apiKey.trim());
@@ -75,6 +77,7 @@ export function ImportResumeModal({
       setSourceName('');
       setOriginalFile(undefined);
       sourceSelectionRef.current = '';
+      setBackupDetected(null);
     }
   }, [open]);
 
@@ -125,7 +128,30 @@ export function ImportResumeModal({
     setStatus(t('importer.reading'));
     setBusy(true);
     setWarning('');
+    setBackupDetected(null);
     try {
+      // Full-app JSON backups are restored wholesale — not parsed as a single resume.
+      if (file.name.endsWith('.json') || file.type === 'application/json') {
+        const raw = await file.text();
+        if (gen !== fileLoadGen.current) return;
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(raw);
+        } catch {
+          // Fall through to extractors below.
+          parsed = null;
+        }
+        if (parsed && isFullAppBackup(parsed)) {
+          setBackupDetected(parsed);
+          setText('');
+          setSourceName(file.name);
+          setResult(null);
+          setStatus('');
+          setBusy(false);
+          return;
+        }
+      }
+
       const [extraction, original] = await Promise.all([
         extractFromFile(file),
         captureImportOriginal(file),
@@ -290,6 +316,20 @@ export function ImportResumeModal({
     toast(t('importer.reparseDone', { defaultValue: 'Parsed.' }), { tone: 'success', ttl: 1200 });
   };
 
+  const restoreFullBackup = async () => {
+    if (!backupDetected) return;
+    setBusy(true);
+    try {
+      const result = await importAllData(backupDetected);
+      toast(t('landing.restoreDone', { count: result.resumes }), { tone: 'success' });
+      onClose();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : t('landing.restoreFailed'), { tone: 'danger' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <Modal
       open={open}
@@ -400,6 +440,38 @@ export function ImportResumeModal({
         </div>
 
         <p className="mb-2 text-[11px] text-ink-subtle">{t('importer.hint')}</p>
+
+        {backupDetected ? (
+          <div className="mb-3 rounded-lg border border-accent/30 bg-paper-tint p-4">
+            <p className="text-sm font-medium text-ink">
+              {t('importer.fullBackupDetected', {
+                defaultValue: 'This looks like a full app backup (all resumes), not a single resume file.',
+              })}
+            </p>
+            <p className="mt-1 text-xs text-ink-muted">
+              {t('importer.fullBackupHint', {
+                defaultValue:
+                  'Restore merges every resume, snapshot, and note from the backup into this browser.',
+              })}
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button type="button" className="btn-primary text-xs" disabled={busy} onClick={() => void restoreFullBackup()}>
+                {busy ? t('importer.restoring', { defaultValue: 'Restoring…' }) : t('landing.restoreBackup')}
+              </button>
+              <button
+                type="button"
+                className="btn-secondary text-xs"
+                onClick={() => {
+                  setBackupDetected(null);
+                  setWarning('');
+                }}
+              >
+                {t('common.cancel')}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
         <p className="mb-3 rounded-md border border-yellow-200 bg-yellow-50 px-3 py-2 text-[11px] text-warn">
           {t('importer.ocrCaveat')}
         </p>
@@ -478,6 +550,8 @@ export function ImportResumeModal({
             )}
           </div>
         </div>
+          </>
+        )}
       </div>
 
       <PrivacyDisclosureModal

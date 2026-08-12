@@ -162,6 +162,7 @@ export default {
     saveSnapshotTip: 'Save a named version you can restore later',
     tailorToJobTip: 'Rewrite and prioritize bullets for a pasted job description',
     exportTip: 'Download PDF, DOCX, TXT, and other formats',
+    themeAndAccent: 'Theme & accent',
     sections: 'Sections',
     addSection: 'Add',
     tooManySections: '{{count}} sections is more than most early-career resumes need.',
@@ -703,6 +704,9 @@ export default {
     extracting: 'Extracting…',
     accepts: 'PDF, DOCX, TXT, JSON, PNG, JPG. Parsed on your device.',
     chooseFile: 'Choose file',
+    fullBackupDetected: 'This looks like a full app backup (all resumes), not a single resume file.',
+    fullBackupHint: 'Restore merges every resume, snapshot, and note from the backup into this browser.',
+    restoring: 'Restoring…',
     offline: 'Skip cloud enrichment',
     ocrCaveat:
       'OCR (scanned PDFs and photos) often misreads columns, bullets, and small text. Prefer a DOCX, text PDF, or pasted text when you can. Always review the parse before opening.',

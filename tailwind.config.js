@@ -2,6 +2,10 @@
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   darkMode: 'class',
+  // Prevent sticky :hover states on touch devices (tap shouldn't leave buttons highlighted).
+  future: {
+    hoverOnlyWhenSupported: true,
+  },
   theme: {
     extend: {
       colors: {

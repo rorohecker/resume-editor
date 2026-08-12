@@ -212,7 +212,7 @@ export function StickyNotes({ resumeId }: { resumeId: string }) {
         <button
           type="button"
           onClick={addNote}
-          className="fixed bottom-24 right-[5.25rem] z-30 flex h-12 w-12 items-center justify-center rounded-full bg-ink text-paper shadow-page transition-transform hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent print:hidden"
+          className="fixed bottom-[5.75rem] right-[5.25rem] z-30 flex h-12 w-12 items-center justify-center rounded-full bg-ink text-paper shadow-page transition-transform focus:outline-none focus-visible:ring-2 focus-visible:ring-accent print:hidden max-[480px]:bottom-[5.25rem] max-[480px]:right-[4.75rem] motion-safe:hover:scale-105"
           title={t('stickyNotes.add', { defaultValue: 'Add sticky note' })}
           aria-label={t('stickyNotes.add', { defaultValue: 'Add sticky note' })}
         >
@@ -223,7 +223,7 @@ export function StickyNotes({ resumeId }: { resumeId: string }) {
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className={`fixed bottom-24 right-6 z-30 flex h-12 w-12 items-center justify-center rounded-full shadow-page transition-transform hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent print:hidden ${
+        className={`fixed bottom-[5.75rem] right-6 z-30 flex h-12 w-12 items-center justify-center rounded-full shadow-page transition-transform focus:outline-none focus-visible:ring-2 focus-visible:ring-accent print:hidden max-[480px]:bottom-[5.25rem] max-[480px]:right-4 motion-safe:hover:scale-105 ${
           open ? 'bg-accent text-white' : 'bg-paper text-ink ring-1 ring-paper-edge'
         }`}
         title={t('stickyNotes.toggle', { defaultValue: 'Sticky notes' })}

@@ -29,14 +29,13 @@ import { useStatusLabel } from '@/components/jobs/statusLabels';
 import { toast } from '@/hooks/useToast';
 import { recordBackup } from '@/utils/updateCheck';
 import { saveImportReference } from '@/utils/importReference';
+import { RestoreBackupButton } from '@/components/shared/RestoreBackupButton';
 import { useStore } from '@/store';
 import type { ApplicationStatus, Resume } from '@/types';
 import {
   deleteResume,
   duplicateResume,
   exportAllData,
-  importAllData,
-  isFullAppBackup,
   isHydrated,
   listResumes,
   loadResume,
@@ -57,7 +56,6 @@ export function LandingPage() {
   const [importOpen, setImportOpen] = useState(false);
   const [resumes, setResumes] = useState(() => (isHydrated() ? listResumes() : []));
   const [view, setView] = useState<View>('list');
-  const backupInputRef = useRef<HTMLInputElement>(null);
   const recents = resumes;
 
   const refresh = () => setResumes(listResumes());
@@ -101,20 +99,7 @@ export function LandingPage() {
     });
   };
 
-  const restoreBackup = async (file: File) => {
-    try {
-      const parsed: unknown = JSON.parse(await file.text());
-      if (!isFullAppBackup(parsed)) {
-        toast(t('landing.restoreInvalid'), { tone: 'warn' });
-        return;
-      }
-      const result = await importAllData(parsed);
-      refresh();
-      toast(t('landing.restoreDone', { count: result.resumes }), { tone: 'success' });
-    } catch (err) {
-      toast(err instanceof Error ? err.message : t('landing.restoreFailed'), { tone: 'danger' });
-    }
-  };
+  const restoreBackupDone = () => refresh();
 
   const moveResumeStatus = (resumeId: string, status: ApplicationStatus) => {
     const current = loadResume(resumeId);
@@ -170,8 +155,13 @@ export function LandingPage() {
           <section className="mb-12 rounded-lg border border-dashed border-paper-edge bg-paper p-8 text-center">
             <h2 className="text-lg font-semibold text-ink">{t('landing.emptyTitle')}</h2>
             <p className="mt-2 text-sm text-ink-muted">{t('landing.emptyHint')}</p>
-            <div className="mt-4 flex justify-center">
+            <div className="mt-4 flex flex-wrap justify-center gap-2">
               <TutorialButton />
+              <button type="button" className="btn-secondary" onClick={exportBackup}>
+                <Download size={15} />
+                {t('landing.exportBackup')}
+              </button>
+              <RestoreBackupButton variant="secondary" onRestored={restoreBackupDone} />
             </div>
           </section>
         )}
@@ -209,25 +199,7 @@ export function LandingPage() {
                   <Download size={15} />
                   {t('landing.exportBackup')}
                 </button>
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => backupInputRef.current?.click()}
-                >
-                  <Upload size={15} />
-                  {t('landing.restoreBackup')}
-                </button>
-                <input
-                  ref={backupInputRef}
-                  type="file"
-                  accept="application/json,.json"
-                  className="hidden"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    event.target.value = '';
-                    if (file) void restoreBackup(file);
-                  }}
-                />
+                <RestoreBackupButton variant="secondary" onRestored={restoreBackupDone} />
               </div>
             </div>
 

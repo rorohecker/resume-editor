@@ -312,16 +312,45 @@
     @apply inline-flex items-center justify-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1 disabled:opacity-50 disabled:pointer-events-none;
   }
   .btn-primary {
-    @apply btn bg-ink text-paper hover:bg-ink-soft;
+    @apply btn bg-ink text-paper;
   }
   .btn-secondary {
-    @apply btn bg-paper border border-paper-edge text-ink hover:bg-paper-tint;
+    @apply btn bg-paper border border-paper-edge text-ink;
   }
   .btn-ghost {
-    @apply btn text-ink-muted hover:text-ink hover:bg-paper-tint;
+    @apply btn text-ink-muted;
   }
   .icon-btn {
-    @apply inline-flex h-8 w-8 items-center justify-center rounded-md text-ink-muted hover:bg-paper-tint hover:text-ink transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent;
+    @apply inline-flex h-8 w-8 items-center justify-center rounded-md text-ink-muted transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .btn-primary:hover {
+      @apply bg-ink-soft;
+    }
+    .btn-secondary:hover {
+      @apply bg-paper-tint;
+    }
+    .btn-ghost:hover {
+      @apply text-ink bg-paper-tint;
+    }
+    .icon-btn:hover {
+      @apply bg-paper-tint text-ink;
+    }
+  }
+  /* Touch: active feedback without leaving a sticky hover highlight. */
+  @media (hover: none) {
+    .btn-primary:active {
+      @apply bg-ink-soft;
+    }
+    .btn-secondary:active {
+      @apply bg-paper-tint;
+    }
+    .btn-ghost:active {
+      @apply text-ink bg-paper-tint;
+    }
+    .icon-btn:active {
+      @apply bg-paper-tint text-ink;
+    }
   }
   .input {
     @apply w-full rounded-md border border-paper-edge bg-paper px-2 py-1.5 text-sm text-ink shadow-none transition-colors placeholder:text-ink-subtle focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent disabled:cursor-not-allowed disabled:opacity-70;
@@ -335,11 +364,11 @@
   [data-tooltip]::after {
     content: attr(data-tooltip);
     position: absolute;
-    z-index: 70;
+    z-index: 200;
     top: calc(100% + 7px);
     left: 50%;
     width: max-content;
-    max-width: min(240px, 70vw);
+    max-width: min(240px, calc(100vw - 1.5rem));
     padding: 0.35rem 0.55rem;
     border-radius: 0.375rem;
     background: rgb(var(--c-ink));

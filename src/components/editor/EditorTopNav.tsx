@@ -43,6 +43,7 @@ import { lastBackupAt, recordBackup } from '@/utils/updateCheck';
 import { FileSyncControl } from './FileSyncControl';
 import { appendImportReference } from '@/utils/importReference';
 import { tooltipProps } from '@/components/shared/tooltipProps';
+import { RestoreBackupButton } from '@/components/shared/RestoreBackupButton';
 import { AppVersion } from '@/components/shared/AppVersion';
 
 export function EditorTopNav() {
@@ -97,7 +98,7 @@ export function EditorTopNav() {
 
   return (
     <>
-    <header className="relative z-50 flex h-14 flex-shrink-0 items-center justify-between gap-2 overflow-hidden border-b border-paper-edge bg-paper px-2 sm:px-4">
+    <header className="relative z-50 flex h-14 flex-shrink-0 items-center justify-between gap-2 border-b border-paper-edge bg-paper px-2 sm:px-4">
       <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
         <Link
           to="/"
@@ -198,7 +199,7 @@ export function EditorTopNav() {
             <ChevronDown size={10} className="-ml-1" />
           </button>
           {historyOpen && (
-            <div className="absolute right-0 z-40 mt-2 w-80 rounded-md border border-paper-edge bg-paper p-3 shadow-page">
+            <div className="absolute right-0 z-40 mt-2 w-[min(20rem,calc(100vw-1rem))] rounded-md border border-paper-edge bg-paper p-3 shadow-page">
               <div className="mb-2 flex items-center justify-between">
                 <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
                   {t('snapshot.versionHistory')}
@@ -260,7 +261,7 @@ export function EditorTopNav() {
         <button
           type="button"
           onClick={() => setImportOpen(true)}
-          className="icon-btn"
+          className="icon-btn hidden sm:inline-flex"
           aria-label={t('editor.importMerge')}
           {...tooltipProps(t('editor.importMergeTip'))}
         >
@@ -305,16 +306,19 @@ export function EditorTopNav() {
               toast(t('editor.backupSaved', { defaultValue: 'Backup downloaded' }), { tone: 'success', ttl: 1800 });
             });
           }}
-          className="icon-btn"
+          className="icon-btn hidden lg:inline-flex"
           aria-label={t('editor.backupNow')}
           {...tooltipProps(t('editor.backupNow'))}
         >
           <HardDriveDownload size={16} />
         </button>
-        <FileSyncControl />
+        <RestoreBackupButton variant="icon" className="hidden lg:inline-flex" />
+        <div className="hidden lg:block">
+          <FileSyncControl />
+        </div>
         <button
           type="button"
-          className="icon-btn"
+          className="icon-btn hidden md:inline-flex"
           aria-label={t('editor.saveSnapshot')}
           {...tooltipProps(t('editor.saveSnapshotTip'))}
           onClick={() => setSnapshotOpen(true)}
@@ -392,7 +396,10 @@ export function EditorTopNav() {
           </button>
         </div>
         <div className="xl:hidden">
-          <MoreActionsMenu />
+          <MoreActionsMenu
+            onImport={() => setImportOpen(true)}
+            onSaveSnapshot={() => setSnapshotOpen(true)}
+          />
         </div>
 
         <div className="mx-2 h-6 w-px bg-paper-edge" />
@@ -427,14 +434,14 @@ export function EditorTopNav() {
         <button
           type="button"
           onClick={() => setExportOpen(true)}
-          className="btn-primary ml-2"
+          className="btn-primary ml-1 sm:ml-2"
           aria-label={t('editor.export')}
           {...tooltipProps(t('editor.exportTip'), 'end')}
         >
           <Download size={14} />
-          {t('editor.export')}
+          <span className="hidden sm:inline">{t('editor.export')}</span>
         </button>
-        <AppVersion className="ml-2 hidden sm:inline" />
+        <AppVersion className="ml-1 hidden lg:inline sm:ml-2" />
       </div>
     </header>
     <ImportResumeModal
