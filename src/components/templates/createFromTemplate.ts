@@ -108,7 +108,10 @@ export function applyTemplate(resume: Resume, templateId: TemplateId): Resume {
   return {
     ...resume,
     template: templateId,
-    styles: tpl.styles,
+    styles: {
+      ...tpl.styles,
+      ...(resume.styles.headerAlign ? { headerAlign: resume.styles.headerAlign } : {}),
+    },
     sections: sorted.map((s, i) => ({ ...s, order: i })),
     updatedAt: new Date().toISOString(),
   };

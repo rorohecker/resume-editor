@@ -290,6 +290,9 @@ function normalizeStyles(input: unknown): Resume['styles'] {
     onePageMode: booleanValue(styles.onePageMode, false),
     pageNumbers: booleanValue(styles.pageNumbers, false),
     bulletStyle: enumValue(styles.bulletStyle, BULLET_GLYPHS, 'disc'),
+    ...(styles.headerAlign === 'left' || styles.headerAlign === 'center'
+      ? { headerAlign: styles.headerAlign }
+      : {}),
   };
 }
 
