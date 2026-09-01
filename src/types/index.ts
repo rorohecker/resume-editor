@@ -194,12 +194,58 @@ export type ApplicationStatus =
   | 'rejected'
   | 'archived';
 
+export type ConnectionStatus =
+  | 'none'
+  | 'cold'
+  | 'warm'
+  | 'referral'
+  | 'recruiter'
+  | 'employee';
+
+export type SalaryPeriod = 'hourly' | 'monthly' | 'annual';
+export type SalaryType = 'base' | 'total' | 'posted_range';
+
+export interface SalaryRange {
+  min?: number;
+  max?: number;
+  currency?: string;
+  period?: SalaryPeriod;
+  type?: SalaryType;
+}
+
+export interface CompanyRole {
+  id: string;
+  title: string;
+  salary?: SalaryRange;
+  resumeId?: string;
+  status?: ApplicationStatus;
+  notes?: string;
+}
+
+export interface CompanyTarget {
+  id: string;
+  companyName: string;
+  rank: number;
+  connectionStatus: ConnectionStatus;
+  connectionNotes?: string;
+  roles: CompanyRole[];
+  status: ApplicationStatus;
+  notes?: string;
+  website?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface JobApplication {
   targetRole?: string;
   companyName?: string;
   status: ApplicationStatus;
   appliedAt?: string; // ISO date
   notes?: string;
+  companyTargetId?: string;
+  connectionStatus?: ConnectionStatus;
+  connectionNotes?: string;
+  salary?: SalaryRange;
 }
 
 export interface Resume {

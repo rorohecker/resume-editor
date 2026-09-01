@@ -3,9 +3,11 @@ import { createRoot } from 'react-dom/client';
 import { RouterProvider } from 'react-router-dom';
 import { router } from './router';
 import { UpdateBanner } from './components/shared/UpdateBanner';
+import { InstallAppPrompt } from './components/shared/InstallAppPrompt';
 import { BackupNag } from './components/shared/BackupNag';
 import { CosmicBackground } from './components/shared/CosmicBackground';
 import { hydratePersistence } from './store/persistence';
+import { hydrateCompanies } from './utils/companies';
 import { applyStoredTheme } from './hooks/useTheme';
 import { applyStoredAccent } from './hooks/useAccent';
 import './i18n';
@@ -38,11 +40,13 @@ applyStoredAccent();
 // Start IDB hydration immediately. Components that need to wait can subscribe
 // via `onHydrated`. Failure is non-fatal — the cache stays empty.
 void hydratePersistence();
+void hydrateCompanies();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <RouterProvider router={router} />
     <CosmicBackground />
+    <InstallAppPrompt />
     <UpdateBanner />
     <BackupNag />
   </StrictMode>,

@@ -1,8 +1,13 @@
-import { Briefcase } from 'lucide-react';
+import { Briefcase, Building2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { ApplicationStatus, JobApplication, Resume } from '@/types';
+import { Link } from 'react-router-dom';
+import type { ApplicationStatus, ConnectionStatus, JobApplication, Resume } from '@/types';
+import { syncResumeToCompany } from '@/utils/companySync';
 import { STATUS_META, STATUS_ORDER } from './jobStatus';
 import { useStatusLabel } from './statusLabels';
+import { CONNECTION_ORDER } from './connectionStatus';
+import { useConnectionLabel } from './connectionLabels';
+import { SalaryInput } from './SalaryInput';
 import { tooltipProps } from '@/components/shared/tooltipProps';
 
 interface Props {
@@ -14,6 +19,7 @@ interface Props {
 export function ApplicationEditor({ resume, onChange, compact }: Props) {
   const { t } = useTranslation();
   const statusLabel = useStatusLabel();
+  const connectionLabel = useConnectionLabel();
   const app = resume.application ?? { status: 'drafting' as ApplicationStatus };
 
   const patch = (next: Partial<JobApplication>) => {
@@ -22,7 +28,8 @@ export function ApplicationEditor({ resume, onChange, compact }: Props) {
     if (!merged.appliedAt && (next.status === 'applied' || next.status === 'interview')) {
       merged.appliedAt = new Date().toISOString();
     }
-    onChange(merged);
+    const synced = syncResumeToCompany({ ...resume, application: merged });
+    onChange(synced.application);
   };
 
   if (compact) {
@@ -98,6 +105,37 @@ export function ApplicationEditor({ resume, onChange, compact }: Props) {
           />
         </label>
       </div>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <label className="block text-xs">
+          <span className="mb-1 block text-ink-muted">{t('companies.connection')}</span>
+          <select
+            value={app.connectionStatus ?? 'none'}
+            onChange={(e) => patch({ connectionStatus: e.target.value as ConnectionStatus })}
+            className="input"
+          >
+            {CONNECTION_ORDER.map((status) => (
+              <option key={status} value={status}>{connectionLabel(status)}</option>
+            ))}
+          </select>
+        </label>
+        <label className="block text-xs sm:col-span-1">
+          <span className="mb-1 block text-ink-muted">{t('companies.salary')}</span>
+          <SalaryInput
+            compact
+            value={app.salary}
+            onChange={(salary) => patch({ salary })}
+          />
+        </label>
+      </div>
+      <label className="block text-xs">
+        <span className="mb-1 block text-ink-muted">{t('companies.connectionNotes')}</span>
+        <textarea
+          value={app.connectionNotes ?? ''}
+          onChange={(e) => patch({ connectionNotes: e.target.value })}
+          className="input min-h-12 resize-y"
+          placeholder={t('companies.connectionNotesPlaceholder')}
+        />
+      </label>
       <label className="block text-xs">
         <span className="mb-1 block text-ink-muted">{t('jobs.notes')}</span>
         <textarea
@@ -107,6 +145,13 @@ export function ApplicationEditor({ resume, onChange, compact }: Props) {
           placeholder={t('jobs.notesPlaceholder')}
         />
       </label>
+      <Link
+        to={{ pathname: '/', search: 'view=companies' }}
+        className="inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline"
+      >
+        <Building2 size={13} />
+        {t('companies.viewInList')}
+      </Link>
     </div>
   );
 }

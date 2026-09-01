@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Copy, Download, FileText, Pencil, Plus, Trash2, Upload } from 'lucide-react';
 import {
@@ -22,10 +22,12 @@ import { ToastViewport } from '@/components/shared/ToastViewport';
 import { ThemeToggle } from '@/components/shared/ThemeToggle';
 import { AccentToggle } from '@/components/shared/AccentToggle';
 import { LocaleToggle } from '@/components/shared/LocaleToggle';
+import { InstallAppButton } from '@/components/shared/InstallAppPrompt';
 import { TutorialButton, TutorialModal } from '@/components/shared/TutorialModal';
 import { AppVersion } from '@/components/shared/AppVersion';
 import { STATUS_META, STATUS_ORDER } from '@/components/jobs/jobStatus';
 import { useStatusLabel } from '@/components/jobs/statusLabels';
+import { CompanyListView } from '@/components/jobs/CompanyListView';
 import { toast } from '@/hooks/useToast';
 import { recordBackup } from '@/utils/updateCheck';
 import { saveImportReference } from '@/utils/importReference';
@@ -44,18 +46,39 @@ import {
   saveResume,
 } from '@/store/persistence';
 import type { TemplateId } from '@/types';
+import { migrateCompaniesFromResumes } from '@/utils/companySync';
+import {
+  hydrateCompanies,
+} from '@/utils/companies';
 
-type View = 'list' | 'kanban';
+type View = 'list' | 'kanban' | 'companies';
+
+const VIEW_VALUES: View[] = ['list', 'kanban', 'companies'];
+
+function parseView(value: string | null): View {
+  if (value && VIEW_VALUES.includes(value as View)) return value as View;
+  return 'list';
+}
+
+const COMPANIES_MIGRATION_KEY = 'resume-editor:companies-migrated-v1';
 
 export function LandingPage() {
   const { t } = useTranslation();
   const statusLabel = useStatusLabel();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const view = parseView(searchParams.get('view'));
+  const setView = (next: View) => {
+    if (next === 'list') {
+      setSearchParams({}, { replace: true });
+    } else {
+      setSearchParams({ view: next }, { replace: true });
+    }
+  };
   const createResumeFromTemplate = useStore((s) => s.createResumeFromTemplate);
   const setCurrentResume = useStore((s) => s.setCurrentResume);
   const [importOpen, setImportOpen] = useState(false);
   const [resumes, setResumes] = useState(() => (isHydrated() ? listResumes() : []));
-  const [view, setView] = useState<View>('list');
   const recents = resumes;
 
   const refresh = () => setResumes(listResumes());
@@ -65,6 +88,17 @@ export function LandingPage() {
     const unsubscribe = onHydrated(() => refresh());
     return unsubscribe;
   }, []);
+
+  useEffect(() => {
+    if (localStorage.getItem(COMPANIES_MIGRATION_KEY)) return;
+    void hydrateCompanies().then(() => {
+      const created = migrateCompaniesFromResumes();
+      localStorage.setItem(COMPANIES_MIGRATION_KEY, '1');
+      if (created > 0) {
+        toast(t('companies.migrated', { count: created }), { tone: 'info', ttl: 3000 });
+      }
+    });
+  }, [t]);
 
   const grouped = STATUS_ORDER.map((status) => ({
     status,
@@ -138,6 +172,7 @@ export function LandingPage() {
           </div>
           <div className="relative z-30 flex flex-wrap items-center justify-end gap-2 isolate">
             <LocaleToggle />
+            <InstallAppButton compact />
             <AccentToggle compact />
             <ThemeToggle compact />
             <TutorialButton />
@@ -180,7 +215,7 @@ export function LandingPage() {
                   aria-label={t('landing.viewMode')}
                   className="inline-flex rounded-md border border-paper-edge bg-paper p-0.5"
                 >
-                  {(['list', 'kanban'] as View[]).map((v) => (
+                  {(['list', 'kanban', 'companies'] as View[]).map((v) => (
                     <button
                       key={v}
                       type="button"
@@ -191,7 +226,11 @@ export function LandingPage() {
                         view === v ? 'bg-ink text-paper' : 'text-ink-muted hover:bg-paper-tint'
                       }`}
                     >
-                      {v === 'list' ? t('landing.viewList') : t('landing.viewKanban')}
+                      {v === 'list'
+                        ? t('landing.viewList')
+                        : v === 'kanban'
+                          ? t('landing.viewKanban')
+                          : t('landing.viewCompanies')}
                     </button>
                   ))}
                 </div>
@@ -205,6 +244,12 @@ export function LandingPage() {
 
             {view === 'kanban' ? (
               <KanbanView grouped={grouped} navigate={navigate} onMoveStatus={moveResumeStatus} />
+            ) : view === 'companies' ? (
+              <CompanyListView
+                resumes={resumes}
+                onOpenResume={(id) => navigate(`/editor/${id}`)}
+                onRefreshResumes={refresh}
+              />
             ) : (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {recents.map((r) => (

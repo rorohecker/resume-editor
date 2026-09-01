@@ -2,6 +2,9 @@ import type {
   ApplicationStatus,
   Bullet,
   BulletGlyph,
+  CompanyRole,
+  CompanyTarget,
+  ConnectionStatus,
   ContactField,
   ContactFieldType,
   DateFormat,
@@ -11,6 +14,9 @@ import type {
   Resume,
   RuleVariant,
   RuleWeight,
+  SalaryPeriod,
+  SalaryRange,
+  SalaryType,
   Section,
   SectionLayout,
   SectionType,
@@ -72,7 +78,7 @@ const DATE_FORMATS: DateFormat[] = ['month-year', 'numeric', 'season-year', 'yea
 const RULE_VARIANTS: RuleVariant[] = ['full', 'partial', 'none', 'double', 'thick'];
 const RULE_WEIGHTS: RuleWeight[] = [0.5, 1, 1.5];
 const BULLET_GLYPHS: BulletGlyph[] = ['disc', 'circle', 'square', 'dash', 'arrow', 'none'];
-const APPLICATION_STATUSES: ApplicationStatus[] = [
+export const APPLICATION_STATUSES: ApplicationStatus[] = [
   'drafting',
   'applied',
   'interview',
@@ -80,8 +86,18 @@ const APPLICATION_STATUSES: ApplicationStatus[] = [
   'rejected',
   'archived',
 ];
+const CONNECTION_STATUSES: ConnectionStatus[] = [
+  'none',
+  'cold',
+  'warm',
+  'referral',
+  'recruiter',
+  'employee',
+];
+const SALARY_PERIODS: SalaryPeriod[] = ['hourly', 'monthly', 'annual'];
+const SALARY_TYPES: SalaryType[] = ['base', 'total', 'posted_range'];
 
-export const RESUME_SCHEMA_VERSION = 3;
+export const RESUME_SCHEMA_VERSION = 4;
 
 export function normalizeResume(input: unknown): Resume | null {
   if (!isRecord(input)) return null;
@@ -130,7 +146,72 @@ function normalizeApplication(input: unknown): JobApplication | undefined {
     status: enumValue(input.status, APPLICATION_STATUSES, 'drafting'),
     appliedAt: optionalString(input.appliedAt),
     notes: optionalString(input.notes),
+    companyTargetId: optionalString(input.companyTargetId),
+    connectionStatus:
+      input.connectionStatus != null
+        ? enumValue(input.connectionStatus, CONNECTION_STATUSES, 'none')
+        : undefined,
+    connectionNotes: optionalString(input.connectionNotes),
+    salary: normalizeSalaryRange(input.salary),
   };
+}
+
+export function normalizeCompanyTarget(input: unknown, rank = 0): CompanyTarget | null {
+  if (!isRecord(input)) return null;
+  const now = new Date().toISOString();
+  const companyName = optionalString(input.companyName)?.trim();
+  if (!companyName) return null;
+  const roles = Array.isArray(input.roles)
+    ? input.roles.map(normalizeCompanyRole).filter((role): role is CompanyRole => Boolean(role))
+    : [];
+  return {
+    id: typeof input.id === 'string' ? input.id : makeId(),
+    companyName,
+    rank: Number.isFinite(input.rank) ? Math.max(0, input.rank as number) : rank,
+    connectionStatus: enumValue(input.connectionStatus, CONNECTION_STATUSES, 'none'),
+    connectionNotes: optionalString(input.connectionNotes),
+    roles,
+    status: enumValue(input.status, APPLICATION_STATUSES, 'drafting'),
+    notes: optionalString(input.notes),
+    website: optionalString(input.website),
+    createdAt: typeof input.createdAt === 'string' ? input.createdAt : now,
+    updatedAt: typeof input.updatedAt === 'string' ? input.updatedAt : now,
+  };
+}
+
+function normalizeCompanyRole(input: unknown): CompanyRole | null {
+  if (!isRecord(input)) return null;
+  const title = optionalString(input.title)?.trim();
+  if (!title) return null;
+  return {
+    id: typeof input.id === 'string' ? input.id : makeId(),
+    title,
+    salary: normalizeSalaryRange(input.salary),
+    resumeId: optionalString(input.resumeId),
+    status: input.status
+      ? enumValue(input.status, APPLICATION_STATUSES, 'drafting')
+      : undefined,
+    notes: optionalString(input.notes),
+  };
+}
+
+function normalizeSalaryRange(input: unknown): SalaryRange | undefined {
+  if (!isRecord(input)) return undefined;
+  const min = optionalNumber(input.min);
+  const max = optionalNumber(input.max);
+  if (min == null && max == null) return undefined;
+  return {
+    min,
+    max,
+    currency: optionalString(input.currency) ?? 'USD',
+    period: enumValue(input.period, SALARY_PERIODS, 'annual'),
+    type: enumValue(input.type, SALARY_TYPES, 'posted_range'),
+  };
+}
+
+function optionalNumber(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return undefined;
+  return value;
 }
 
 export function isResume(input: unknown): input is Resume {

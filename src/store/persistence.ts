@@ -10,6 +10,8 @@ import {
   type ImportOriginalFile,
 } from '@/utils/importReference';
 import { deleteStickyNotes, loadAllStickyNotes, copyStickyNotes, saveStickyNotes } from '@/utils/stickyNotes';
+import { listCompanies, replaceCompaniesFromBackup } from '@/utils/companies';
+import type { CompanyTarget } from '@/types';
 
 // Persistence strategy: IndexedDB is the source of truth, with a synchronous
 // in-memory write-through cache. Reads always hit the cache (instant, sync).
@@ -272,12 +274,14 @@ export async function exportAllData(): Promise<{
   versions: Record<string, VersionSnapshot[]>;
   stickyNotes: Record<string, import('@/utils/stickyNotes').StickyNote[]>;
   importReferences: Record<string, import('@/utils/importReference').ImportReference>;
+  companies: CompanyTarget[];
 }> {
   return {
     resumes: Object.fromEntries(cache.resumes),
     versions: Object.fromEntries(cache.snapshots),
     stickyNotes: await loadAllStickyNotes(),
     importReferences: await loadAllImportReferences(),
+    companies: listCompanies(),
   };
 }
 
@@ -286,6 +290,7 @@ export function isFullAppBackup(value: unknown): value is {
   versions?: Record<string, unknown>;
   stickyNotes?: Record<string, unknown>;
   importReferences?: Record<string, unknown>;
+  companies?: unknown;
 } {
   return Boolean(
     value &&
@@ -346,6 +351,10 @@ export async function importAllData(payload: unknown): Promise<{ resumes: number
         normalizeRestoredOriginal(reference),
       );
     }
+  }
+
+  if (payload.companies != null) {
+    replaceCompaniesFromBackup(payload.companies);
   }
 
   return { resumes: resumesRestored, snapshots: snapshotsRestored };
