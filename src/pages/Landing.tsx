@@ -46,10 +46,14 @@ import {
   saveResume,
 } from '@/store/persistence';
 import type { TemplateId } from '@/types';
-import { migrateCompaniesFromResumes } from '@/utils/companySync';
+import { migrateCompaniesFromResumes, syncResumeToCompany } from '@/utils/companySync';
 import {
   hydrateCompanies,
+  listCompanies,
+  onCompaniesHydrated,
+  onCompaniesRemoteUpdate,
 } from '@/utils/companies';
+import { hydratePersistence } from '@/store/persistence';
 
 type View = 'list' | 'kanban' | 'companies';
 
@@ -79,7 +83,10 @@ export function LandingPage() {
   const setCurrentResume = useStore((s) => s.setCurrentResume);
   const [importOpen, setImportOpen] = useState(false);
   const [resumes, setResumes] = useState(() => (isHydrated() ? listResumes() : []));
+  const [companyCount, setCompanyCount] = useState(0);
+  const [companiesRefreshKey, setCompaniesRefreshKey] = useState(0);
   const recents = resumes;
+  const showManager = recents.length > 0 || companyCount > 0 || view === 'companies';
 
   const refresh = () => setResumes(listResumes());
 
@@ -90,10 +97,22 @@ export function LandingPage() {
   }, []);
 
   useEffect(() => {
+    const refreshCompanyCount = () => setCompanyCount(listCompanies().length);
+    refreshCompanyCount();
+    const unsubHydrate = onCompaniesHydrated(refreshCompanyCount);
+    const unsubRemote = onCompaniesRemoteUpdate(refreshCompanyCount);
+    return () => {
+      unsubHydrate();
+      unsubRemote();
+    };
+  }, []);
+
+  useEffect(() => {
     if (localStorage.getItem(COMPANIES_MIGRATION_KEY)) return;
-    void hydrateCompanies().then(() => {
+    void Promise.all([hydratePersistence(), hydrateCompanies()]).then(() => {
       const created = migrateCompaniesFromResumes();
       localStorage.setItem(COMPANIES_MIGRATION_KEY, '1');
+      setCompanyCount(listCompanies().length);
       if (created > 0) {
         toast(t('companies.migrated', { count: created }), { tone: 'info', ttl: 3000 });
       }
@@ -133,7 +152,12 @@ export function LandingPage() {
     });
   };
 
-  const restoreBackupDone = () => refresh();
+  const restoreBackupDone = (result?: { resumes: number; snapshots: number; companies: number }) => {
+    refresh();
+    setCompanyCount(listCompanies().length);
+    setCompaniesRefreshKey((key) => key + 1);
+    void result;
+  };
 
   const moveResumeStatus = (resumeId: string, status: ApplicationStatus) => {
     const current = loadResume(resumeId);
@@ -144,16 +168,19 @@ export function LandingPage() {
       ...(current.application ?? { status: 'drafting' as ApplicationStatus }),
       status,
       appliedAt:
-        !current.application?.appliedAt && (status === 'applied' || status === 'interview')
+        !current.application?.appliedAt &&
+        (status === 'applied' || status === 'interview' || status === 'offer')
           ? new Date().toISOString()
           : current.application?.appliedAt,
     };
-    saveResume({
+    const synced = syncResumeToCompany({
       ...current,
       application,
       updatedAt: new Date().toISOString(),
     });
+    saveResume(synced);
     refresh();
+    setCompanyCount(listCompanies().length);
     toast(t('landing.movedToStatus', { status: statusLabel(status) }), {
       tone: 'success',
       ttl: 1500,
@@ -200,7 +227,7 @@ export function LandingPage() {
             </div>
           </section>
         )}
-        {recents.length > 0 && (
+        {showManager && (
           <section className="mb-12">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -246,6 +273,7 @@ export function LandingPage() {
               <KanbanView grouped={grouped} navigate={navigate} onMoveStatus={moveResumeStatus} />
             ) : view === 'companies' ? (
               <CompanyListView
+                key={companiesRefreshKey}
                 resumes={resumes}
                 onOpenResume={(id) => navigate(`/editor/${id}`)}
                 onRefreshResumes={refresh}

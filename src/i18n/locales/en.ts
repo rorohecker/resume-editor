@@ -11,6 +11,7 @@ export default {
     exportBackup: 'Export backup',
     restoreBackup: 'Restore backup',
     restoreDone: 'Restored {{count}} resumes from backup',
+    restoreDoneFull: 'Restored {{resumes}} resumes and {{companies}} companies from backup',
     restoreInvalid: 'That file is not a Resume Editor backup.',
     restoreFailed: 'Could not restore the backup.',
     viewList: 'List',
@@ -916,6 +917,7 @@ export default {
     viewInList: 'View in company list',
     expand: 'Show details',
     collapse: 'Hide details',
+    duplicateName: 'A company with that name already exists. Edit the existing entry or choose a different name.',
   },
   pwa: {
     installTitle: 'Install Resume Editor',

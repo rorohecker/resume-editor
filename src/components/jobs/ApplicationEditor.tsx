@@ -25,7 +25,7 @@ export function ApplicationEditor({ resume, onChange, compact }: Props) {
   const patch = (next: Partial<JobApplication>) => {
     const merged: JobApplication = { ...app, ...next };
     // Auto-fill appliedAt when status flips to applied/interview/offer and not set.
-    if (!merged.appliedAt && (next.status === 'applied' || next.status === 'interview')) {
+    if (!merged.appliedAt && (next.status === 'applied' || next.status === 'interview' || next.status === 'offer')) {
       merged.appliedAt = new Date().toISOString();
     }
     const synced = syncResumeToCompany({ ...resume, application: merged });

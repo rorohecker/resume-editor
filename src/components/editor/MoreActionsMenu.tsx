@@ -125,7 +125,12 @@ export function MoreActionsMenu({
         return;
       }
       const result = await importAllData(parsed);
-      toast(t('landing.restoreDone', { count: result.resumes }), { tone: 'success' });
+      toast(
+        result.companies > 0
+          ? t('landing.restoreDoneFull', { resumes: result.resumes, companies: result.companies })
+          : t('landing.restoreDone', { count: result.resumes }),
+        { tone: 'success' },
+      );
     } catch (err) {
       toast(err instanceof Error ? err.message : t('landing.restoreFailed'), { tone: 'danger' });
     }

@@ -7,7 +7,7 @@ import { tooltipProps } from '@/components/shared/tooltipProps';
 
 type RestoreBackupButtonProps = {
   variant?: 'icon' | 'secondary';
-  onRestored?: (result: { resumes: number; snapshots: number }) => void;
+  onRestored?: (result: { resumes: number; snapshots: number; companies: number }) => void;
   className?: string;
 };
 
@@ -29,7 +29,12 @@ export function RestoreBackupButton({
       }
       const result = await importAllData(parsed);
       onRestored?.(result);
-      toast(t('landing.restoreDone', { count: result.resumes }), { tone: 'success' });
+      toast(
+        result.companies > 0
+          ? t('landing.restoreDoneFull', { resumes: result.resumes, companies: result.companies })
+          : t('landing.restoreDone', { count: result.resumes }),
+        { tone: 'success' },
+      );
     } catch (err) {
       toast(err instanceof Error ? err.message : t('landing.restoreFailed'), { tone: 'danger' });
     }

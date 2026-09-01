@@ -10,7 +10,7 @@ import {
   type ImportOriginalFile,
 } from '@/utils/importReference';
 import { deleteStickyNotes, loadAllStickyNotes, copyStickyNotes, saveStickyNotes } from '@/utils/stickyNotes';
-import { listCompanies, replaceCompaniesFromBackup } from '@/utils/companies';
+import { hydrateCompanies, listCompanies, replaceCompaniesFromBackup, unlinkResumeFromAllCompanies } from '@/utils/companies';
 import type { CompanyTarget } from '@/types';
 
 // Persistence strategy: IndexedDB is the source of truth, with a synchronous
@@ -227,6 +227,7 @@ export function listResumes(): Resume[] {
 }
 
 export function deleteResume(id: string): void {
+  unlinkResumeFromAllCompanies(id);
   cache.resumes.delete(id);
   cache.snapshots.delete(id);
   queueDelete(RESUME_PREFIX + id);
@@ -276,6 +277,7 @@ export async function exportAllData(): Promise<{
   importReferences: Record<string, import('@/utils/importReference').ImportReference>;
   companies: CompanyTarget[];
 }> {
+  await hydrateCompanies();
   return {
     resumes: Object.fromEntries(cache.resumes),
     versions: Object.fromEntries(cache.snapshots),
@@ -302,13 +304,18 @@ export function isFullAppBackup(value: unknown): value is {
 }
 
 /** Restore a full-app JSON backup created by `exportAllData`. Merges into existing data. */
-export async function importAllData(payload: unknown): Promise<{ resumes: number; snapshots: number }> {
+export async function importAllData(payload: unknown): Promise<{
+  resumes: number;
+  snapshots: number;
+  companies: number;
+}> {
   if (!isFullAppBackup(payload)) {
     throw new Error('This file is not a Resume Editor backup.');
   }
 
   let resumesRestored = 0;
   let snapshotsRestored = 0;
+  let companiesRestored = 0;
 
   for (const raw of Object.values(payload.resumes)) {
     const normalized = normalizeResume(raw);
@@ -354,10 +361,10 @@ export async function importAllData(payload: unknown): Promise<{ resumes: number
   }
 
   if (payload.companies != null) {
-    replaceCompaniesFromBackup(payload.companies);
+    companiesRestored = replaceCompaniesFromBackup(payload.companies);
   }
 
-  return { resumes: resumesRestored, snapshots: snapshotsRestored };
+  return { resumes: resumesRestored, snapshots: snapshotsRestored, companies: companiesRestored };
 }
 
 function normalizeRestoredOriginal(reference: unknown): ImportOriginalFile | undefined {

@@ -4,16 +4,30 @@ import { useTranslation } from 'react-i18next';
 import { usePwaInstall } from '@/hooks/usePwaInstall';
 
 const DISMISS_KEY = 'resume-editor:pwa-install-dismissed';
+const DISMISS_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+
+function isDismissed(): boolean {
+  const raw = localStorage.getItem(DISMISS_KEY);
+  if (!raw) return false;
+  if (raw === '1') return true;
+  const ts = Number(raw);
+  if (!Number.isFinite(ts)) return false;
+  if (Date.now() - ts > DISMISS_TTL_MS) {
+    localStorage.removeItem(DISMISS_KEY);
+    return false;
+  }
+  return true;
+}
 
 export function InstallAppPrompt() {
   const { t } = useTranslation();
   const { canInstall, installing, isStandalone, install } = usePwaInstall();
-  const [dismissed, setDismissed] = useState(() => localStorage.getItem(DISMISS_KEY) === '1');
+  const [dismissed, setDismissed] = useState(isDismissed);
 
   if (__APP_SINGLE_FILE__ || isStandalone || dismissed || !canInstall) return null;
 
   const dismiss = () => {
-    localStorage.setItem(DISMISS_KEY, '1');
+    localStorage.setItem(DISMISS_KEY, String(Date.now()));
     setDismissed(true);
   };
 
@@ -67,6 +81,8 @@ export function InstallAppButton({ compact }: { compact?: boolean }) {
       className={compact ? 'btn-ghost text-xs' : 'btn-secondary'}
       onClick={() => void install()}
       disabled={installing}
+      aria-label={t('pwa.installAction')}
+      title={t('pwa.installAction')}
     >
       {installing ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
       {!compact && t('pwa.installAction')}

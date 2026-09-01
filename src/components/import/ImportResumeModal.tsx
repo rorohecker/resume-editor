@@ -321,7 +321,12 @@ export function ImportResumeModal({
     setBusy(true);
     try {
       const result = await importAllData(backupDetected);
-      toast(t('landing.restoreDone', { count: result.resumes }), { tone: 'success' });
+      toast(
+        result.companies > 0
+          ? t('landing.restoreDoneFull', { resumes: result.resumes, companies: result.companies })
+          : t('landing.restoreDone', { count: result.resumes }),
+        { tone: 'success' },
+      );
       onClose();
     } catch (err) {
       toast(err instanceof Error ? err.message : t('landing.restoreFailed'), { tone: 'danger' });

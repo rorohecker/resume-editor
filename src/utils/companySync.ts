@@ -4,6 +4,8 @@ import {
   findCompanyByName,
   getCompany,
   listCompanies,
+  normalizeCompanyName,
+  unlinkResumeFromCompany,
   updateCompanyTarget,
 } from '@/utils/companies';
 import { makeId } from '@/utils/id';
@@ -68,19 +70,62 @@ function syncRoleFromResume(target: CompanyTarget, resume: Resume): CompanyRole[
   ];
 }
 
+/** Drop companyTargetId on a resume after unlinking from the company entity. */
+export function detachResumeFromCompanyTarget(resume: Resume): Resume {
+  const app = applicationFromResume(resume);
+  if (!app.companyTargetId) return resume;
+  unlinkResumeFromCompany(resume.id, app.companyTargetId);
+  return {
+    ...resume,
+    application: { ...app, companyTargetId: undefined },
+  };
+}
+
+/** Clear companyTargetId on every resume still pointing at a deleted company. */
+export function detachAllResumesFromCompany(companyId: string, resumes: Resume[]): void {
+  for (const resume of resumes) {
+    if (resume.application?.companyTargetId !== companyId) continue;
+    saveResume({
+      ...detachResumeFromCompanyTarget(resume),
+      updatedAt: new Date().toISOString(),
+    });
+  }
+}
+
 /** Push resume application fields into the linked (or matching) company target. */
 export function syncResumeToCompany(resume: Resume): Resume {
   const app = applicationFromResume(resume);
   const companyName = app.companyName?.trim();
-  if (!companyName) return resume;
+
+  if (!companyName) {
+    if (app.companyTargetId) {
+      unlinkResumeFromCompany(resume.id, app.companyTargetId);
+      return {
+        ...resume,
+        application: { ...app, companyTargetId: undefined },
+      };
+    }
+    return resume;
+  }
 
   let target: CompanyTarget | null = null;
+  const byName = findCompanyByName(companyName);
+
   if (app.companyTargetId) {
     target = getCompany(app.companyTargetId);
+    if (
+      target &&
+      normalizeCompanyName(target.companyName) !== normalizeCompanyName(companyName)
+    ) {
+      unlinkResumeFromCompany(resume.id, target.id);
+      target = byName;
+    }
   }
+
   if (!target) {
-    target = findCompanyByName(companyName);
+    target = byName;
   }
+
   if (!target) {
     target = createCompanyTarget({
       companyName,
@@ -128,28 +173,41 @@ export function syncCompanyToResume(resume: Resume, target: CompanyTarget): Resu
   return { ...resume, application: nextApp };
 }
 
+/** Sync linked resumes and detach any that no longer reference this company. */
+export function syncCompanyTargetToResumes(target: CompanyTarget, resumes: Resume[]): void {
+  const linkedIds = new Set(
+    target.roles.map((role) => role.resumeId).filter((id): id is string => Boolean(id)),
+  );
+
+  for (const role of target.roles) {
+    if (!role.resumeId) continue;
+    const resume = resumes.find((item) => item.id === role.resumeId);
+    if (!resume) continue;
+    const synced = syncCompanyToResume(resume, target);
+    saveResume({ ...synced, updatedAt: new Date().toISOString() });
+  }
+
+  for (const resume of resumes) {
+    if (resume.application?.companyTargetId !== target.id) continue;
+    if (linkedIds.has(resume.id)) continue;
+    saveResume({
+      ...detachResumeFromCompanyTarget(resume),
+      updatedAt: new Date().toISOString(),
+    });
+  }
+}
+
 /** One-time backfill: create company targets from existing resumes. */
 export function migrateCompaniesFromResumes(): number {
   const resumes = listResumes();
   const withCompany = resumes.filter((resume) => resume.application?.companyName?.trim());
   if (withCompany.length === 0) return 0;
 
-  let created = 0;
   const beforeCount = listCompanies().length;
   for (const resume of withCompany) {
     const synced = syncResumeToCompany(resume);
-    if (synced.application?.companyTargetId && synced.application.companyTargetId !== resume.application?.companyTargetId) {
-      saveResume({ ...synced, updatedAt: new Date().toISOString() });
-    }
+    saveResume({ ...synced, updatedAt: new Date().toISOString() });
   }
   const afterCount = listCompanies().length;
-  created = Math.max(0, afterCount - beforeCount);
-  return created;
-}
-
-export function unlinkResumeFromCompany(resumeId: string, companyId: string): void {
-  const target = getCompany(companyId);
-  if (!target) return;
-  const roles = target.roles.filter((role) => role.resumeId !== resumeId);
-  updateCompanyTarget(companyId, { roles });
+  return Math.max(0, afterCount - beforeCount);
 }

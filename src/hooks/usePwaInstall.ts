@@ -5,7 +5,7 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 }
 
-function isStandalone(): boolean {
+function readStandalone(): boolean {
   return (
     window.matchMedia('(display-mode: standalone)').matches ||
     (window.navigator as Navigator & { standalone?: boolean }).standalone === true
@@ -15,10 +15,11 @@ function isStandalone(): boolean {
 export function usePwaInstall() {
   const [canInstall, setCanInstall] = useState(false);
   const [installing, setInstalling] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(readStandalone);
   const deferredRef = useRef<BeforeInstallPromptEvent | null>(null);
 
   useEffect(() => {
-    if (__APP_SINGLE_FILE__ || isStandalone()) return;
+    if (__APP_SINGLE_FILE__ || isStandalone) return;
 
     const onBeforeInstall = (event: Event) => {
       event.preventDefault();
@@ -29,6 +30,7 @@ export function usePwaInstall() {
     const onInstalled = () => {
       deferredRef.current = null;
       setCanInstall(false);
+      setIsStandalone(true);
     };
 
     window.addEventListener('beforeinstallprompt', onBeforeInstall);
@@ -37,7 +39,7 @@ export function usePwaInstall() {
       window.removeEventListener('beforeinstallprompt', onBeforeInstall);
       window.removeEventListener('appinstalled', onInstalled);
     };
-  }, []);
+  }, [isStandalone]);
 
   const install = useCallback(async () => {
     const promptEvent = deferredRef.current;
@@ -60,7 +62,7 @@ export function usePwaInstall() {
   return {
     canInstall,
     installing,
-    isStandalone: isStandalone(),
+    isStandalone,
     install,
   };
 }

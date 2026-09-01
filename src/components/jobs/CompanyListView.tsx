@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ChevronDown, ChevronRight, Pencil, Plus, Search } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { CompanyTarget, Resume } from '@/types';
@@ -11,12 +11,14 @@ import { CompanyTargetModal } from './CompanyTargetModal';
 import { formatSalaryRange } from '@/utils/salaryFormat';
 import {
   deleteCompanyTarget,
+  findCompanyByName,
   listCompanies,
+  onCompaniesHydrated,
+  onCompaniesRemoteUpdate,
   reorderCompanies,
   saveCompanyTarget,
 } from '@/utils/companies';
-import { syncCompanyToResume } from '@/utils/companySync';
-import { saveResume } from '@/store/persistence';
+import { detachAllResumesFromCompany, syncCompanyTargetToResumes } from '@/utils/companySync';
 import { toast } from '@/hooks/useToast';
 
 interface Props {
@@ -36,6 +38,16 @@ export function CompanyListView({ resumes, onOpenResume, onRefreshResumes }: Pro
   const [editing, setEditing] = useState<CompanyTarget | null>(null);
 
   const refresh = () => setCompanies(listCompanies());
+
+  useEffect(() => {
+    refresh();
+    const unsubHydrate = onCompaniesHydrated(() => refresh());
+    const unsubRemote = onCompaniesRemoteUpdate(() => refresh());
+    return () => {
+      unsubHydrate();
+      unsubRemote();
+    };
+  }, []);
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -60,17 +72,16 @@ export function CompanyListView({ resumes, onOpenResume, onRefreshResumes }: Pro
   };
 
   const syncLinkedResumes = (target: CompanyTarget) => {
-    for (const role of target.roles) {
-      if (!role.resumeId) continue;
-      const resume = resumes.find((item) => item.id === role.resumeId);
-      if (!resume) continue;
-      const synced = syncCompanyToResume(resume, target);
-      saveResume({ ...synced, updatedAt: new Date().toISOString() });
-    }
+    syncCompanyTargetToResumes(target, resumes);
     onRefreshResumes();
   };
 
   const handleSave = (target: CompanyTarget) => {
+    const duplicate = findCompanyByName(target.companyName);
+    if (duplicate && duplicate.id !== target.id) {
+      toast(t('companies.duplicateName'), { tone: 'warn', ttl: 2500 });
+      return;
+    }
     saveCompanyTarget(target);
     syncLinkedResumes(target);
     refresh();
@@ -79,7 +90,9 @@ export function CompanyListView({ resumes, onOpenResume, onRefreshResumes }: Pro
 
   const handleDelete = (id: string) => {
     if (!window.confirm(t('companies.deleteConfirm'))) return;
+    detachAllResumesFromCompany(id, resumes);
     deleteCompanyTarget(id);
+    onRefreshResumes();
     refresh();
     toast(t('companies.deleted'), { tone: 'info' });
   };

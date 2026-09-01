@@ -112,6 +112,21 @@ export function saveCompanyTarget(target: CompanyTarget): CompanyTarget {
   return normalized;
 }
 
+export function unlinkResumeFromCompany(resumeId: string, companyId: string): void {
+  const target = getCompany(companyId);
+  if (!target) return;
+  const roles = target.roles.filter((role) => role.resumeId !== resumeId);
+  updateCompanyTarget(companyId, { roles });
+}
+
+export function unlinkResumeFromAllCompanies(resumeId: string): void {
+  for (const company of cache) {
+    if (company.roles.some((role) => role.resumeId === resumeId)) {
+      unlinkResumeFromCompany(resumeId, company.id);
+    }
+  }
+}
+
 export function createCompanyTarget(
   partial: Partial<CompanyTarget> & { companyName: string },
 ): CompanyTarget {
@@ -184,10 +199,15 @@ export async function saveAllCompanies(companies: CompanyTarget[]): Promise<void
 
 export function replaceCompaniesFromBackup(raw: unknown): number {
   if (!Array.isArray(raw)) return 0;
+  if (raw.length === 0) {
+    cache = [];
+    reindexRanks();
+    void persist();
+    return 0;
+  }
   const parsed = raw
     .map((item, index) => normalizeCompanyTarget(item, index))
     .filter((item): item is CompanyTarget => Boolean(item));
-  if (parsed.length === 0) return 0;
   cache = parsed;
   reindexRanks();
   void persist();
