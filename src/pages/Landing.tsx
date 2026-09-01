@@ -136,7 +136,7 @@ export function LandingPage() {
             </div>
             <span className="font-semibold tracking-tight">{t('app.name')}</span>
           </div>
-          <div className="relative z-30 flex flex-wrap items-center justify-end gap-2 isolate">
+          <div className="relative flex flex-wrap items-center justify-end gap-2">
             <LocaleToggle />
             <AccentToggle compact />
             <ThemeToggle compact />

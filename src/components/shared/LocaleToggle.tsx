@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { SUPPORTED_LOCALES } from '@/i18n';
 import { tooltipProps } from '@/components/shared/tooltipProps';
 import { ChromeMenuRoot } from '@/components/shared/ChromeMenuRoot';
+import { ChromeDropdownPanel } from '@/components/shared/ChromeDropdownPanel';
 
 function LocaleMenu({
   open,
@@ -20,17 +21,21 @@ function LocaleMenu({
 
   useEffect(() => {
     if (!open) return;
-    const closeOnOutsideClick = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (rootRef.current?.contains(target)) return;
+      const panel = document.querySelector('[data-chrome-dropdown="locale"]');
+      if (panel?.contains(target)) return;
+      setOpen(false);
     };
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setOpen(false);
     };
-    document.addEventListener('mousedown', closeOnOutsideClick);
-    document.addEventListener('keydown', closeOnEscape);
+    window.addEventListener('pointerdown', closeOnOutsideClick);
+    window.addEventListener('keydown', closeOnEscape);
     return () => {
-      document.removeEventListener('mousedown', closeOnOutsideClick);
-      document.removeEventListener('keydown', closeOnEscape);
+      window.removeEventListener('pointerdown', closeOnOutsideClick);
+      window.removeEventListener('keydown', closeOnEscape);
     };
   }, [open, setOpen]);
 
@@ -55,12 +60,14 @@ function LocaleMenu({
         />
       </button>
 
-      {open && (
-        <div
-          role="menu"
-          aria-label={t('common.language')}
-          className="absolute right-0 z-[80] mt-2 min-w-52 overflow-hidden rounded-lg border border-paper-edge bg-paper p-1 shadow-page"
-        >
+      <ChromeDropdownPanel
+        anchorRef={rootRef}
+        open={open}
+        width={208}
+        aria-label={t('common.language')}
+        className="overflow-hidden rounded-lg border border-paper-edge bg-paper p-1 shadow-page"
+      >
+        <div data-chrome-dropdown="locale">
           {SUPPORTED_LOCALES.map((locale) => {
             const selected = locale.value === activeCode;
             return (
@@ -91,7 +98,7 @@ function LocaleMenu({
             );
           })}
         </div>
-      )}
+      </ChromeDropdownPanel>
     </div>
   );
 }

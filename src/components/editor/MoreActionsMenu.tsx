@@ -318,10 +318,10 @@ export function MoreActionsMenu({
       />
       {open && (
         <div
-          className="absolute right-0 z-[200] mt-1 w-[min(14rem,calc(100vw-1rem))] overflow-hidden rounded-md border border-paper-edge bg-paper shadow-page"
+          className="absolute right-0 z-[200] mt-1 w-[min(14rem,calc(100vw-1rem))] rounded-md border border-paper-edge bg-paper shadow-page"
           role="menu"
         >
-          <div className="max-h-[min(70vh,24rem)] overflow-y-auto overscroll-contain">
+          <div className="max-h-[min(70vh,24rem)] overflow-y-auto overscroll-contain rounded-t-md">
             {items.map((item) => (
               <button
                 key={item.label}
@@ -343,7 +343,7 @@ export function MoreActionsMenu({
               {t('editor.themeAndAccent', { defaultValue: 'Theme & accent' })}
             </p>
             <div className="flex flex-col gap-2">
-              <AccentToggle compact />
+              <AccentToggle compact placement="up" />
               <ThemeToggle compact />
             </div>
           </div>
