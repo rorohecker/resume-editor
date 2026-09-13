@@ -949,6 +949,13 @@ export default {
     jsonNote: 'Full structured backup for this app',
     downloaded: '{{format}} downloaded',
     failed: 'Export failed.',
+    previewBeforeDownload: 'Preview before download',
+    chooseAnotherFormat: 'Choose another format',
+    confirmDownload: 'Confirm and download',
+    downloading: 'Downloading…',
+    downloadingFile: 'Downloading {{filename}}',
+    previewTitle: 'Preview: {{filename}}',
+    previewFailed: 'Preview failed: {{message}}',
   },
   tour: {
     ariaLabel: 'Welcome tour',

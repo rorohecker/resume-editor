@@ -1992,7 +1992,9 @@ function AccordionShell({
     // above — claim sticky so the header stays pinned while editing categories.
     if (becameOpen || (forceStickyToken > 0 && open)) {
       setStickyAccordionId(accordionId);
-      if (becameOpen) pendingOpenPin.current = true;
+      // Re-jumps (already open) must also pin — otherwise only sticky ownership
+      // flips and the delayed SectionEditor scroll can miss when layout is mid-update.
+      pendingOpenPin.current = true;
     }
 
     const root = rootRef.current;
