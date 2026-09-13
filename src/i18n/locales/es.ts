@@ -246,6 +246,7 @@ export default {
     quickAdd: 'Añadir rápido',
     jumpToSection: 'Ir a {{title}}',
     addSectionType: 'Añadir {{title}}',
+    addAnotherSection: 'Añadir otra sección de {{title}}',
     sectionName: 'Nombre de sección',
     sectionTypeLabel: 'Tipo',
     layout: 'Diseño',

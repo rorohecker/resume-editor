@@ -264,26 +264,48 @@ export function EditorLeftPanel() {
           </span>
           {QUICK_SECTION_TYPES.map((type) => {
             const exists = sections.some((section) => section.type === type);
+            const label = sectionTypeLabel(type, t);
             return (
-              <button
+              <span
                 key={type}
-                type="button"
-                className="rounded-md border border-paper-edge bg-paper px-2 py-1 text-[11px] font-medium text-ink-muted hover:border-ink-subtle hover:bg-paper-tint hover:text-ink"
-                onClick={() => quickAddOrFocus(type)}
-                title={
-                  exists
-                    ? t('editor.jumpToSection', {
-                        title: sectionTypeLabel(type, t),
-                        defaultValue: 'Jump to {{title}}',
-                      })
-                    : t('editor.addSectionType', {
-                        title: sectionTypeLabel(type, t),
-                        defaultValue: 'Add {{title}}',
-                      })
-                }
+                className="inline-flex overflow-hidden rounded-md border border-paper-edge bg-paper"
               >
-                {sectionTypeLabel(type, t)}
-              </button>
+                <button
+                  type="button"
+                  className="px-2 py-1 text-[11px] font-medium text-ink-muted hover:bg-paper-tint hover:text-ink"
+                  onClick={() => quickAddOrFocus(type)}
+                  title={
+                    exists
+                      ? t('editor.jumpToSection', {
+                          title: label,
+                          defaultValue: 'Jump to {{title}}',
+                        })
+                      : t('editor.addSectionType', {
+                          title: label,
+                          defaultValue: 'Add {{title}}',
+                        })
+                  }
+                >
+                  {label}
+                </button>
+                {exists && (
+                  <button
+                    type="button"
+                    className="border-l border-paper-edge px-1.5 py-1 text-ink-muted hover:bg-paper-tint hover:text-ink"
+                    onClick={() => addSection(type)}
+                    title={t('editor.addAnotherSection', {
+                      title: label,
+                      defaultValue: 'Add another {{title}} section',
+                    })}
+                    aria-label={t('editor.addAnotherSection', {
+                      title: label,
+                      defaultValue: 'Add another {{title}} section',
+                    })}
+                  >
+                    <Plus size={11} />
+                  </button>
+                )}
+              </span>
             );
           })}
         </div>
@@ -959,6 +981,13 @@ function SectionEditor({
       window.cancelAnimationFrame(rafInner);
     };
   }, [focusedSectionId, focusedEntryId, focusedSectionToken, section.id]);
+
+  // When another section is jumped to, collapse this one so sticky headers
+  // don't fight and the jumped target stays easy to find.
+  useEffect(() => {
+    if (!focusedSectionId || focusedSectionId === section.id) return;
+    setOpen(false);
+  }, [focusedSectionId, focusedSectionToken, section.id]);
 
   const patchSection = (patch: Partial<Section>) => {
     updateResume((current) => ({

@@ -243,6 +243,7 @@ export default {
     quickAdd: 'Quick add',
     jumpToSection: 'Jump to {{title}}',
     addSectionType: 'Add {{title}}',
+    addAnotherSection: 'Add another {{title}} section',
     sectionName: 'Section name',
     sectionTypeLabel: 'Type',
     layout: 'Layout',
