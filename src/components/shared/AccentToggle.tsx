@@ -13,6 +13,7 @@ import {
 import { useAccent, type AccentTheme } from '@/hooks/useAccent';
 import { tooltipProps } from '@/components/shared/tooltipProps';
 import { ChromeMenuRoot } from '@/components/shared/ChromeMenuRoot';
+import { ChromeDropdownPanel } from '@/components/shared/ChromeDropdownPanel';
 
 const OPTIONS: {
   value: AccentTheme;
@@ -69,10 +70,12 @@ function AccentMenu({
   compact,
   open,
   setOpen,
+  placement = 'down',
 }: {
   compact: boolean;
   open: boolean;
   setOpen: (next: boolean) => void;
+  placement?: 'down' | 'up';
 }) {
   const { accent, setAccent } = useAccent();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -82,7 +85,12 @@ function AccentMenu({
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (rootRef.current?.contains(target)) return;
+      // Clicks inside the portaled menu should not close it before selection.
+      const panel = document.querySelector('[data-chrome-dropdown="accent"]');
+      if (panel?.contains(target)) return;
+      setOpen(false);
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setOpen(false);
@@ -103,8 +111,8 @@ function AccentMenu({
         className={`inline-flex h-8 items-center gap-1.5 rounded-md border border-paper-edge bg-paper px-2 text-xs text-ink transition-all hover:-translate-y-0.5 hover:shadow-sm ${
           open ? 'ring-2 ring-accent/30' : ''
         }`}
-        aria-label={`Theme: ${active.label}`}
-        {...tooltipProps(`Theme: ${active.label}`, 'end')}
+        aria-label={`Accent: ${active.label}`}
+        {...tooltipProps(`Accent: ${active.label}`, 'end')}
         aria-haspopup="menu"
         aria-expanded={open}
       >
@@ -113,12 +121,14 @@ function AccentMenu({
         <ChevronDown size={11} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
-      {open && (
-        <div
-          role="menu"
-          aria-label="App theme"
-          className="absolute right-0 top-full z-[80] mt-2 w-72 overflow-hidden rounded-xl border border-paper-edge bg-paper/95 p-2 shadow-page backdrop-blur-xl"
-        >
+      <ChromeDropdownPanel
+        anchorRef={rootRef}
+        open={open}
+        placement={placement}
+        aria-label="Accent palette"
+        className="overflow-hidden rounded-xl border border-paper-edge bg-paper/95 p-2 shadow-page backdrop-blur-xl"
+      >
+        <div data-chrome-dropdown="accent">
           <div className="px-2 pb-2 pt-1">
             <p className="text-xs font-semibold text-ink">Choose your atmosphere</p>
             <p className="text-[10px] text-ink-subtle">Animations respect reduced-motion settings.</p>
@@ -163,15 +173,23 @@ function AccentMenu({
             })}
           </div>
         </div>
-      )}
+      </ChromeDropdownPanel>
     </div>
   );
 }
 
-export function AccentToggle({ compact = false }: { compact?: boolean }) {
+export function AccentToggle({
+  compact = false,
+  placement = 'down',
+}: {
+  compact?: boolean;
+  placement?: 'down' | 'up';
+}) {
   return (
     <ChromeMenuRoot>
-      {({ open, setOpen }) => <AccentMenu compact={compact} open={open} setOpen={setOpen} />}
+      {({ open, setOpen }) => (
+        <AccentMenu compact={compact} open={open} setOpen={setOpen} placement={placement} />
+      )}
     </ChromeMenuRoot>
   );
 }

@@ -95,7 +95,7 @@ export function ResumeViewPage() {
           className="resume-print-page bg-paper shadow-page"
           style={{ width: page.width, minHeight: page.height }}
         >
-          <PreviewRenderer resume={resume} />
+          <PreviewRenderer resume={resume} interactive={false} />
         </div>
       </div>
     </div>

@@ -6,7 +6,7 @@ export function templateFeatures(templateId: Resume['template']): TemplateFeatur
 }
 
 export function headerAlignFor(resume: Resume): TemplateFeatures['headerAlign'] {
-  return templateFeatures(resume.template).headerAlign;
+  return resume.styles.headerAlign ?? templateFeatures(resume.template).headerAlign;
 }
 
 export function isTwoColumnLayout(resume: Resume): boolean {

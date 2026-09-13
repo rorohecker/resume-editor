@@ -1,4 +1,4 @@
-import { memo, useLayoutEffect, useRef, useState } from 'react';
+import { memo, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Bullet, ContactField, Entry, Resume, RuleStyle, Section } from '@/types';
 import { formatDateRange } from '@/utils/dateFormat';
@@ -371,14 +371,14 @@ const SectionBlock = memo(function SectionBlockInner({
           interactive={interactive}
         />
       )}
-      <div>{renderSectionContent(section, resume)}</div>
+      <div>{renderSectionContent(section, resume, interactive)}</div>
     </section>
   );
 });
 
-function renderSectionContent(section: Section, resume: Resume) {
+function renderSectionContent(section: Section, resume: Resume, interactive: boolean) {
   if (section.type === 'skills' || section.layout === 'skills-grid') {
-    return <SkillsSection section={section} resume={resume} />;
+    return <SkillsSection section={section} resume={resume} interactive={interactive} />;
   }
   if (section.type === 'summary' || section.layout === 'text-block') {
     return <TextSection section={section} />;
@@ -390,22 +390,66 @@ function renderSectionContent(section: Section, resume: Resume) {
   return section.entries
     .filter(entryHasContent)
     .map((entry, index) => (
-      <EntryBlock key={entry.id} entry={entry} section={section} resume={resume} first={index === 0} />
+      <EntryBlock
+        key={entry.id}
+        entry={entry}
+        section={section}
+        resume={resume}
+        first={index === 0}
+        interactive={interactive}
+      />
     ));
 }
 
-function SkillsSection({ section, resume }: { section: Section; resume: Resume }) {
+function SkillsSection({
+  section,
+  resume,
+  interactive,
+}: {
+  section: Section;
+  resume: Resume;
+  interactive: boolean;
+}) {
+  const focusSection = useStore((s) => s.focusSection);
   return (
     <div>
-      {section.entries.filter(entryHasContent).map((entry, index) => (
-        <div
-          key={entry.id}
-          style={{ marginTop: index === 0 ? 0 : pt(Math.max(1, resume.styles.spacing.entry / 2)) }}
-        >
-          <span style={{ fontWeight: 700 }}>{entry.title || 'Skills'}: </span>
-          <span>{entry.subtitle}</span>
-        </div>
-      ))}
+      {section.entries.filter(entryHasContent).map((entry, index) => {
+        const body = (
+          <>
+            <span style={{ fontWeight: 700 }}>{entry.title || 'Skills'}: </span>
+            <span>{entry.subtitle}</span>
+          </>
+        );
+        const style = {
+          marginTop: index === 0 ? 0 : pt(Math.max(1, resume.styles.spacing.entry / 2)),
+        } as const;
+        if (!interactive) {
+          return (
+            <div key={entry.id} style={style}>
+              {body}
+            </div>
+          );
+        }
+        return (
+          <button
+            key={entry.id}
+            type="button"
+            onClick={() => focusSection(section.id, entry.id)}
+            title="Click to edit this category"
+            className="-mx-1 block w-full rounded-sm px-1 text-left transition-colors hover:bg-paper-tint"
+            style={{
+              ...style,
+              cursor: 'pointer',
+              background: 'transparent',
+              border: 'none',
+              font: 'inherit',
+              color: 'inherit',
+            }}
+          >
+            {body}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -423,12 +467,16 @@ function EntryBlock({
   section,
   resume,
   first,
+  interactive,
 }: {
   entry: Entry;
   section: Section;
   resume: Resume;
   first: boolean;
+  interactive: boolean;
 }) {
+  const focusSection = useStore((s) => s.focusSection);
+  const onJump = interactive ? () => focusSection(section.id, entry.id) : undefined;
   const { styles } = resume;
   const date = formatDateRange(
     entry.startDate,
@@ -452,13 +500,15 @@ function EntryBlock({
   ) {
     return (
       <div style={{ marginTop: first ? 0 : pt(entrySpacing) }}>
-        <McCombsEducationRow
-          entry={entry}
-          section={section}
-          resume={resume}
-          date={date}
-          studyAbroadKind={isStudyAbroadKind}
-        />
+        <JumpableEntryHeader onJump={onJump}>
+          <McCombsEducationRow
+            entry={entry}
+            section={section}
+            resume={resume}
+            date={date}
+            studyAbroadKind={isStudyAbroadKind}
+          />
+        </JumpableEntryHeader>
       </div>
     );
   }
@@ -473,42 +523,74 @@ function EntryBlock({
 
   return (
     <div style={{ marginTop: first ? 0 : pt(entrySpacing) }}>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0, 1fr) max-content',
-          columnGap: pt(12),
-          alignItems: 'baseline',
-        }}
-      >
-        <div style={{ minWidth: 0 }}>
-          {swapBold ? (
-            <McCombsInlineHeader entry={entry} section={section} resume={resume} />
-          ) : inlineStudyAbroad ? (
-            <StudyAbroadInlineHeader entry={entry} resume={resume} />
-          ) : inlineProject ? (
-            <ProjectInlineHeader entry={entry} resume={resume} />
-          ) : (
-            <EntryLeft entry={entry} section={section} resume={resume} />
+      <JumpableEntryHeader onJump={onJump}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, 1fr) max-content',
+            columnGap: pt(12),
+            alignItems: 'baseline',
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            {swapBold ? (
+              <McCombsInlineHeader entry={entry} section={section} resume={resume} />
+            ) : inlineStudyAbroad ? (
+              <StudyAbroadInlineHeader entry={entry} resume={resume} />
+            ) : inlineProject ? (
+              <ProjectInlineHeader entry={entry} resume={resume} />
+            ) : (
+              <EntryLeft entry={entry} section={section} resume={resume} />
+            )}
+          </div>
+          {date && (
+            <div
+              style={{
+                whiteSpace: 'nowrap',
+                textAlign: 'right',
+                color: styles.colors.body,
+              }}
+            >
+              {date}
+            </div>
           )}
         </div>
-        {date && (
-          <div
-            style={{
-              whiteSpace: 'nowrap',
-              textAlign: 'right',
-              color: styles.colors.body,
-            }}
-          >
-            {date}
-          </div>
-        )}
-      </div>
+      </JumpableEntryHeader>
 
       {(sectionHasBullets(section) || isStudyAbroadKind) && (
         <BulletList bullets={entry.bullets ?? []} resume={resume} />
       )}
     </div>
+  );
+}
+
+/** Clickable wrapper for entry headers in the interactive preview. */
+function JumpableEntryHeader({
+  onJump,
+  children,
+}: {
+  onJump?: () => void;
+  children: ReactNode;
+}) {
+  if (!onJump) return <>{children}</>;
+  return (
+    <button
+      type="button"
+      onClick={onJump}
+      title="Click to edit this entry"
+      className="-mx-1 block w-full rounded-sm px-1 text-left transition-colors hover:bg-paper-tint"
+      style={{
+        cursor: 'pointer',
+        background: 'transparent',
+        border: 'none',
+        font: 'inherit',
+        color: 'inherit',
+        paddingTop: 0,
+        paddingBottom: 0,
+      }}
+    >
+      {children}
+    </button>
   );
 }
 

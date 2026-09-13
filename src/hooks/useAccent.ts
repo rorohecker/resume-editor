@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useSyncExternalStore } from 'react';
 
 // Editor-chrome accent palette. Variants only affect the
 // editor UI (buttons, borders, hover states). The rendered resume itself is
@@ -39,22 +39,60 @@ function apply(accent: AccentTheme): void {
   }
 }
 
+// Shared store so every AccentToggle stays in sync.
+let currentAccent: AccentTheme = typeof window !== 'undefined' ? readStored() : 'accent';
+let snapshotVersion = 0;
+const listeners = new Set<() => void>();
+
+function notify(): void {
+  snapshotVersion += 1;
+  for (const listener of listeners) listener();
+}
+
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+function getSnapshot(): number {
+  return snapshotVersion;
+}
+
+function getServerSnapshot(): number {
+  return 0;
+}
+
+function setAccent(next: AccentTheme): void {
+  if (next === currentAccent) return;
+  currentAccent = next;
+  apply(next);
+  try {
+    localStorage.setItem(STORAGE_KEY, next);
+  } catch {
+    // ignore
+  }
+  notify();
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (event) => {
+    if (event.key !== STORAGE_KEY || !event.newValue) return;
+    if (!(ACCENTS as string[]).includes(event.newValue)) return;
+    currentAccent = event.newValue as AccentTheme;
+    apply(currentAccent);
+    notify();
+  });
+}
+
 export function applyStoredAccent(): void {
-  apply(readStored());
+  currentAccent = readStored();
+  apply(currentAccent);
 }
 
 export function useAccent(): {
   accent: AccentTheme;
   setAccent: (next: AccentTheme) => void;
 } {
-  const [accent, setAccentState] = useState<AccentTheme>(() => readStored());
-  useEffect(() => {
-    apply(accent);
-    try {
-      localStorage.setItem(STORAGE_KEY, accent);
-    } catch {
-      // ignore
-    }
-  }, [accent]);
-  return { accent, setAccent: setAccentState };
+  useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  return { accent: currentAccent, setAccent };
 }

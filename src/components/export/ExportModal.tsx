@@ -167,9 +167,9 @@ export function ExportModal() {
       setPreview({ format, artifact, url, text, images, approximate, totalPages });
     } catch (err) {
       if (!openRef.current) return;
-      const message = err instanceof Error ? err.message : 'Could not generate the export.';
+      const message = err instanceof Error ? err.message : t('exportModal.failed');
       console.error('[ExportModal] generate failed:', err);
-      toast(`Preview failed: ${message}`, { tone: 'danger', ttl: 6000 });
+      toast(t('exportModal.previewFailed', { message }), { tone: 'danger', ttl: 6000 });
     } finally {
       setBusy(null);
     }
@@ -180,7 +180,10 @@ export function ExportModal() {
     setDownloading(true);
     try {
       downloadArtifact(preview.artifact);
-      toast(`Downloading ${preview.artifact.filename}`, { tone: 'success', ttl: 2500 });
+      toast(t('exportModal.downloadingFile', { filename: preview.artifact.filename }), {
+        tone: 'success',
+        ttl: 2500,
+      });
       // Don't auto-close — let the user see the success state and dismiss
       // themselves. Auto-closing also raced the download in some browsers
       // because the modal unmount cleared the urls ref synchronously.
@@ -189,7 +192,7 @@ export function ExportModal() {
         close();
       }, 800);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Download failed.';
+      const message = err instanceof Error ? err.message : t('exportModal.failed');
       console.error('[ExportModal] download failed:', err);
       toast(message, { tone: 'danger', ttl: 6000 });
       setDownloading(false);
@@ -205,7 +208,11 @@ export function ExportModal() {
     <Modal
       open={open}
       onClose={close}
-      title={preview ? `Preview: ${preview.artifact.filename}` : t('exportModal.title')}
+      title={
+        preview
+          ? t('exportModal.previewTitle', { filename: preview.artifact.filename })
+          : t('exportModal.title')
+      }
       maxWidth="xl"
       footer={
         preview ? (
@@ -217,7 +224,7 @@ export function ExportModal() {
               className="btn-ghost text-xs"
             >
               <ArrowLeft size={12} />
-              Choose another format
+              {t('exportModal.chooseAnotherFormat')}
             </button>
             <div className="flex gap-2">
               <button
@@ -235,7 +242,7 @@ export function ExportModal() {
                 className="btn-primary text-xs"
               >
                 <Download size={12} />
-                {downloading ? 'Downloading…' : 'Confirm and download'}
+                {downloading ? t('exportModal.downloading') : t('exportModal.confirmDownload')}
               </button>
             </div>
           </div>
@@ -288,7 +295,7 @@ function ChooserPane({
           ? t('exportModal.chooseFormat', { name: resumeName })
           : t('exportModal.chooseFormatGeneric')}
         <span className="ml-2 inline-block rounded bg-paper-tint px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-ink-subtle">
-          Preview before download
+          {t('exportModal.previewBeforeDownload')}
         </span>
       </p>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">

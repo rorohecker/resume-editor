@@ -39,10 +39,16 @@ function applicationFromResume(resume: Resume): JobApplication {
 
 function syncRoleFromResume(target: CompanyTarget, resume: Resume): CompanyRole[] {
   const app = applicationFromResume(resume);
-  const title = app.targetRole?.trim();
-  if (!title) return target.roles;
-
   const existing = target.roles.find((role) => role.resumeId === resume.id);
+  // Keep the resume linked even when targetRole is blank: reuse an existing
+  // role title, then fall back to the resume name so company saves don't
+  // treat name-only applications as orphans.
+  const title =
+    app.targetRole?.trim() ||
+    existing?.title?.trim() ||
+    resume.name?.trim() ||
+    'Untitled role';
+
   if (existing) {
     return target.roles.map((role) =>
       role.resumeId === resume.id

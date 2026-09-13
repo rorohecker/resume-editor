@@ -73,13 +73,13 @@ export function pickReleaseHtmlAsset(
 export async function fetchLatestRelease(): Promise<ReleaseInfo | null> {
   if (typeof fetch === 'undefined') return null;
   try {
-    // Cache-bust so long-lived tabs don't keep a stale "latest" after a release.
+    // Cache-bust with a query param. Do not send Cache-Control — GitHub's CORS
+    // preflight rejects that request header and the check fails silently in browsers.
     const resp = await fetch(
       `https://api.github.com/repos/${__APP_REPO__}/releases/latest?_=${Date.now()}`,
       {
         headers: {
           Accept: 'application/vnd.github+json',
-          'Cache-Control': 'no-cache',
         },
       },
     );

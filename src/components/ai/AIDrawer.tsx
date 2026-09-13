@@ -732,9 +732,30 @@ export function AIDrawer() {
                     aria-label={t('ai.searchVerbs')}
                   />
                 </div>
+                {filteredVerbs.length > 1 && (
+                  <div
+                    className="mb-3 flex flex-wrap gap-1.5"
+                    role="navigation"
+                    aria-label={t('ai.jumpToVerbCategory', { defaultValue: 'Jump to verb category' })}
+                  >
+                    {filteredVerbs.map(({ category }) => (
+                      <button
+                        key={`jump-${category}`}
+                        type="button"
+                        className="rounded-md border border-paper-edge bg-paper px-2 py-0.5 text-[11px] font-medium text-ink-muted hover:border-ink-subtle hover:text-ink"
+                        onClick={() => {
+                          const el = document.getElementById(`verb-cat-${category}`);
+                          el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }}
+                      >
+                        {category}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <div className="space-y-4">
                   {filteredVerbs.map(({ category, verbs }) => (
-                    <div key={category}>
+                    <div key={category} id={`verb-cat-${category}`}>
                       <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
                         {category}
                       </h3>

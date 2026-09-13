@@ -79,6 +79,9 @@ export function EditorTopNav() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyVersion, setHistoryVersion] = useState(0);
   const [savedHint, setSavedHint] = useState('');
+  const [showDesktopChrome, setShowDesktopChrome] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(min-width: 768px)').matches : true,
+  );
   const persistError = useStore((s) => s.persistError);
   const [restoreCandidate, setRestoreCandidate] = useState<ReturnType<typeof listVersionSnapshots>[number] | null>(null);
   const snapshots = useMemo(
@@ -93,6 +96,14 @@ export function EditorTopNav() {
       window.setTimeout(() => setSavedHint(''), 1500);
     });
   }, [t]);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 768px)');
+    const update = () => setShowDesktopChrome(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
 
   if (!resume) return null;
 
@@ -426,10 +437,12 @@ export function EditorTopNav() {
         </button>
 
         <div className="mx-2 hidden h-6 w-px bg-paper-edge md:block" />
-        <div className="relative z-30 hidden items-center gap-1 isolate md:flex">
-          <AccentToggle compact />
-          <ThemeToggle compact />
-        </div>
+        {showDesktopChrome && (
+          <div className="flex items-center gap-1">
+            <AccentToggle compact />
+            <ThemeToggle compact />
+          </div>
+        )}
 
         <button
           type="button"
