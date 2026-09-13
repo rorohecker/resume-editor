@@ -33,5 +33,5 @@ export function ChromeMenuRoot({
     return () => window.removeEventListener(CHROME_MENU_OPEN, onPeerOpen);
   }, [menuId]);
 
-  return <div className={`relative z-20 ${className}`.trim()}>{children({ open, setOpen, menuId })}</div>;
+  return <div className={`relative ${className}`.trim()}>{children({ open, setOpen, menuId })}</div>;
 }

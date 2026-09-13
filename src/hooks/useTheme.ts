@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 
 export type Theme = 'light' | 'dark' | 'system';
 
@@ -21,15 +21,84 @@ function resolveTheme(theme: Theme): 'light' | 'dark' {
   return theme;
 }
 
-function apply(theme: 'light' | 'dark'): void {
+function apply(resolved: 'light' | 'dark'): void {
   const root = document.documentElement;
-  root.classList.toggle('dark', theme === 'dark');
-  root.style.colorScheme = theme;
+  root.classList.toggle('dark', resolved === 'dark');
+  root.style.colorScheme = resolved;
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', resolved === 'dark' ? '#18181b' : '#ffffff');
+}
+
+// Shared store so every ThemeToggle stays in sync and DOM updates once.
+let currentTheme: Theme = typeof window !== 'undefined' ? readStored() : 'system';
+let snapshotVersion = 0;
+const listeners = new Set<() => void>();
+
+function notify(): void {
+  snapshotVersion += 1;
+  for (const listener of listeners) listener();
+}
+
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+function getSnapshot(): number {
+  return snapshotVersion;
+}
+
+function getServerSnapshot(): number {
+  return 0;
+}
+
+function setTheme(next: Theme): void {
+  if (next === currentTheme) return;
+  currentTheme = next;
+  apply(resolveTheme(next));
+  try {
+    localStorage.setItem(STORAGE_KEY, next);
+  } catch {
+    // ignore
+  }
+  notify();
+}
+
+let systemMq: MediaQueryList | null = null;
+
+function onSystemPreferenceChange(): void {
+  if (currentTheme !== 'system') return;
+  apply(resolveTheme('system'));
+  notify();
+}
+
+function ensureSystemListener(): void {
+  if (systemMq) return;
+  systemMq = window.matchMedia('(prefers-color-scheme: dark)');
+  systemMq.addEventListener('change', onSystemPreferenceChange);
+}
+
+function removeSystemListener(): void {
+  systemMq?.removeEventListener('change', onSystemPreferenceChange);
+  systemMq = null;
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (event) => {
+    if (event.key !== STORAGE_KEY || !event.newValue) return;
+    const next = event.newValue;
+    if (next !== 'light' && next !== 'dark' && next !== 'system') return;
+    currentTheme = next;
+    apply(resolveTheme(next));
+    notify();
+  });
 }
 
 // Called from main.tsx before React mounts so users don't see a flash.
 export function applyStoredTheme(): void {
-  apply(resolveTheme(readStored()));
+  currentTheme = readStored();
+  apply(resolveTheme(currentTheme));
+  if (currentTheme === 'system') ensureSystemListener();
 }
 
 export function useTheme(): {
@@ -37,31 +106,20 @@ export function useTheme(): {
   resolved: 'light' | 'dark';
   setTheme: (next: Theme) => void;
 } {
-  const [theme, setThemeState] = useState<Theme>(() => readStored());
-  const [resolved, setResolved] = useState<'light' | 'dark'>(() => resolveTheme(readStored()));
+  useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  const theme = currentTheme;
 
   useEffect(() => {
-    const r = resolveTheme(theme);
-    setResolved(r);
-    apply(r);
-    try {
-      localStorage.setItem(STORAGE_KEY, theme);
-    } catch {
-      // ignore
+    if (theme === 'system') {
+      ensureSystemListener();
+      return removeSystemListener;
     }
+    removeSystemListener();
   }, [theme]);
 
-  useEffect(() => {
-    if (theme !== 'system') return;
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const handler = () => {
-      const r = resolveTheme('system');
-      setResolved(r);
-      apply(r);
-    };
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
-  }, [theme]);
-
-  return { theme, resolved, setTheme: setThemeState };
+  return {
+    theme,
+    resolved: resolveTheme(theme),
+    setTheme,
+  };
 }
