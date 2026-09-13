@@ -480,6 +480,7 @@ export default {
     openCoverLetter: 'Open the cover letter editor →',
     verbBank: 'Action Verb Bank',
     searchVerbs: 'Search verbs',
+    jumpToVerbCategory: 'Jump to verb category',
     settingsTitle: 'BYOK Settings',
     securityWarning: 'Heads up: your API key is stored only in this browser. Do not use on a shared computer. Provider account limits, free quotas, and billing belong entirely to you.',
     provider: 'Provider',

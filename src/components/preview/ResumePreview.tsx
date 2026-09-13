@@ -175,7 +175,9 @@ function AnonymizeBadge({ label }: { label: string }) {
 }
 
 function pinchDistance(event: TouchEvent): number {
-  const [a, b] = [event.touches[0], event.touches[1]];
+  const a = event.touches[0];
+  const b = event.touches[1];
+  if (!a || !b) return 0;
   const dx = a.clientX - b.clientX;
   const dy = a.clientY - b.clientY;
   return Math.hypot(dx, dy);

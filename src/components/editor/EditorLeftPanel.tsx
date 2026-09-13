@@ -284,6 +284,7 @@ export function EditorLeftPanel() {
           <AppearanceControls resume={resume} updateResume={updateCurrentResume} />
 
           <SortableList
+            dndId="editor-sections"
             items={sections}
             onReorder={reorderSections}
             className="flex flex-col gap-2"
@@ -440,7 +441,12 @@ function HeaderEditor({
 
           {!canAdd && <InlineWarning>{t('editor.maxContactsReached')}</InlineWarning>}
 
-          <SortableList items={fields} onReorder={reorderContacts} className="space-y-2">
+          <SortableList
+            dndId="editor-contacts"
+            items={fields}
+            onReorder={reorderContacts}
+            className="space-y-2"
+          >
             {(field, dragHandle) => (
               <ContactFieldEditor
                 field={field}
@@ -857,30 +863,60 @@ function SectionEditor({
   const [open, setOpen] = useState(section.entries.length === 0);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // When the preview asks us to focus this section, expand it and pin its
-  // header to the top of the sidebar so close/collapse stays reachable.
+  // When the preview asks us to focus this section (or a category inside it),
+  // expand it and pin its header to the top of the sidebar so close/collapse
+  // stays reachable. AccordionShell claims sticky whenever `open` flips true.
   const focusedSectionId = useStore((s) => s.focusedSectionId);
+  const focusedEntryId = useStore((s) => s.focusedEntryId);
   const focusedSectionToken = useStore((s) => s.focusedSectionToken);
   useEffect(() => {
     if (focusedSectionId !== section.id) return;
     setOpen(true);
+    let cancelled = false;
+    let rafOuter = 0;
+    let rafInner = 0;
+    // Wait for accordion content + mobile edit-tab unhide (`display:none` →
+    // visible) before measuring. Double rAF after a short delay settles layout.
     const timer = window.setTimeout(() => {
-      const root = containerRef.current;
-      if (!root) return;
-      const scrollParent = findScrollParent(root);
-      if (!scrollParent) {
-        root.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        return;
-      }
-      const parentTop = scrollParent.getBoundingClientRect().top;
-      const headerTop = root.getBoundingClientRect().top;
-      scrollParent.scrollTo({
-        top: scrollParent.scrollTop + (headerTop - parentTop),
-        behavior: 'smooth',
+      rafOuter = window.requestAnimationFrame(() => {
+        rafInner = window.requestAnimationFrame(() => {
+          if (cancelled) return;
+          const root = containerRef.current;
+          if (!root) return;
+
+          const entryEl =
+            focusedEntryId != null
+              ? root.querySelector<HTMLElement>(
+                  `[data-entry-id="${escapeCssAttr(focusedEntryId)}"]`,
+                )
+              : null;
+          const target = entryEl ?? root;
+          const scrollParent = findScrollParent(root);
+          if (!scrollParent) {
+            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          } else {
+            const parentTop = scrollParent.getBoundingClientRect().top;
+            const targetTop = target.getBoundingClientRect().top;
+            scrollParent.scrollTo({
+              top: scrollParent.scrollTop + (targetTop - parentTop),
+              behavior: 'smooth',
+            });
+          }
+
+          const focusInput = entryEl?.querySelector<HTMLInputElement | HTMLTextAreaElement>(
+            'input, textarea',
+          );
+          focusInput?.focus({ preventScroll: true });
+        });
       });
-    }, 50);
-    return () => window.clearTimeout(timer);
-  }, [focusedSectionId, focusedSectionToken, section.id]);
+    }, 80);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      window.cancelAnimationFrame(rafOuter);
+      window.cancelAnimationFrame(rafInner);
+    };
+  }, [focusedSectionId, focusedEntryId, focusedSectionToken, section.id]);
 
   const patchSection = (patch: Partial<Section>) => {
     updateResume((current) => ({
@@ -970,6 +1006,7 @@ function SectionEditor({
         })}
         open={open}
         onOpenChange={setOpen}
+        forceStickyToken={focusedSectionId === section.id ? focusedSectionToken : 0}
         leading={dragHandle}
         actions={
           <>
@@ -1145,7 +1182,12 @@ function EntryListEditor({
         <p className="text-xs text-ink-subtle">{t('editor.noEntries', { add: labels.add })}</p>
       )}
 
-      <SortableList items={section.entries} onReorder={onReorder} className="space-y-3">
+      <SortableList
+        dndId={`entries-${section.id}`}
+        items={section.entries}
+        onReorder={onReorder}
+        className="space-y-3"
+      >
         {(entry, dragHandle) => (
           <EntryEditor
             section={section}
@@ -1243,7 +1285,10 @@ function EntryEditor({
 
   const hidden = entry.visible === false;
   return (
-    <div className={`rounded-md border border-paper-edge bg-paper px-3 py-3 ${hidden ? 'opacity-60' : ''}`}>
+    <div
+      data-entry-id={entry.id}
+      className={`rounded-md border border-paper-edge bg-paper px-3 py-3 ${hidden ? 'opacity-60' : ''}`}
+    >
       <div className="mb-3 flex items-center gap-2">
         {dragHandle}
         <div className="flex-1 text-xs font-semibold text-ink-muted">
@@ -1459,6 +1504,7 @@ function EntryEditor({
           <BulletEditor
             bullets={entry.bullets ?? []}
             onChange={(bullets) => onUpdate({ bullets })}
+            dndId={`bullets-${entry.id}`}
           />
         )}
       </div>
@@ -1498,11 +1544,19 @@ function SkillsEditor({
         </p>
       )}
 
-      <SortableList items={section.entries} onReorder={onReorder} className="space-y-3">
+      <SortableList
+        dndId={`skills-${section.id}`}
+        items={section.entries}
+        onReorder={onReorder}
+        className="space-y-3"
+      >
         {(entry, dragHandle) => {
           const hidden = entry.visible === false;
           return (
-          <div className={`rounded-md border border-paper-edge bg-paper px-3 py-3 ${hidden ? 'opacity-60' : ''}`}>
+          <div
+            data-entry-id={entry.id}
+            className={`rounded-md border border-paper-edge bg-paper px-3 py-3 ${hidden ? 'opacity-60' : ''}`}
+          >
             <div className="mb-2 flex items-center gap-2">
               {dragHandle}
               <input
@@ -1641,6 +1695,7 @@ function BulletListEditor({
           entries: [{ ...entry, bullets: nextBullets }],
         })
       }
+      dndId={`bullets-${section.id}`}
     />
   );
 }
@@ -1648,9 +1703,11 @@ function BulletListEditor({
 function BulletEditor({
   bullets,
   onChange,
+  dndId,
 }: {
   bullets: Bullet[];
   onChange: (bullets: Bullet[]) => void;
+  dndId?: string;
 }) {
   const { t } = useTranslation();
   const ordered = [...bullets].sort((a, b) => a.order - b.order);
@@ -1703,7 +1760,12 @@ function BulletEditor({
         </InlineWarning>
       )}
 
-      <SortableList items={ordered} onReorder={reorderBullets} className="space-y-2">
+      <SortableList
+        dndId={dndId ?? 'bullets'}
+        items={ordered}
+        onReorder={reorderBullets}
+        className="space-y-2"
+      >
         {(bullet, handle) => {
           const analysis = analyzeSingleBullet(bullet.content);
           const len = plainTextLen(bullet.content);
@@ -1817,6 +1879,13 @@ function findScrollParent(el: HTMLElement): HTMLElement | null {
   return null;
 }
 
+function escapeCssAttr(value: string): string {
+  if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+    return CSS.escape(value);
+  }
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
 // Only one open accordion keeps a sticky header so multiple sections don't stack.
 let stickyAccordionId: string | null = null;
 const stickyAccordionListeners = new Set<() => void>();
@@ -1846,6 +1915,7 @@ function AccordionShell({
   leading,
   actions,
   children,
+  forceStickyToken = 0,
 }: {
   title: ReactNode;
   toggleLabel?: string;
@@ -1854,6 +1924,8 @@ function AccordionShell({
   leading: ReactNode;
   actions?: ReactNode;
   children: ReactNode;
+  /** Bumped when preview jump targets this accordion — reclaim sticky each jump. */
+  forceStickyToken?: number;
 }) {
   const accordionId = useId();
   const stickyId = useSyncExternalStore(
@@ -1867,6 +1939,9 @@ function AccordionShell({
   const pendingCloseTop = useRef<number | null>(null);
   // After expand, pin the header to the top of the sidebar for easy closure.
   const pendingOpenPin = useRef(false);
+  // Track prior open so external opens (preview jump → parent setOpen(true))
+  // still claim sticky ownership — chevron path goes through setOpen below.
+  const wasOpenRef = useRef(open);
 
   const setOpen = (next: boolean) => {
     const root = rootRef.current;
@@ -1889,6 +1964,15 @@ function AccordionShell({
   };
 
   useLayoutEffect(() => {
+    const becameOpen = open && !wasOpenRef.current;
+    wasOpenRef.current = open;
+    // Preview click-to-jump flips `open` via the parent without calling setOpen
+    // above — claim sticky so the header stays pinned while editing categories.
+    if (becameOpen || (forceStickyToken > 0 && open)) {
+      setStickyAccordionId(accordionId);
+      if (becameOpen) pendingOpenPin.current = true;
+    }
+
     const root = rootRef.current;
     if (!root) return;
     const scrollParent = findScrollParent(root);
@@ -1911,13 +1995,19 @@ function AccordionShell({
       const headerTop = root.getBoundingClientRect().top;
       scrollParent.scrollTop += headerTop - parentTop;
     }
-  }, [open]);
+  }, [open, accordionId, forceStickyToken]);
 
   useEffect(() => {
     if (!open && stickyAccordionId === accordionId) {
       setStickyAccordionId(null);
     }
   }, [open, accordionId]);
+
+  useEffect(() => {
+    return () => {
+      if (stickyAccordionId === accordionId) setStickyAccordionId(null);
+    };
+  }, [accordionId]);
 
   return (
     <div ref={rootRef} className="rounded-md border border-paper-edge bg-paper">

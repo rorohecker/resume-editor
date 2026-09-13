@@ -371,14 +371,14 @@ const SectionBlock = memo(function SectionBlockInner({
           interactive={interactive}
         />
       )}
-      <div>{renderSectionContent(section, resume)}</div>
+      <div>{renderSectionContent(section, resume, interactive)}</div>
     </section>
   );
 });
 
-function renderSectionContent(section: Section, resume: Resume) {
+function renderSectionContent(section: Section, resume: Resume, interactive: boolean) {
   if (section.type === 'skills' || section.layout === 'skills-grid') {
-    return <SkillsSection section={section} resume={resume} />;
+    return <SkillsSection section={section} resume={resume} interactive={interactive} />;
   }
   if (section.type === 'summary' || section.layout === 'text-block') {
     return <TextSection section={section} />;
@@ -394,18 +394,55 @@ function renderSectionContent(section: Section, resume: Resume) {
     ));
 }
 
-function SkillsSection({ section, resume }: { section: Section; resume: Resume }) {
+function SkillsSection({
+  section,
+  resume,
+  interactive,
+}: {
+  section: Section;
+  resume: Resume;
+  interactive: boolean;
+}) {
+  const focusSection = useStore((s) => s.focusSection);
   return (
     <div>
-      {section.entries.filter(entryHasContent).map((entry, index) => (
-        <div
-          key={entry.id}
-          style={{ marginTop: index === 0 ? 0 : pt(Math.max(1, resume.styles.spacing.entry / 2)) }}
-        >
-          <span style={{ fontWeight: 700 }}>{entry.title || 'Skills'}: </span>
-          <span>{entry.subtitle}</span>
-        </div>
-      ))}
+      {section.entries.filter(entryHasContent).map((entry, index) => {
+        const body = (
+          <>
+            <span style={{ fontWeight: 700 }}>{entry.title || 'Skills'}: </span>
+            <span>{entry.subtitle}</span>
+          </>
+        );
+        const style = {
+          marginTop: index === 0 ? 0 : pt(Math.max(1, resume.styles.spacing.entry / 2)),
+        } as const;
+        if (!interactive) {
+          return (
+            <div key={entry.id} style={style}>
+              {body}
+            </div>
+          );
+        }
+        return (
+          <button
+            key={entry.id}
+            type="button"
+            onClick={() => focusSection(section.id, entry.id)}
+            title="Click to edit this category"
+            className="-mx-1 block w-full rounded-sm px-1 text-left transition-colors hover:bg-paper-tint"
+            style={{
+              ...style,
+              cursor: 'pointer',
+              background: 'transparent',
+              border: 'none',
+              font: 'inherit',
+              color: 'inherit',
+            }}
+          >
+            {body}
+          </button>
+        );
+      })}
     </div>
   );
 }

@@ -482,6 +482,7 @@ export default {
     openCoverLetter: 'Abrir el editor de carta de presentación →',
     verbBank: 'Banco de verbos de acción',
     searchVerbs: 'Buscar verbos',
+    jumpToVerbCategory: 'Ir a categoría de verbos',
     settingsTitle: 'Ajustes de BYOK',
     securityWarning: 'Aviso: tu clave API se guarda solo en este navegador. No la uses en un ordenador compartido. Los límites de cuenta, cuotas gratuitas y facturación del proveedor son tu responsabilidad.',
     provider: 'Proveedor',
