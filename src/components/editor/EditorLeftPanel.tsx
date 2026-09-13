@@ -46,6 +46,7 @@ import { iconForContactType } from '@/utils/contactIcon';
 import { makeId } from '@/utils/id';
 import { SUMMARY_PRESETS } from '@/utils/summaryPresets';
 import { contrastRatio, estimatePageStats, isDarkProfessionalColor } from '@/utils/styleChecks';
+import { headerAlignFor } from '@/utils/templateFeatures';
 
 type ResumeUpdater = (
   updater: (resume: Resume) => Resume,
@@ -427,6 +428,25 @@ function HeaderEditor({
               }))
             }
             className="w-full accent-ink"
+          />
+        </Field>
+
+        <Field label={t('editor.nameAlignment')}>
+          <SegmentedToggle
+            value={headerAlignFor(resume)}
+            options={[
+              { value: 'left', label: t('editor.nameAlignLeft') },
+              { value: 'center', label: t('editor.nameAlignCenter') },
+            ]}
+            onChange={(value) =>
+              updateResume((current) => ({
+                ...current,
+                styles: {
+                  ...current.styles,
+                  headerAlign: value as 'left' | 'center',
+                },
+              }))
+            }
           />
         </Field>
 

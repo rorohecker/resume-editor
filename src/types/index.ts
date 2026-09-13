@@ -184,6 +184,8 @@ export interface ResumeStyles {
   // Symbol used for unordered list items. Defaults to 'disc' (•). 'none' hides
   // the marker so users who write run-on bullets aren't forced into list mode.
   bulletStyle?: BulletGlyph;
+  /** User override for name + contact line alignment. Falls back to template default. */
+  headerAlign?: 'left' | 'center';
 }
 
 export type ApplicationStatus =
