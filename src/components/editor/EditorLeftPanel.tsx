@@ -213,6 +213,15 @@ export function EditorLeftPanel() {
     }));
   };
 
+  const quickAddOrFocus = (type: SectionType) => {
+    const existing = sections.find((section) => section.type === type);
+    if (existing) {
+      useStore.getState().focusSection(existing.id);
+      return;
+    }
+    addSection(type);
+  };
+
   const reorderSections = (nextOrder: Section[]) => {
     updateCurrentResume((current) => ({
       ...current,
@@ -252,18 +261,31 @@ export function EditorLeftPanel() {
           <span className="mr-1 text-[11px] font-semibold uppercase tracking-wide text-ink-subtle">
             {t('editor.quickAdd')}
           </span>
-          {QUICK_SECTION_TYPES.map((type) => (
-            <button
-              key={type}
-              type="button"
-              className="rounded-md border border-paper-edge bg-paper px-2 py-1 text-[11px] font-medium text-ink-muted hover:border-ink-subtle hover:bg-paper-tint hover:text-ink"
-              onClick={() => addSection(type)}
-            >
-              {sectionTypeLabel(type, t)}
-            </button>
-          ))}
+          {QUICK_SECTION_TYPES.map((type) => {
+            const exists = sections.some((section) => section.type === type);
+            return (
+              <button
+                key={type}
+                type="button"
+                className="rounded-md border border-paper-edge bg-paper px-2 py-1 text-[11px] font-medium text-ink-muted hover:border-ink-subtle hover:bg-paper-tint hover:text-ink"
+                onClick={() => quickAddOrFocus(type)}
+                title={
+                  exists
+                    ? t('editor.jumpToSection', {
+                        title: sectionTypeLabel(type, t),
+                        defaultValue: 'Jump to {{title}}',
+                      })
+                    : t('editor.addSectionType', {
+                        title: sectionTypeLabel(type, t),
+                        defaultValue: 'Add {{title}}',
+                      })
+                }
+              >
+                {sectionTypeLabel(type, t)}
+              </button>
+            );
+          })}
         </div>
-
         {sections.length > 8 && (
           <InlineWarning>
             {t('editor.tooManySections', { count: sections.length })}

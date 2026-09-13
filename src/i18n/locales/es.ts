@@ -240,6 +240,8 @@ export default {
     untitledSection: 'Sección sin título',
     toggleSection: 'Alternar {{title}}',
     quickAdd: 'Añadir rápido',
+    jumpToSection: 'Ir a {{title}}',
+    addSectionType: 'Añadir {{title}}',
     sectionName: 'Nombre de sección',
     sectionTypeLabel: 'Tipo',
     layout: 'Diseño',

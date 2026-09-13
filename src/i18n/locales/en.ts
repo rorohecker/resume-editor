@@ -238,6 +238,8 @@ export default {
     untitledSection: 'Untitled Section',
     toggleSection: 'Toggle {{title}}',
     quickAdd: 'Quick add',
+    jumpToSection: 'Jump to {{title}}',
+    addSectionType: 'Add {{title}}',
     sectionName: 'Section name',
     sectionTypeLabel: 'Type',
     layout: 'Layout',
