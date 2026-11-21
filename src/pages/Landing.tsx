@@ -197,11 +197,13 @@ export function LandingPage() {
             </div>
             <span className="font-semibold tracking-tight">{t('app.name')}</span>
           </div>
-          <div className="relative flex flex-wrap items-center justify-end gap-2">
+          <div className="relative z-20 flex flex-wrap items-center justify-end gap-2">
             <LocaleToggle />
             <InstallAppButton compact />
-            <AccentToggle compact />
-            <ThemeToggle compact />
+            <div className="flex items-center gap-1.5">
+              <AccentToggle compact />
+              <ThemeToggle compact />
+            </div>
             <TutorialButton />
             <button className="btn-secondary" type="button" onClick={() => setImportOpen(true)}>
               <Upload size={16} />
@@ -406,21 +408,25 @@ export function LandingPage() {
               key={tpl.id}
               type="button"
               onClick={() => handleStart(tpl.id)}
-              className="group flex flex-col rounded-lg border border-paper-edge bg-paper text-left shadow-sm transition-shadow hover:shadow-page focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              className="group flex flex-col overflow-hidden rounded-lg border border-paper-edge bg-paper text-left shadow-sm transition-shadow hover:shadow-page focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
-              <div className="flex aspect-[8.5/11] items-center justify-center rounded-t-lg border-b border-paper-edge bg-paper-tint">
+              <div className="relative aspect-[8.5/11] w-full overflow-hidden border-b border-paper-edge bg-white">
                 {tpl.id === 'blank' ? (
-                  <Plus size={36} className="text-ink-subtle" />
+                  <div className="flex h-full items-center justify-center bg-paper-tint">
+                    <Plus size={36} className="text-ink-subtle" />
+                  </div>
                 ) : (
                   <LiveTemplateThumbnail templateId={tpl.id} />
                 )}
               </div>
-              <div className="flex flex-1 flex-col p-4">
-                <div className="flex items-center justify-between">
+              <div className="flex flex-1 flex-col gap-1 p-4">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
                   <h3 className="font-semibold text-ink">{t(`templates.${tpl.id}.name`)}</h3>
                   <span className="text-xs text-ink-subtle">{t(`templates.${tpl.id}.tagline`)}</span>
                 </div>
-                <p className="mt-1 text-sm text-ink-muted">{t(`templates.${tpl.id}.description`)}</p>
+                <p className="text-sm leading-snug text-ink-muted">
+                  {t(`templates.${tpl.id}.description`)}
+                </p>
               </div>
             </button>
           ))}

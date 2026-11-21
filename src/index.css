@@ -136,19 +136,20 @@
     --c-warn: 251 191 36;
   }
 
-  /* Cosmic — neon cyan and violet on a deep-space glass surface. The subtle
-     grid and star drift borrow from modern cyberpunk/glassmorphism consoles. */
+  /* Cosmic — starfield canvas is always dark, so chrome tokens stay on the
+     dark palette in both light and dark mode (light cards on a night sky made
+     page titles unreadable). */
   .accent-cosmic {
-    --c-ink: 35 25 72;
-    --c-ink-soft: 49 36 91;
-    --c-ink-muted: 89 76 128;
-    --c-ink-subtle: 132 117 164;
-    --c-paper: 250 249 255;
-    --c-paper-tint: 241 238 255;
-    --c-paper-edge: 205 194 239;
-    --c-accent: 109 40 217;
-    --c-accent-hover: 76 29 149;
-    --c-ok: 8 145 178;
+    --c-ink: 241 245 255;
+    --c-ink-soft: 219 225 250;
+    --c-ink-muted: 166 174 216;
+    --c-ink-subtle: 132 140 190;
+    --c-paper: 22 16 48;
+    --c-paper-tint: 16 12 40;
+    --c-paper-edge: 59 45 104;
+    --c-accent: 34 211 238;
+    --c-accent-hover: 103 232 249;
+    --c-ok: 52 211 153;
   }
   .accent-cosmic.dark {
     --c-ink: 241 245 255;
@@ -161,139 +162,6 @@
     --c-accent: 34 211 238;
     --c-accent-hover: 103 232 249;
     --c-ok: 52 211 153;
-  }
-
-  html.accent-sakura body,
-  html.accent-sunset body {
-    background-attachment: fixed;
-    background-size: 180% 180%;
-    animation: atmosphere-drift 18s ease-in-out infinite alternate;
-  }
-  html.accent-sakura body {
-    background-image:
-      radial-gradient(circle at 12% 18%, rgb(244 114 182 / 0.28), transparent 34%),
-      radial-gradient(circle at 88% 78%, rgb(52 211 153 / 0.18), transparent 30%),
-      linear-gradient(145deg, rgb(255 247 251), rgb(255 237 246) 52%, rgb(240 253 250));
-  }
-  html.accent-sakura.dark body {
-    background-image:
-      radial-gradient(circle at 12% 18%, rgb(255 34 137 / 0.2), transparent 35%),
-      radial-gradient(circle at 88% 78%, rgb(0 255 136 / 0.1), transparent 30%),
-      linear-gradient(145deg, rgb(19 13 26), rgb(45 20 42) 55%, rgb(14 35 34));
-  }
-  html.accent-sunset body {
-    background-image:
-      radial-gradient(circle at 15% 85%, rgb(251 146 60 / 0.3), transparent 35%),
-      radial-gradient(circle at 85% 10%, rgb(251 191 36 / 0.24), transparent 30%),
-      linear-gradient(145deg, rgb(255 247 237), rgb(255 228 196) 50%, rgb(253 230 240));
-  }
-  html.accent-sunset.dark body {
-    background-image:
-      radial-gradient(circle at 15% 85%, rgb(249 115 22 / 0.2), transparent 38%),
-      radial-gradient(circle at 85% 10%, rgb(251 191 36 / 0.13), transparent 30%),
-      linear-gradient(145deg, rgb(21 8 16), rgb(68 25 38) 52%, rgb(55 30 20));
-  }
-  /* Cosmic atmosphere comes from the pixel canvas. Keep the body dark so
-     stars/UFOs stay readable in both light and dark chrome modes. */
-  html.accent-cosmic body {
-    background-color: #07051a;
-    background-image: none;
-    animation: none;
-  }
-  html.accent-cosmic.dark body {
-    background-color: #05040f;
-    background-image: none;
-  }
-
-  html.accent-sakura body::before,
-  html.accent-sunset body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    z-index: 0;
-    pointer-events: none;
-    opacity: 0.45;
-    will-change: transform, background-position;
-  }
-  html.accent-sakura body::before {
-    background-image:
-      radial-gradient(ellipse at center, rgb(255 255 255 / 0.9) 0 2px, transparent 3px),
-      radial-gradient(ellipse at center, rgb(244 114 182 / 0.55) 0 3px, transparent 4px);
-    background-position: 0 0, 40px 55px;
-    background-size: 96px 110px, 140px 160px;
-    animation: petals-fall 24s linear infinite;
-  }
-  html.accent-sunset body::before {
-    background: linear-gradient(
-      105deg,
-      transparent 20%,
-      rgb(255 255 255 / 0.18) 42%,
-      rgb(251 191 36 / 0.18) 50%,
-      transparent 72%
-    );
-    transform: translateX(-55%);
-    animation: sunset-light-leak 12s ease-in-out infinite;
-  }
-  /* Cosmic pixel art is drawn by CosmicBackground on a canvas behind #root. */
-
-  html.accent-sakura #root,
-  html.accent-sunset #root,
-  html.accent-cosmic #root {
-    position: relative;
-    z-index: 1;
-    background: transparent;
-  }
-  /* Match nested pages too — Router wraps routes, so #root > .bg-paper-tint never hits. */
-  html.accent-sakura .bg-paper-tint,
-  html.accent-sunset .bg-paper-tint,
-  html.accent-cosmic .bg-paper-tint {
-    background-color: transparent;
-  }
-  html.accent-sakura .bg-paper,
-  html.accent-sunset .bg-paper,
-  html.accent-cosmic .bg-paper {
-    background-color: rgb(var(--c-paper) / 0.88);
-    backdrop-filter: blur(14px) saturate(125%);
-  }
-  html.accent-sakura .shadow-page {
-    box-shadow: 0 18px 48px rgb(219 39 119 / 0.12);
-  }
-  html.accent-sunset .shadow-page {
-    box-shadow: 0 18px 48px rgb(234 88 12 / 0.14);
-  }
-  html.accent-cosmic .shadow-page {
-    box-shadow:
-      0 18px 52px rgb(109 40 217 / 0.17),
-      0 0 0 1px rgb(34 211 238 / 0.12);
-  }
-  html.accent-cosmic .btn-primary {
-    image-rendering: pixelated;
-    box-shadow: 0 0 0 1px rgb(34 211 238 / 0.25), 0 8px 24px rgb(109 40 217 / 0.25);
-  }
-  html.accent-cosmic.dark .btn-primary {
-    box-shadow: 0 0 0 1px rgb(34 211 238 / 0.35), 0 0 18px rgb(34 211 238 / 0.2);
-  }
-
-  @keyframes atmosphere-drift {
-    from { background-position: 0% 20%; }
-    to { background-position: 100% 80%; }
-  }
-  @keyframes petals-fall {
-    from { background-position: 0 -180px, 40px -260px; transform: translateX(-18px); }
-    to { background-position: 90px 900px, -30px 1100px; transform: translateX(24px); }
-  }
-  @keyframes sunset-light-leak {
-    0%, 100% { transform: translateX(-65%) skewX(-8deg); opacity: 0.18; }
-    50% { transform: translateX(65%) skewX(-8deg); opacity: 0.5; }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    html.accent-sakura body,
-    html.accent-sunset body,
-    html.accent-cosmic body,
-    html.accent-sakura body::before,
-    html.accent-sunset body::before {
-      animation: none !important;
-    }
   }
 
   html,
@@ -313,6 +181,142 @@
   .resume-preview-root * {
     letter-spacing: normal;
     font-feature-settings: normal;
+  }
+}
+
+/* Atmosphere chrome — intentionally UNLAYERED so these beat Tailwind's
+   `@layer utilities` (bg-paper / bg-paper-tint). Rules inside `@layer base`
+   lost to utilities, which made Sakura/Sunset look like plain white in light
+   mode even though the accent tokens were set. */
+html.accent-sakura body,
+html.accent-sunset body {
+  background-attachment: fixed;
+  background-size: 180% 180%;
+  animation: atmosphere-drift 18s ease-in-out infinite alternate;
+}
+html.accent-sakura body {
+  background-image:
+    radial-gradient(circle at 12% 18%, rgb(244 114 182 / 0.34), transparent 36%),
+    radial-gradient(circle at 88% 78%, rgb(52 211 153 / 0.22), transparent 32%),
+    linear-gradient(145deg, rgb(255 241 248), rgb(255 228 240) 52%, rgb(232 252 245));
+}
+html.accent-sakura.dark body {
+  background-image:
+    radial-gradient(circle at 12% 18%, rgb(255 34 137 / 0.2), transparent 35%),
+    radial-gradient(circle at 88% 78%, rgb(0 255 136 / 0.1), transparent 30%),
+    linear-gradient(145deg, rgb(19 13 26), rgb(45 20 42) 55%, rgb(14 35 34));
+}
+html.accent-sunset body {
+  background-image:
+    radial-gradient(circle at 15% 85%, rgb(251 146 60 / 0.36), transparent 36%),
+    radial-gradient(circle at 85% 10%, rgb(251 191 36 / 0.28), transparent 32%),
+    linear-gradient(145deg, rgb(255 244 230), rgb(255 220 184) 50%, rgb(255 228 235));
+}
+html.accent-sunset.dark body {
+  background-image:
+    radial-gradient(circle at 15% 85%, rgb(249 115 22 / 0.2), transparent 38%),
+    radial-gradient(circle at 85% 10%, rgb(251 191 36 / 0.13), transparent 30%),
+    linear-gradient(145deg, rgb(21 8 16), rgb(68 25 38) 52%, rgb(55 30 20));
+}
+/* Cosmic atmosphere comes from the pixel canvas. Keep the body dark so
+   stars/UFOs stay readable in both light and dark chrome modes. */
+html.accent-cosmic body {
+  background-color: #07051a;
+  background-image: none;
+  animation: none;
+}
+html.accent-cosmic.dark body {
+  background-color: #05040f;
+  background-image: none;
+}
+
+html.accent-sakura body::before,
+html.accent-sunset body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  will-change: transform, background-position;
+}
+html.accent-sakura body::before {
+  background-image:
+    radial-gradient(ellipse at center, rgb(255 255 255 / 0.9) 0 2px, transparent 3px),
+    radial-gradient(ellipse at center, rgb(244 114 182 / 0.55) 0 3px, transparent 4px);
+  background-position: 0 0, 40px 55px;
+  background-size: 96px 110px, 140px 160px;
+  animation: petals-fall 24s linear infinite;
+}
+html.accent-sunset body::before {
+  background: linear-gradient(
+    105deg,
+    transparent 20%,
+    rgb(255 255 255 / 0.18) 42%,
+    rgb(251 191 36 / 0.18) 50%,
+    transparent 72%
+  );
+  transform: translateX(-55%);
+  animation: sunset-light-leak 12s ease-in-out infinite;
+}
+
+html.accent-sakura #root,
+html.accent-sunset #root,
+html.accent-cosmic #root {
+  position: relative;
+  z-index: 1;
+  background: transparent;
+}
+/* Beat Tailwind bg-* utilities so atmosphere shows through page shells. */
+html.accent-sakura .bg-paper-tint,
+html.accent-sunset .bg-paper-tint,
+html.accent-cosmic .bg-paper-tint {
+  background-color: transparent;
+}
+html.accent-sakura .bg-paper,
+html.accent-sunset .bg-paper,
+html.accent-cosmic .bg-paper {
+  background-color: rgb(var(--c-paper) / 0.88);
+  backdrop-filter: blur(14px) saturate(125%);
+}
+html.accent-sakura .shadow-page {
+  box-shadow: 0 18px 48px rgb(219 39 119 / 0.12);
+}
+html.accent-sunset .shadow-page {
+  box-shadow: 0 18px 48px rgb(234 88 12 / 0.14);
+}
+html.accent-cosmic .shadow-page {
+  box-shadow:
+    0 18px 52px rgb(109 40 217 / 0.17),
+    0 0 0 1px rgb(34 211 238 / 0.12);
+}
+html.accent-cosmic .btn-primary {
+  image-rendering: pixelated;
+  box-shadow: 0 0 0 1px rgb(34 211 238 / 0.25), 0 8px 24px rgb(109 40 217 / 0.25);
+}
+html.accent-cosmic.dark .btn-primary {
+  box-shadow: 0 0 0 1px rgb(34 211 238 / 0.35), 0 0 18px rgb(34 211 238 / 0.2);
+}
+
+@keyframes atmosphere-drift {
+  from { background-position: 0% 20%; }
+  to { background-position: 100% 80%; }
+}
+@keyframes petals-fall {
+  from { background-position: 0 -180px, 40px -260px; transform: translateX(-18px); }
+  to { background-position: 90px 900px, -30px 1100px; transform: translateX(24px); }
+}
+@keyframes sunset-light-leak {
+  0%, 100% { transform: translateX(-65%) skewX(-8deg); opacity: 0.18; }
+  50% { transform: translateX(65%) skewX(-8deg); opacity: 0.5; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html.accent-sakura body,
+  html.accent-sunset body,
+  html.accent-cosmic body,
+  html.accent-sakura body::before,
+  html.accent-sunset body::before {
+    animation: none !important;
   }
 }
 

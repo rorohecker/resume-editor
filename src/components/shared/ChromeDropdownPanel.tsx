@@ -1,16 +1,17 @@
 import { type CSSProperties, type ReactNode, type RefObject, useLayoutEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-type Placement = 'down' | 'up';
+type Placement = 'down' | 'up' | 'auto';
 
 /**
  * Renders a dropdown in a portal so parent overflow/stacking contexts
  * cannot clip or bury chrome menus (theme, locale, accent pickers).
+ * Positions against the viewport and flips when there isn't enough room.
  */
 export function ChromeDropdownPanel({
   anchorRef,
   open,
-  placement = 'down',
+  placement = 'auto',
   width = 288,
   className = '',
   children,
@@ -35,18 +36,41 @@ export function ChromeDropdownPanel({
       const anchor = anchorRef.current;
       if (!anchor) return;
       const rect = anchor.getBoundingClientRect();
-      const left = Math.min(Math.max(8, rect.right - width), window.innerWidth - width - 8);
+      const gap = 8;
+      const viewportPad = 8;
+      const estimatedHeight = Math.min(420, window.innerHeight - viewportPad * 2);
+      const spaceBelow = window.innerHeight - rect.bottom - gap - viewportPad;
+      const spaceAbove = rect.top - gap - viewportPad;
+
+      let place: 'down' | 'up' = placement === 'up' ? 'up' : 'down';
+      if (placement === 'auto') {
+        place = spaceBelow >= Math.min(estimatedHeight, 240) || spaceBelow >= spaceAbove ? 'down' : 'up';
+      } else if (placement === 'down' && spaceBelow < 160 && spaceAbove > spaceBelow) {
+        place = 'up';
+      } else if (placement === 'up' && spaceAbove < 160 && spaceBelow > spaceAbove) {
+        place = 'down';
+      }
+
+      // Prefer aligning to the anchor's right edge so the menu doesn't cover
+      // sibling controls (theme toggle) that sit immediately to the right.
+      const left = Math.min(
+        Math.max(viewportPad, rect.right - width),
+        window.innerWidth - width - viewportPad,
+      );
+
       const next: CSSProperties = {
         position: 'fixed',
         left,
         width,
-        zIndex: 300,
+        zIndex: 400,
         visibility: 'visible',
+        maxHeight: place === 'down' ? Math.max(160, spaceBelow) : Math.max(160, spaceAbove),
+        overflowY: 'auto',
       };
-      if (placement === 'up') {
-        next.bottom = window.innerHeight - rect.top + 8;
+      if (place === 'up') {
+        next.bottom = window.innerHeight - rect.top + gap;
       } else {
-        next.top = rect.bottom + 8;
+        next.top = rect.bottom + gap;
       }
       setStyle(next);
     };

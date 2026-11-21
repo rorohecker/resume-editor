@@ -62,7 +62,7 @@ const OPTIONS: {
     label: 'Cosmic',
     description: 'Neon nebula and animated starlight',
     Icon: Orbit,
-    swatches: ['#22d3ee', '#c084fc', '#09051d'],
+    swatches: ['#22d3ee', '#c084fc', '#0c091f'],
   },
 ];
 
@@ -124,9 +124,10 @@ function AccentMenu({
       <ChromeDropdownPanel
         anchorRef={rootRef}
         open={open}
-        placement={placement}
+        placement={placement === 'up' ? 'up' : 'auto'}
+        width={300}
         aria-label="Accent palette"
-        className="overflow-hidden rounded-xl border border-paper-edge bg-paper/95 p-2 shadow-page backdrop-blur-xl"
+        className="rounded-xl border border-paper-edge bg-paper/95 p-2 shadow-page backdrop-blur-xl"
       >
         <div data-chrome-dropdown="accent">
           <div className="px-2 pb-2 pt-1">
