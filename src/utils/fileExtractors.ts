@@ -273,66 +273,64 @@ async function ocrPdfPages(
   pdf: { numPages: number; getPage: (n: number) => Promise<unknown> },
   warnings: string[],
 ): Promise<ExtractionResult> {
-  const worker = await createOcrWorker();
-  try {
-    let combinedText = '';
-    let totalConfidence = 0;
-    let pagesScanned = 0;
+  let combinedText = '';
+  let totalConfidence = 0;
+  let pagesScanned = 0;
 
-    const pagesToScan = Math.min(pdf.numPages, MAX_OCR_PAGES);
-    if (pdf.numPages > MAX_OCR_PAGES) {
-      warnings.push(
-        `This PDF has ${pdf.numPages} pages; only the first ${MAX_OCR_PAGES} were scanned via OCR.`,
-      );
-    }
-
-    for (let pageNo = 1; pageNo <= pagesToScan; pageNo += 1) {
-      const page = (await pdf.getPage(pageNo)) as {
-        getViewport: (opts: { scale: number }) => { width: number; height: number };
-        render: (opts: {
-          canvasContext: CanvasRenderingContext2D;
-          viewport: unknown;
-          canvas: HTMLCanvasElement;
-        }) => { promise: Promise<void> };
-      };
-      // Higher scale + preprocess improves Tesseract accuracy on scans.
-      const viewport = page.getViewport({ scale: 2.5 });
-      const canvas = document.createElement('canvas');
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) continue;
-      await page.render({ canvasContext: ctx, viewport, canvas }).promise;
-      preprocessCanvasForOcr(canvas);
-
-      const blob = await new Promise<Blob | null>((resolve) =>
-        canvas.toBlob((b) => resolve(b), 'image/png'),
-      );
-      if (!blob) continue;
-      const result = await worker.recognize(blob);
-      combinedText += result.data.text + '\n\n';
-      totalConfidence += result.data.confidence;
-      pagesScanned += 1;
-    }
-    const avgConfidence = pagesScanned > 0 ? totalConfidence / pagesScanned : 0;
-    if (avgConfidence < 75) {
-      warnings.push(
-        `OCR confidence is low (${Math.round(avgConfidence)}%). Please review every field carefully.`,
-      );
-    }
-    return {
-      text: combinedText,
-      hints: { ocrConfidence: avgConfidence },
-      warnings,
-    };
-  } finally {
-    void worker.terminate();
+  const pagesToScan = Math.min(pdf.numPages, MAX_OCR_PAGES);
+  if (pdf.numPages > MAX_OCR_PAGES) {
+    warnings.push(
+      `This PDF has ${pdf.numPages} pages; only the first ${MAX_OCR_PAGES} were scanned via OCR.`,
+    );
   }
+
+  for (let pageNo = 1; pageNo <= pagesToScan; pageNo += 1) {
+    const page = (await pdf.getPage(pageNo)) as {
+      getViewport: (opts: { scale: number }) => { width: number; height: number };
+      render: (opts: {
+        canvasContext: CanvasRenderingContext2D;
+        viewport: unknown;
+        canvas: HTMLCanvasElement;
+      }) => { promise: Promise<void> };
+    };
+    // ~300 DPI-ish render + preprocess improves Tesseract accuracy on scans.
+    const viewport = page.getViewport({ scale: 3 });
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) continue;
+    await page.render({ canvasContext: ctx, viewport, canvas }).promise;
+    preprocessCanvasForOcr(canvas);
+
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob((b) => resolve(b), 'image/png'),
+    );
+    if (!blob) continue;
+    const result = await recognizeWithFallback(blob, blob);
+    combinedText += result.text + '\n\n';
+    totalConfidence += result.confidence;
+    pagesScanned += 1;
+  }
+  const avgConfidence = pagesScanned > 0 ? totalConfidence / pagesScanned : 0;
+  if (avgConfidence < 75) {
+    warnings.push(
+      `OCR confidence is low (${Math.round(avgConfidence)}%). Please review every field carefully.`,
+    );
+  }
+  return {
+    text: postProcessOcrText(combinedText),
+    hints: { ocrConfidence: avgConfidence },
+    warnings,
+  };
 }
 
-/** Grayscale + contrast stretch — cheap, big win for Tesseract on washed-out scans. */
+/**
+ * Grayscale + contrast stretch + mild unsharp boost — cheap, big win for
+ * Tesseract on washed-out phone photos and scanned PDFs.
+ */
 export function preprocessCanvasForOcr(canvas: HTMLCanvasElement): void {
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) return;
   const { width, height } = canvas;
   const image = ctx.getImageData(0, 0, width, height);
@@ -340,17 +338,31 @@ export function preprocessCanvasForOcr(canvas: HTMLCanvasElement): void {
 
   let min = 255;
   let max = 0;
-  for (let i = 0; i < data.length; i += 4) {
+  const grayBuf = new Float32Array(width * height);
+  for (let i = 0, p = 0; i < data.length; i += 4, p += 1) {
     const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    grayBuf[p] = gray;
     if (gray < min) min = gray;
     if (gray > max) max = gray;
   }
   const range = Math.max(1, max - min);
-  for (let i = 0; i < data.length; i += 4) {
-    const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-    // Contrast stretch then slight threshold toward ink/paper.
-    let v = ((gray - min) / range) * 255;
-    v = v > 180 ? 255 : v < 90 ? 0 : v;
+
+  // Percentile-ish soft thresholds: adapt to page brightness so pale ink
+  // still becomes black and cream paper becomes white.
+  const mid = (min + max) / 2;
+  const lowCut = Math.min(110, mid - 20);
+  const highCut = Math.max(170, mid + 35);
+
+  for (let i = 0, p = 0; i < data.length; i += 4, p += 1) {
+    let v = ((grayBuf[p] - min) / range) * 255;
+    // Mild unsharp: emphasize local contrast without a full convolution pass.
+    const neighbor =
+      grayBuf[Math.max(0, p - 1)] * 0.25 +
+      grayBuf[Math.min(grayBuf.length - 1, p + 1)] * 0.25 +
+      grayBuf[p] * 0.5;
+    const neighborNorm = ((neighbor - min) / range) * 255;
+    v = v + (v - neighborNorm) * 0.55;
+    v = v > highCut ? 255 : v < lowCut ? 0 : v;
     data[i] = v;
     data[i + 1] = v;
     data[i + 2] = v;
@@ -358,7 +370,35 @@ export function preprocessCanvasForOcr(canvas: HTMLCanvasElement): void {
   ctx.putImageData(image, 0, 0);
 }
 
-async function createOcrWorker() {
+/** Fix frequent Tesseract confusions in resume text after recognition. */
+export function postProcessOcrText(raw: string): string {
+  return raw
+    .replace(/\r\n/g, '\n')
+    // Collapse runs of spaces but keep newlines.
+    .replace(/[^\S\n]+/g, ' ')
+    // Common OCR letter swaps in English resumes / contact lines.
+    .replace(/\b([A-Z])0([A-Z])\b/g, '$1O$2')
+    .replace(/(\d)O(\d)/g, '$10$2')
+    .replace(/(\d)l(\d)/g, '$11$2')
+    .replace(/\brnail\b/gi, 'mail')
+    .replace(/\bemaill\b/gi, 'email')
+    .replace(/\blinkedin\.corn\b/gi, 'linkedin.com')
+    .replace(/\bgithub\.corn\b/gi, 'github.com')
+    .replace(/\bgmai1\.com\b/gi, 'gmail.com')
+    .replace(/\bgmai\.com\b/gi, 'gmail.com')
+    .replace(/\bExperlence\b/g, 'Experience')
+    .replace(/\bEducatlon\b/g, 'Education')
+    .replace(/\bSkllls\b/g, 'Skills')
+    .replace(/\bLeadershlp\b/g, 'Leadership')
+    .replace(/\bProiects\b/g, 'Projects')
+    .replace(/\bProiect\b/g, 'Project')
+    // Pipe separators often OCR as lowercase L or I between contact fields.
+    .replace(/(\S)\s[lI]\s(?=[A-Za-z0-9(+@])/g, '$1 | ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+async function createOcrWorker(pageSegMode: '3' | '6' = '3') {
   const tess = await import('tesseract.js');
   const ns = (tess as unknown as { default?: typeof tess }).default ?? tess;
   const { createWorker } = ns as { createWorker: typeof tess.createWorker };
@@ -367,17 +407,54 @@ async function createOcrWorker() {
       'Failed to load OCR engine (tesseract.js). Try refreshing the page or check your network connection.',
     );
   }
-  // PSM 3 = fully automatic page segmentation (good default for resumes).
+  // PSM 3 = automatic page segmentation; PSM 6 = single uniform text block
+  // (often better for phone photos of a single resume page).
   const worker = await createWorker('eng');
   try {
     await worker.setParameters({
-      tessedit_pageseg_mode: '3' as unknown as never,
+      tessedit_pageseg_mode: pageSegMode as unknown as never,
       preserve_interword_spaces: '1',
     });
   } catch {
     // Older tesseract builds may reject some params; recognition still works.
   }
   return worker;
+}
+
+async function recognizeWithFallback(
+  blob: Blob,
+  fileFallback: Blob | File,
+): Promise<{ text: string; confidence: number }> {
+  const primary = await createOcrWorker('3');
+  try {
+    const first = await primary.recognize(blob);
+    let text = first.data.text;
+    let confidence = first.data.confidence;
+    // Low confidence → retry as a single text block (PSM 6), keep the better result.
+    if (confidence < 72 || text.trim().length < 40) {
+      const secondary = await createOcrWorker('6');
+      try {
+        const second = await secondary.recognize(blob);
+        if (
+          second.data.confidence > confidence + 3 ||
+          (second.data.text.trim().length > text.trim().length && second.data.confidence >= confidence - 2)
+        ) {
+          text = second.data.text;
+          confidence = second.data.confidence;
+        }
+      } finally {
+        void secondary.terminate();
+      }
+    }
+    if (!text.trim()) {
+      const retry = await primary.recognize(fileFallback);
+      text = retry.data.text;
+      confidence = retry.data.confidence;
+    }
+    return { text: postProcessOcrText(text), confidence };
+  } finally {
+    void primary.terminate();
+  }
 }
 
 async function extractDocx(file: File): Promise<ExtractionResult> {
@@ -391,36 +468,40 @@ async function extractDocx(file: File): Promise<ExtractionResult> {
 }
 
 async function extractImage(file: File): Promise<ExtractionResult> {
-  const worker = await createOcrWorker();
-  try {
-    // Draw through a canvas so we can preprocess photos the same way as PDF OCR.
-    const bitmap = await createImageBitmap(file);
-    const canvas = document.createElement('canvas');
-    // Upscale small images; leave large ones alone.
-    const scale = bitmap.width < 1200 ? 2 : 1;
-    canvas.width = bitmap.width * scale;
-    canvas.height = bitmap.height * scale;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
+  // Draw through a canvas so we can preprocess photos the same way as PDF OCR.
+  const bitmap = await createImageBitmap(file);
+  const canvas = document.createElement('canvas');
+  // Target ~1800px on the long edge — enough for Tesseract without huge blobs.
+  const longEdge = Math.max(bitmap.width, bitmap.height);
+  const scale = longEdge < 1400 ? Math.min(3, 1800 / longEdge) : longEdge < 1800 ? 1.35 : 1;
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    const worker = await createOcrWorker('3');
+    try {
       const result = await worker.recognize(file);
       return finalizeOcr(result.data.text, result.data.confidence);
+    } finally {
+      void worker.terminate();
     }
-    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    bitmap.close();
-    preprocessCanvasForOcr(canvas);
-    const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob((b) => resolve(b), 'image/png'),
-    );
-    const result = await worker.recognize(blob ?? file);
-    return finalizeOcr(result.data.text, result.data.confidence);
-  } finally {
-    void worker.terminate();
   }
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  preprocessCanvasForOcr(canvas);
+  const blob = await new Promise<Blob | null>((resolve) =>
+    canvas.toBlob((b) => resolve(b), 'image/png'),
+  );
+  const result = await recognizeWithFallback(blob ?? file, file);
+  return finalizeOcr(result.text, result.confidence);
 }
 
 function finalizeOcr(text: string, confidence: number): ExtractionResult {
+  const cleaned = postProcessOcrText(text);
   const warnings: string[] = [];
-  if (!text.trim()) {
+  if (!cleaned.trim()) {
     warnings.push(
       'OCR returned no text. Make sure the image is clear and the text is right-side up.',
     );
@@ -430,7 +511,7 @@ function finalizeOcr(text: string, confidence: number): ExtractionResult {
     );
   }
   return {
-    text,
+    text: cleaned,
     hints: { ocrConfidence: confidence },
     warnings,
   };

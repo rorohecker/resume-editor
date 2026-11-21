@@ -43,10 +43,15 @@ interface UIState {
   // Section ID the editor should scroll to and expand. Bumped via a counter so
   // re-requesting the same section still fires the effect. Optional entry ID
   // focuses a skills/additional-info category (or other entry) inside it.
+  // Use FOCUS_HEADER_ID ('__header__') to jump to the header/contact accordion.
   focusedSectionId: string | null;
   focusedEntryId: string | null;
+  focusedBulletId: string | null;
   focusedSectionToken: number;
 }
+
+/** Sentinel section id for preview → sidebar jumps into Header / Contact. */
+export const FOCUS_HEADER_ID = '__header__';
 
 interface ResumeState {
   currentResume: Resume | null;
@@ -77,7 +82,11 @@ interface Actions {
   setZoom: (zoom: number) => void;
   setLivePageUsage: (stats: { percent: number; estimatedPages: number } | null) => void;
   setMobileTab: (tab: 'edit' | 'preview') => void;
-  focusSection: (sectionId: string, entryId?: string | null) => void;
+  focusSection: (
+    sectionId: string,
+    entryId?: string | null,
+    bulletId?: string | null,
+  ) => void;
   clearPersistError: () => void;
   setPersistError: (message: string | null) => void;
 
@@ -135,6 +144,7 @@ export const useStore = create<UIState & ResumeState & Actions>((set, get) => ({
   persistError: null,
   focusedSectionId: null,
   focusedEntryId: null,
+  focusedBulletId: null,
   focusedSectionToken: 0,
 
   currentResume: null,
@@ -170,10 +180,11 @@ export const useStore = create<UIState & ResumeState & Actions>((set, get) => ({
   setMobileTab: (mobileTab) => set({ mobileTab }),
   clearPersistError: () => set({ persistError: null }),
   setPersistError: (persistError) => set({ persistError }),
-  focusSection: (sectionId, entryId = null) =>
+  focusSection: (sectionId, entryId = null, bulletId = null) =>
     set((state) => ({
       focusedSectionId: sectionId,
       focusedEntryId: entryId ?? null,
+      focusedBulletId: bulletId ?? null,
       focusedSectionToken: state.focusedSectionToken + 1,
       // Make sure mobile users land on the editor pane when they tap a
       // preview header on a narrow screen.

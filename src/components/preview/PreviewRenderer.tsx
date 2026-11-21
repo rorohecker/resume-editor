@@ -102,6 +102,7 @@ export function PreviewRenderer({
 
   return (
     <div
+      className="resume-preview-root"
       style={{
         position: 'relative',
         fontFamily: cssFontStack(styles.font),
@@ -124,7 +125,12 @@ export function PreviewRenderer({
 
       <div ref={contentRef}>
         <div data-page-block>
-          <Header header={header} resume={displayResume} compact={false} />
+          <Header
+            header={header}
+            resume={displayResume}
+            compact={false}
+            interactive={interactive}
+          />
         </div>
 
         {visibleSections.length === 0 ? (
@@ -222,19 +228,29 @@ function Header({
   header,
   resume,
   compact = false,
+  interactive = false,
 }: {
   header: Resume['header'];
   resume: Resume;
   compact?: boolean;
+  interactive?: boolean;
 }) {
   const { t } = useTranslation();
+  const focusSection = useStore((s) => s.focusSection);
   const { styles } = resume;
   const visibleFields = header.contactFields
     .filter((field) => field.visible && (compact ? field.value.trim() : true))
     .sort((a, b) => a.order - b.order);
 
-  return (
-    <header className={headerAlignFor(resume) === 'left' ? 'text-left' : 'text-center'}>
+  // Compact overlays (page-break repeats) stay non-interactive so they don't
+  // steal clicks from the live preview underneath.
+  const onJump =
+    interactive && !compact
+      ? () => focusSection('__header__')
+      : undefined;
+
+  const body = (
+    <>
       <div
         style={{
           fontSize: pt(compact ? styles.fontSize.name * 0.72 : styles.fontSize.name),
@@ -258,8 +274,36 @@ function Header({
             fields={visibleFields}
             separator={header.separatorStyle}
             accent={styles.colors.accent}
+            interactive={Boolean(onJump)}
           />
         </div>
+      )}
+    </>
+  );
+
+  return (
+    <header className={headerAlignFor(resume) === 'left' ? 'text-left' : 'text-center'}>
+      {onJump ? (
+        <button
+          type="button"
+          onClick={onJump}
+          title={t('preview.jumpToHeader', { defaultValue: 'Click to edit header & contact' })}
+          className="-mx-1 block w-full rounded-sm px-1 transition-colors hover:bg-paper-tint"
+          style={{
+            cursor: 'pointer',
+            background: 'transparent',
+            border: 'none',
+            font: 'inherit',
+            color: 'inherit',
+            textAlign: 'inherit',
+            paddingTop: 0,
+            paddingBottom: 0,
+          }}
+        >
+          {body}
+        </button>
+      ) : (
+        body
       )}
     </header>
   );
@@ -269,10 +313,12 @@ function ContactLine({
   fields,
   separator,
   accent,
+  interactive = false,
 }: {
   fields: ContactField[];
   separator: Resume['header']['separatorStyle'];
   accent: string;
+  interactive?: boolean;
 }) {
   const { t } = useTranslation();
   const sep = ` ${separatorText(separator)} `;
@@ -284,13 +330,18 @@ function ContactLine({
         const display = displayText || (
           <span className="italic opacity-40">{contactPlaceholder(field.type, t)}</span>
         );
-        const linked = trimmed && isLinkable(field.type) ? (
-          <a href={hrefFor(field)} style={{ color: accent, textDecoration: 'none' }}>
-            {displayText}
-          </a>
-        ) : (
-          display
-        );
+        // In the interactive preview, contact values are jump targets — not live
+        // links — so a click opens the sidebar editor instead of leaving the page.
+        const linked =
+          !interactive && trimmed && isLinkable(field.type) ? (
+            <a href={hrefFor(field)} style={{ color: accent, textDecoration: 'none' }}>
+              {displayText}
+            </a>
+          ) : trimmed && isLinkable(field.type) ? (
+            <span style={{ color: accent }}>{displayText}</span>
+          ) : (
+            display
+          );
         return (
           <span key={field.id}>
             {index > 0 && <span>{sep}</span>}
@@ -381,10 +432,18 @@ function renderSectionContent(section: Section, resume: Resume, interactive: boo
     return <SkillsSection section={section} resume={resume} interactive={interactive} />;
   }
   if (section.type === 'summary' || section.layout === 'text-block') {
-    return <TextSection section={section} />;
+    return <TextSection section={section} interactive={interactive} />;
   }
   if (section.layout === 'bullet-list') {
-    return <BulletList bullets={section.entries[0]?.bullets ?? []} resume={resume} />;
+    return (
+      <BulletList
+        bullets={section.entries[0]?.bullets ?? []}
+        resume={resume}
+        interactive={interactive}
+        sectionId={section.id}
+        entryId={section.entries[0]?.id}
+      />
+    );
   }
 
   return section.entries
@@ -454,10 +513,40 @@ function SkillsSection({
   );
 }
 
-function TextSection({ section }: { section: Section }) {
+function TextSection({
+  section,
+  interactive,
+}: {
+  section: Section;
+  interactive: boolean;
+}) {
+  const focusSection = useStore((s) => s.focusSection);
   const text = section.entries[0]?.title;
   if (!text) return null;
-  return <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{text}</p>;
+  if (!interactive) {
+    return <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{text}</p>;
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => focusSection(section.id, section.entries[0]?.id)}
+      title="Click to edit this section"
+      className="-mx-1 block w-full rounded-sm px-1 text-left transition-colors hover:bg-paper-tint"
+      style={{
+        margin: 0,
+        whiteSpace: 'pre-wrap',
+        cursor: 'pointer',
+        background: 'transparent',
+        border: 'none',
+        font: 'inherit',
+        color: 'inherit',
+        paddingTop: 0,
+        paddingBottom: 0,
+      }}
+    >
+      {text}
+    </button>
+  );
 }
 
 const MCCOMBS_SWAP_BOLD: Section['type'][] = ['experience', 'leadership', 'research'];
@@ -558,7 +647,13 @@ function EntryBlock({
       </JumpableEntryHeader>
 
       {(sectionHasBullets(section) || isStudyAbroadKind) && (
-        <BulletList bullets={entry.bullets ?? []} resume={resume} />
+        <BulletList
+          bullets={entry.bullets ?? []}
+          resume={resume}
+          interactive={interactive}
+          sectionId={section.id}
+          entryId={entry.id}
+        />
       )}
     </div>
   );
@@ -846,7 +941,20 @@ const BULLET_GLYPH: Record<string, string> = {
   none: '',
 };
 
-function BulletList({ bullets, resume }: { bullets: Bullet[]; resume: Resume }) {
+function BulletList({
+  bullets,
+  resume,
+  interactive = false,
+  sectionId,
+  entryId,
+}: {
+  bullets: Bullet[];
+  resume: Resume;
+  interactive?: boolean;
+  sectionId?: string;
+  entryId?: string;
+}) {
+  const focusSection = useStore((s) => s.focusSection);
   const visible = bullets
     .filter((bullet) => bullet.visible && bullet.content.trim())
     .sort((a, b) => a.order - b.order);
@@ -865,22 +973,62 @@ function BulletList({ bullets, resume }: { bullets: Bullet[]; resume: Resume }) 
         lineHeight: resume.styles.spacing.bullet,
       }}
     >
-      {visible.map((bullet) => (
-        <li
-          key={bullet.id}
-          data-preview-bullet={bullet.id}
-          title="Alt-click to hide this bullet"
-          style={{
-            cursor: 'default',
-            display: 'grid',
-            gridTemplateColumns: glyph ? `${indent} 1fr` : '1fr',
-            alignItems: 'baseline',
-          }}
-        >
-          {glyph && <span aria-hidden style={{ userSelect: 'none' }}>{glyph}</span>}
-          <span>{plainTextFromBullet(bullet.content)}</span>
-        </li>
-      ))}
+      {visible.map((bullet) => {
+        const body = (
+          <>
+            {glyph && <span aria-hidden style={{ userSelect: 'none' }}>{glyph}</span>}
+            <span>{plainTextFromBullet(bullet.content)}</span>
+          </>
+        );
+        const layout = {
+          display: 'grid' as const,
+          gridTemplateColumns: glyph ? `${indent} 1fr` : '1fr',
+          alignItems: 'baseline' as const,
+        };
+        if (!interactive || !sectionId) {
+          return (
+            <li
+              key={bullet.id}
+              data-preview-bullet={bullet.id}
+              title="Alt-click to hide this bullet"
+              style={{ cursor: 'default', ...layout }}
+            >
+              {body}
+            </li>
+          );
+        }
+        return (
+          <li key={bullet.id} data-preview-bullet={bullet.id} style={layout}>
+            <button
+              type="button"
+              onClick={(event) => {
+                // Alt-click is reserved for hide-bullet (handled on the preview
+                // scroller). Plain click jumps the sidebar to this bullet.
+                if (event.altKey) return;
+                focusSection(sectionId, entryId, bullet.id);
+              }}
+              title="Click to edit · Alt-click to hide"
+              className="-mx-1 rounded-sm px-1 text-left transition-colors hover:bg-paper-tint"
+              style={{
+                gridColumn: '1 / -1',
+                display: 'grid',
+                gridTemplateColumns: glyph ? `${indent} 1fr` : '1fr',
+                alignItems: 'baseline',
+                cursor: 'pointer',
+                background: 'transparent',
+                border: 'none',
+                font: 'inherit',
+                color: 'inherit',
+                width: '100%',
+                paddingTop: 0,
+                paddingBottom: 0,
+              }}
+            >
+              {body}
+            </button>
+          </li>
+        );
+      })}
     </ul>
   );
 }

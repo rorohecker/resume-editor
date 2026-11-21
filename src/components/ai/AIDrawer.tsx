@@ -1,8 +1,15 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AlertTriangle, Check, Copy, KeyRound, Languages, Search, Settings, Sparkles, Wand2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { checkGrammar, type GrammarHit } from '@/utils/grammar';
-import { useStore } from '@/store';
+import {
+  applyGrammarFix,
+  checkGrammar,
+  collectGrammarSnippets,
+  type GrammarCategory,
+  type GrammarHit,
+} from '@/utils/grammar';
+import { FOCUS_HEADER_ID, useStore } from '@/store';
+import type { Resume } from '@/types';
 import { upsertSummarySection } from '@/utils/summarySection';
 import {
   ACTION_VERBS,
@@ -46,18 +53,53 @@ import { copyToClipboard, readClipboard } from '@/utils/clipboard';
 
 type Tab = 'rewrite' | 'organize' | 'agent' | 'xyz' | 'weak' | 'grammar' | 'keywords' | 'summary' | 'verbs' | 'settings';
 
-const TABS: { id: Tab; labelKey: string }[] = [
-  { id: 'rewrite', labelKey: 'ai.tabRewrite' },
-  { id: 'organize', labelKey: 'ai.tabOrganize' },
-  { id: 'agent', labelKey: 'ai.tabAgent' },
-  { id: 'xyz', labelKey: 'ai.tabXyz' },
-  { id: 'weak', labelKey: 'ai.tabWeak' },
-  { id: 'grammar', labelKey: 'ai.tabGrammar' },
-  { id: 'keywords', labelKey: 'ai.tabAts' },
-  { id: 'summary', labelKey: 'ai.tabSummary' },
-  { id: 'verbs', labelKey: 'ai.tabVerbs' },
-  { id: 'settings', labelKey: 'ai.tabSettings' },
+type TabGroup = {
+  id: string;
+  labelKey: string;
+  tabs: { id: Tab; labelKey: string }[];
+};
+
+const TAB_GROUPS: TabGroup[] = [
+  {
+    id: 'write',
+    labelKey: 'ai.groupWrite',
+    tabs: [
+      { id: 'rewrite', labelKey: 'ai.tabRewrite' },
+      { id: 'summary', labelKey: 'ai.tabSummary' },
+      { id: 'verbs', labelKey: 'ai.tabVerbs' },
+    ],
+  },
+  {
+    id: 'check',
+    labelKey: 'ai.groupCheck',
+    tabs: [
+      { id: 'grammar', labelKey: 'ai.tabGrammar' },
+      { id: 'xyz', labelKey: 'ai.tabXyz' },
+      { id: 'weak', labelKey: 'ai.tabWeak' },
+      { id: 'keywords', labelKey: 'ai.tabAts' },
+    ],
+  },
+  {
+    id: 'structure',
+    labelKey: 'ai.groupStructure',
+    tabs: [
+      { id: 'organize', labelKey: 'ai.tabOrganize' },
+      { id: 'agent', labelKey: 'ai.tabAgent' },
+    ],
+  },
+  {
+    id: 'settings',
+    labelKey: 'ai.groupSettings',
+    tabs: [{ id: 'settings', labelKey: 'ai.tabSettings' }],
+  },
 ];
+
+const CATEGORY_LABEL: Record<GrammarCategory, string> = {
+  spelling: 'ai.grammarCatSpelling',
+  grammar: 'ai.grammarCatGrammar',
+  style: 'ai.grammarCatStyle',
+  other: 'ai.grammarCatOther',
+};
 
 // Keep numeric rate-limit inputs valid: an empty/invalid field would otherwise
 // persist NaN and break the usage checks that gate AI calls.
@@ -93,7 +135,9 @@ export function AIDrawer() {
   const [verbQuery, setVerbQuery] = useState('');
   const [grammarHits, setGrammarHits] = useState<GrammarHit[]>([]);
   const [grammarRan, setGrammarRan] = useState(false);
+  const [grammarFilter, setGrammarFilter] = useState<'all' | GrammarCategory>('all');
   const [customModelMode, setCustomModelMode] = useState(false);
+  const focusSection = useStore((s) => s.focusSection);
 
   // Switching resumes must not leave another resume's AI output on screen.
   useEffect(() => {
@@ -294,27 +338,45 @@ export function AIDrawer() {
       maxWidth="2xl"
       toolbar={
         <div className="bg-paper px-3 py-2">
-          <div
-            role="tablist"
-            aria-label={t('ai.drawerTitle')}
-            className="flex gap-1 overflow-x-auto pb-0.5 [scrollbar-width:thin]"
-          >
-            {TABS.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                role="tab"
-                onClick={() => setTab(item.id)}
-                className={`shrink-0 whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
-                  tab === item.id
-                    ? 'bg-ink text-paper'
-                    : 'text-ink-muted hover:bg-paper-tint hover:text-ink'
-                }`}
-                aria-selected={tab === item.id}
-                data-ai-tab
-              >
-                {t(item.labelKey)}
-              </button>
+          <div className="space-y-2">
+            {TAB_GROUPS.map((group) => (
+              <div key={group.id}>
+                <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-ink-subtle">
+                  {t(group.labelKey, {
+                    defaultValue:
+                      group.id === 'write'
+                        ? 'Write'
+                        : group.id === 'check'
+                          ? 'Check'
+                          : group.id === 'structure'
+                            ? 'Structure'
+                            : 'Settings',
+                  })}
+                </p>
+                <div
+                  role="tablist"
+                  aria-label={t(group.labelKey)}
+                  className="flex flex-wrap gap-1"
+                >
+                  {group.tabs.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      role="tab"
+                      onClick={() => setTab(item.id)}
+                      className={`shrink-0 whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                        tab === item.id
+                          ? 'bg-ink text-paper'
+                          : 'text-ink-muted hover:bg-paper-tint hover:text-ink'
+                      }`}
+                      aria-selected={tab === item.id}
+                      data-ai-tab
+                    >
+                      {t(item.labelKey)}
+                    </button>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
           <p className="mt-2 text-xs leading-relaxed text-ink-subtle">{t('ai.optionalNote')}</p>
@@ -505,33 +567,110 @@ export function AIDrawer() {
                 <p className="mb-2 text-xs">
                   {t('ai.grammarHint')}
                 </p>
-                <button
-                  type="button"
-                  className="btn-primary text-xs"
-                  disabled={busy === 'grammar' || bullets.length === 0}
-                  onClick={() =>
-                    void runCloud('grammar', async () => {
-                      const hits = await checkGrammar(
-                        bullets.map((b) => ({ bulletId: b.bulletId, bulletLabel: `${b.sectionTitle} - ${b.entryTitle}`, content: b.content })),
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    className="btn-primary text-xs"
+                    disabled={busy === 'grammar' || !resume}
+                    onClick={() =>
+                      void runCloud('grammar', async () => {
+                        if (!resume) return;
+                        const snippets = collectGrammarSnippets(resume);
+                        const hits = await checkGrammar(snippets);
+                        setGrammarHits(hits);
+                        setGrammarRan(true);
+                        setGrammarFilter('all');
+                      })
+                    }
+                  >
+                    {busy === 'grammar' ? t('ai.grammarRunning') : t('ai.grammarRun')}
+                  </button>
+                  {grammarHits.length > 0 && (
+                    <span className="text-[11px] text-ink-subtle">
+                      {t('ai.grammarCount', {
+                        count: grammarHits.length,
+                        defaultValue: '{{count}} issues',
+                      })}
+                    </span>
+                  )}
+                </div>
+                {grammarHits.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {(['all', 'spelling', 'grammar', 'style', 'other'] as const).map((key) => {
+                      const count =
+                        key === 'all'
+                          ? grammarHits.length
+                          : grammarHits.filter((h) => h.category === key).length;
+                      if (key !== 'all' && count === 0) return null;
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          className={`rounded-md px-2 py-0.5 text-[11px] font-medium ${
+                            grammarFilter === key
+                              ? 'bg-ink text-paper'
+                              : 'bg-paper-tint text-ink-muted hover:text-ink'
+                          }`}
+                          onClick={() => setGrammarFilter(key)}
+                        >
+                          {key === 'all'
+                            ? t('ai.grammarFilterAll', { defaultValue: 'All' })
+                            : t(CATEGORY_LABEL[key])}{' '}
+                          ({count})
+                        </button>
                       );
-                      setGrammarHits(hits);
-                      setGrammarRan(true);
-                    })
-                  }
-                >
-                  {busy === 'grammar' ? t('ai.grammarRunning') : t('ai.grammarRun')}
-                </button>
+                    })}
+                  </div>
+                )}
                 <div className="mt-3 space-y-2">
                   {grammarRan && grammarHits.length === 0 && (
                     <ResultCard good>
                       <span className="text-ink">{t('ai.grammarClean')}</span>
                     </ResultCard>
                   )}
-                  {grammarHits.map((hit, idx) => (
-                    <ResultCard key={`${hit.bulletId}-${idx}`} good={false}>
-                      <div className="font-medium text-ink">{hit.bulletLabel}</div>
+                  {grammarHits
+                    .filter((hit) => grammarFilter === 'all' || hit.category === grammarFilter)
+                    .map((hit, idx) => (
+                    <ResultCard key={`${hit.bulletId}-${hit.offset}-${idx}`} good={false}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="rounded bg-paper-tint px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
+                              {t(CATEGORY_LABEL[hit.category])}
+                            </span>
+                            {hit.source === 'local' && (
+                              <span className="text-[10px] text-ink-subtle">
+                                {t('ai.grammarLocal', { defaultValue: 'Local' })}
+                              </span>
+                            )}
+                          </div>
+                          <div className="mt-1 font-medium text-ink">{hit.bulletLabel}</div>
+                        </div>
+                        {hit.sectionId && (
+                          <button
+                            type="button"
+                            className="shrink-0 text-[11px] font-medium text-accent hover:underline"
+                            onClick={() => {
+                              const sectionId =
+                                hit.sectionId === FOCUS_HEADER_ID || hit.sectionId === '__header__'
+                                  ? FOCUS_HEADER_ID
+                                  : hit.sectionId!;
+                              const isMeta =
+                                hit.bulletId.startsWith('__') || hit.bulletId === '__header_name__';
+                              focusSection(
+                                sectionId,
+                                hit.entryId ?? null,
+                                isMeta ? null : hit.bulletId,
+                              );
+                              setOpen(false);
+                            }}
+                          >
+                            {t('ai.grammarJump', { defaultValue: 'Jump' })}
+                          </button>
+                        )}
+                      </div>
                       <p className="mt-1 text-xs">{hit.message}</p>
-                      <p className="mt-1 text-[11px] text-ink-subtle">...{hit.context}...</p>
+                      <p className="mt-1 text-[11px] text-ink-subtle">…{hit.context}…</p>
                       {hit.replacements.length > 0 && (
                         <div className="mt-2 flex flex-wrap gap-1">
                           {hit.replacements.map((r) => (
@@ -541,28 +680,21 @@ export function AIDrawer() {
                               className="rounded-md border border-paper-edge bg-paper px-2 py-0.5 text-xs hover:bg-paper-tint"
                               title={t('ai.applySuggestion', { defaultValue: 'Apply suggestion' })}
                               onClick={() => {
-                                const bullet = bullets.find((b) => b.bulletId === hit.bulletId);
-                                if (!bullet) return;
-                                const plain = bullet.content.replace(/<[^>]*>/g, '');
-                                let next: string;
-                                if (plain === bullet.content) {
-                                  next =
-                                    plain.slice(0, hit.offset) +
-                                    r +
-                                    plain.slice(hit.offset + hit.length);
-                                } else {
-                                  const snippet = plain.slice(hit.offset, hit.offset + hit.length);
-                                  next = snippet
-                                    ? bullet.content.replace(snippet, r)
-                                    : bullet.content;
-                                }
-                                if (next === bullet.content) {
+                                if (!resume) {
                                   void copyText(r, r);
                                   return;
                                 }
-                                updateResume((current) =>
-                                  replaceBulletContent(current, hit.bulletId, next),
-                                );
+                                let applied = false;
+                                updateResume((current) => {
+                                  const next = applyGrammarFix(current, hit, r);
+                                  if (!next) return current;
+                                  applied = true;
+                                  return next as Resume;
+                                });
+                                if (!applied) {
+                                  void copyText(r, r);
+                                  return;
+                                }
                                 setGrammarHits((cur) =>
                                   cur.filter(
                                     (item) =>
@@ -579,6 +711,24 @@ export function AIDrawer() {
                               {r}
                             </button>
                           ))}
+                          <button
+                            type="button"
+                            className="rounded-md px-2 py-0.5 text-[11px] text-ink-subtle hover:text-ink"
+                            onClick={() =>
+                              setGrammarHits((cur) =>
+                                cur.filter(
+                                  (item) =>
+                                    !(
+                                      item.bulletId === hit.bulletId &&
+                                      item.offset === hit.offset &&
+                                      item.length === hit.length
+                                    ),
+                                ),
+                              )
+                            }
+                          >
+                            {t('ai.grammarDismiss', { defaultValue: 'Dismiss' })}
+                          </button>
                         </div>
                       )}
                     </ResultCard>

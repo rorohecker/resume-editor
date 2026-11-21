@@ -33,7 +33,15 @@ export default {
         ok: 'rgb(var(--c-ok) / <alpha-value>)',
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+        // Chrome UI only — resume preview/PDF keep their own font stacks.
+        sans: [
+          '"Source Sans 3"',
+          'system-ui',
+          '-apple-system',
+          'BlinkMacSystemFont',
+          'Segoe UI',
+          'sans-serif',
+        ],
         serif: ['"EB Garamond"', 'Garamond', 'Georgia', 'serif'],
       },
       boxShadow: {

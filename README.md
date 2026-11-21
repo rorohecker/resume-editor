@@ -16,7 +16,9 @@ Most resume sites store your data on their servers. This one keeps resumes in In
 
 **Export.** PDF with embedded fonts, Word, plain text for ATS forms, PNG, and JSON backup. PDF work can run in a Web Worker when the browser allows it.
 
-**Import.** PDF (including two-column layouts), Word, plain text, JSON, and images. Scanned PDFs and photos go through OCR — that often misreads columns and bullets, so prefer a Word file or text PDF when you can, and always check the parse before you open it.
+**Import.** PDF (including two-column layouts), Word, plain text, JSON, and images. Scanned PDFs and photos go through OCR with preprocessing and a second-pass fallback — that can still misread columns and bullets, so prefer a Word file or text PDF when you can, and always check the parse before you open it.
+
+**Spell & grammar.** The AI drawer checks titles, skills, and bullets with a local spelling pass plus LanguageTool when online. Click a hit to jump to that field in the sidebar.
 
 **Optional API key.** Claude, Gemini, or OpenAI. Paste a key in the AI panel settings. Local checks still work with no key. Claude or Gemini usually need the least fuss here. A ChatGPT Plus or Team plan does **not** include API access — OpenAI needs a separate key with API billing from [platform.openai.com](https://platform.openai.com/api-keys).
 

@@ -15,7 +15,6 @@ import {
   ListChecks,
   BookOpen,
   MoreHorizontal,
-  PanelLeftOpen,
   Printer,
   Share2,
   StickyNote,
@@ -41,6 +40,12 @@ type MenuItem = {
   navClass?: string;
 };
 
+type MenuGroup = {
+  id: string;
+  label: string;
+  items: MenuItem[];
+};
+
 // Secondary editor actions. Visible as icon buttons on wide screens; collapsed
 // into this overflow menu when there's not enough horizontal room in the top nav.
 
@@ -62,17 +67,36 @@ export function MoreActionsMenu({
   const setTutorialOpen = useStore((s) => s.setTutorialOpen);
   const stickyNotesOpen = useStore((s) => s.stickyNotesOpen);
   const setStickyNotesOpen = useStore((s) => s.setStickyNotesOpen);
-  const importReferenceOpen = useStore((s) => s.importReferenceOpen);
-  const importReferenceAvailable = useStore((s) => s.importReferenceAvailable);
-  const setImportReferenceOpen = useStore((s) => s.setImportReferenceOpen);
   const pdfPreviewMode = useStore((s) => s.pdfPreviewMode);
   const setPdfPreviewMode = useStore((s) => s.setPdfPreviewMode);
   const anonymized = useStore((s) => s.anonymized);
   const setAnonymized = useStore((s) => s.setAnonymized);
 
   const [open, setOpen] = useState(false);
+  const [bp, setBp] = useState({ sm: false, md: false, lg: false, xl: false });
   const ref = useRef<HTMLDivElement>(null);
   const backupInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const queries = {
+      sm: window.matchMedia('(min-width: 640px)'),
+      md: window.matchMedia('(min-width: 768px)'),
+      lg: window.matchMedia('(min-width: 1024px)'),
+      xl: window.matchMedia('(min-width: 1280px)'),
+    };
+    const update = () =>
+      setBp({
+        sm: queries.sm.matches,
+        md: queries.md.matches,
+        lg: queries.lg.matches,
+        xl: queries.xl.matches,
+      });
+    update();
+    for (const mq of Object.values(queries)) mq.addEventListener('change', update);
+    return () => {
+      for (const mq of Object.values(queries)) mq.removeEventListener('change', update);
+    };
+  }, []);
 
   const printResume = () => {
     setOpen(false);
@@ -145,156 +169,189 @@ export function MoreActionsMenu({
     return () => window.removeEventListener('mousedown', handler);
   }, [open]);
 
-  const items: MenuItem[] = [
-    ...(onImport
-      ? [{
-          label: t('editor.importMerge'),
+  const groups: MenuGroup[] = [
+    {
+      id: 'files',
+      label: t('editor.menuFiles', { defaultValue: 'Files & backup' }),
+      items: [
+        ...(onImport
+          ? [{
+              label: t('editor.importMerge'),
+              icon: Upload,
+              navClass: 'sm:hidden',
+              onClick: () => {
+                setOpen(false);
+                onImport();
+              },
+            }]
+          : []),
+        ...(onSaveSnapshot
+          ? [{
+              label: t('editor.saveSnapshot'),
+              icon: Bookmark,
+              navClass: 'md:hidden',
+              onClick: () => {
+                setOpen(false);
+                onSaveSnapshot();
+              },
+            }]
+          : []),
+        {
+          label: t('editor.backupNow'),
+          icon: HardDriveDownload,
+          navClass: 'lg:hidden',
+          onClick: exportBackup,
+        },
+        {
+          label: t('landing.restoreBackup'),
           icon: Upload,
-          navClass: 'sm:hidden',
+          navClass: 'lg:hidden',
+          onClick: () => backupInputRef.current?.click(),
+        },
+      ],
+    },
+    {
+      id: 'job',
+      label: t('editor.menuJobTools', { defaultValue: 'Job tools' }),
+      items: [
+        {
+          label: t('library.title'),
+          icon: Library,
+          navClass: 'xl:hidden',
           onClick: () => {
             setOpen(false);
-            onImport();
+            setLibraryOpen(true);
           },
-        }]
-      : []),
-    ...(onSaveSnapshot
-      ? [{
-          label: t('editor.saveSnapshot'),
-          icon: Bookmark,
-          navClass: 'md:hidden',
+        },
+        {
+          label: t('variant.title'),
+          icon: Layers,
+          navClass: 'xl:hidden',
           onClick: () => {
             setOpen(false);
-            onSaveSnapshot();
+            setVariantOpen(true);
           },
-        }]
-      : []),
-    {
-      label: t('editor.backupNow'),
-      icon: HardDriveDownload,
-      navClass: 'lg:hidden',
-      onClick: exportBackup,
-    },
-    {
-      label: t('landing.restoreBackup'),
-      icon: Upload,
-      navClass: 'lg:hidden',
-      onClick: () => backupInputRef.current?.click(),
-    },
-    {
-      label: t('library.title'),
-      icon: Library,
-      onClick: () => {
-        setOpen(false);
-        setLibraryOpen(true);
-      },
-    },
-    {
-      label: t('variant.title'),
-      icon: Layers,
-      onClick: () => {
-        setOpen(false);
-        setVariantOpen(true);
-      },
-    },
-    {
-      label: t('editor.tailorToJob'),
-      icon: Wand2,
-      onClick: () => {
-        setOpen(false);
-        setTailorOpen(true);
-      },
-    },
-    {
-      label: t('editor.compare'),
-      icon: GitCompare,
-      onClick: () => {
-        setOpen(false);
-        setCompareOpen(true);
-      },
-    },
-    ...(importReferenceAvailable
-      ? [{
-          label: importReferenceOpen
-            ? t('importReference.hide')
-            : t('importReference.toggle'),
-          icon: PanelLeftOpen,
-          active: importReferenceOpen,
+        },
+        {
+          label: t('editor.tailorToJob'),
+          icon: Wand2,
+          navClass: 'xl:hidden',
           onClick: () => {
             setOpen(false);
-            setImportReferenceOpen(!importReferenceOpen);
+            setTailorOpen(true);
           },
-        }]
-      : []),
-    {
-      label: t('editor.bulkEdit'),
-      icon: ListChecks,
-      onClick: () => {
-        setOpen(false);
-        setBulkEditOpen(true);
-      },
+        },
+        {
+          label: t('editor.compare'),
+          icon: GitCompare,
+          navClass: 'xl:hidden',
+          onClick: () => {
+            setOpen(false);
+            setCompareOpen(true);
+          },
+        },
+        {
+          label: t('editor.bulkEdit'),
+          icon: ListChecks,
+          navClass: 'xl:hidden',
+          onClick: () => {
+            setOpen(false);
+            setBulkEditOpen(true);
+          },
+        },
+      ],
     },
     {
-      label: t('editor.shareLink', { defaultValue: 'Share read-only link' }),
-      icon: Share2,
-      onClick: () => {
-        setOpen(false);
-        setShareOpen(true);
-      },
+      id: 'view',
+      label: t('editor.menuView', { defaultValue: 'View & share' }),
+      items: [
+        // Import-reference toggle lives in the top bar when available.
+        {
+          label: t('editor.shareLink', { defaultValue: 'Share read-only link' }),
+          icon: Share2,
+          onClick: () => {
+            setOpen(false);
+            setShareOpen(true);
+          },
+        },
+        {
+          label: t('editor.print', { defaultValue: 'Print resume' }),
+          icon: Printer,
+          onClick: printResume,
+        },
+        {
+          label: t('editor.copyPlainText', { defaultValue: 'Copy as plain text' }),
+          icon: ClipboardCopy,
+          onClick: () => void copyPlainText(),
+        },
+        {
+          label: t('stickyNotes.toggle', { defaultValue: 'Sticky notes' }),
+          icon: StickyNote,
+          active: stickyNotesOpen,
+          onClick: () => {
+            setOpen(false);
+            setStickyNotesOpen(!stickyNotesOpen);
+          },
+        },
+        {
+          label: pdfPreviewMode ? t('editor.pdfPreviewOn') : t('editor.pdfPreviewOff'),
+          icon: FileText,
+          active: pdfPreviewMode,
+          navClass: 'xl:hidden',
+          onClick: () => {
+            setOpen(false);
+            setPdfPreviewMode(!pdfPreviewMode);
+          },
+        },
+        {
+          label: anonymized ? t('editor.anonymizeOn') : t('editor.anonymizeOff'),
+          icon: anonymized ? EyeOff : Eye,
+          active: anonymized,
+          navClass: 'xl:hidden',
+          onClick: () => {
+            setOpen(false);
+            setAnonymized(!anonymized);
+          },
+        },
+      ],
     },
     {
-      label: t('editor.print', { defaultValue: 'Print resume' }),
-      icon: Printer,
-      onClick: printResume,
+      id: 'help',
+      label: t('editor.menuHelp', { defaultValue: 'Help' }),
+      items: [
+        {
+          label: t('tutorial.open'),
+          icon: BookOpen,
+          onClick: () => {
+            setOpen(false);
+            setTutorialOpen(true);
+          },
+        },
+        {
+          label: t('shortcuts.title', { defaultValue: 'Keyboard shortcuts' }),
+          icon: Keyboard,
+          onClick: () => {
+            setOpen(false);
+            setShortcutsOpen(true);
+          },
+        },
+      ],
     },
-    {
-      label: t('editor.copyPlainText', { defaultValue: 'Copy as plain text' }),
-      icon: ClipboardCopy,
-      onClick: () => void copyPlainText(),
-    },
-    {
-      label: t('stickyNotes.toggle', { defaultValue: 'Sticky notes' }),
-      icon: StickyNote,
-      active: stickyNotesOpen,
-      onClick: () => {
-        setOpen(false);
-        setStickyNotesOpen(!stickyNotesOpen);
-      },
-    },
-    {
-      label: t('tutorial.open'),
-      icon: BookOpen,
-      onClick: () => {
-        setOpen(false);
-        setTutorialOpen(true);
-      },
-    },
-    {
-      label: t('shortcuts.title', { defaultValue: 'Keyboard shortcuts' }),
-      icon: Keyboard,
-      onClick: () => {
-        setOpen(false);
-        setShortcutsOpen(true);
-      },
-    },
-    {
-      label: pdfPreviewMode ? t('editor.pdfPreviewOn') : t('editor.pdfPreviewOff'),
-      icon: FileText,
-      active: pdfPreviewMode,
-      onClick: () => {
-        setOpen(false);
-        setPdfPreviewMode(!pdfPreviewMode);
-      },
-    },
-    {
-      label: anonymized ? t('editor.anonymizeOn') : t('editor.anonymizeOff'),
-      icon: anonymized ? EyeOff : Eye,
-      active: anonymized,
-      onClick: () => {
-        setOpen(false);
-        setAnonymized(!anonymized);
-      },
-    },
-  ];
+  ]
+    .map((group) => ({
+      ...group,
+      // Drop items already mirrored in the top bar at this breakpoint so group
+      // headers don't sit above an empty list.
+      items: group.items.filter((item) => {
+        if (!item.navClass) return true;
+        if (item.navClass.includes('xl:hidden') && bp.xl) return false;
+        if (item.navClass.includes('lg:hidden') && bp.lg) return false;
+        if (item.navClass.includes('md:hidden') && bp.md) return false;
+        if (item.navClass.includes('sm:hidden') && bp.sm) return false;
+        return true;
+      }),
+    }))
+    .filter((group) => group.items.length > 0);
 
   return (
     <div ref={ref} className="relative">
@@ -326,21 +383,31 @@ export function MoreActionsMenu({
           className="absolute right-0 z-[200] mt-1 w-[min(14rem,calc(100vw-1rem))] rounded-md border border-paper-edge bg-paper shadow-page"
           role="menu"
         >
-          <div className="max-h-[min(70vh,24rem)] overflow-y-auto overscroll-contain rounded-t-md">
-            {items.map((item) => (
-              <button
-                key={item.label}
-                type="button"
-                role="menuitem"
-                onClick={item.onClick}
-                className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs active:bg-paper-tint ${
-                  item.navClass ?? ''
-                } ${item.active ? 'bg-paper-tint text-ink' : 'text-ink-muted hover:bg-paper-tint'}`}
+          <div className="max-h-[min(70vh,28rem)] overflow-y-auto overscroll-contain rounded-t-md py-1">
+            {groups.map((group, groupIndex) => (
+              <div
+                key={group.id}
+                className={groupIndex > 0 ? 'mt-1 border-t border-paper-edge pt-1' : ''}
               >
-                <item.icon size={14} />
-                <span className="flex-1">{item.label}</span>
-                {item.active && <span className="text-[10px] text-accent">●</span>}
-              </button>
+                <p className="px-3 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-subtle">
+                  {group.label}
+                </p>
+                {group.items.map((item) => (
+                  <button
+                    key={item.label}
+                    type="button"
+                    role="menuitem"
+                    onClick={item.onClick}
+                    className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs active:bg-paper-tint ${
+                      item.navClass ?? ''
+                    } ${item.active ? 'bg-paper-tint text-ink' : 'text-ink-muted hover:bg-paper-tint'}`}
+                  >
+                    <item.icon size={14} />
+                    <span className="flex-1">{item.label}</span>
+                    {item.active && <span className="text-[10px] text-accent">●</span>}
+                  </button>
+                ))}
+              </div>
             ))}
           </div>
           <div className="border-t border-paper-edge px-3 py-2 md:hidden">

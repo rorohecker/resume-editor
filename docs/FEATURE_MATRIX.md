@@ -23,3 +23,14 @@ Status for the SPEC.md feature groups. Updated to match the shipped product (v0.
 | 17 | Folder structure | Implemented | Matches suggested structure; `api/` documents optional BYOK proxy. |
 | 18 | Data model | Implemented | Shared TypeScript interfaces plus runtime normalization helpers. |
 | 19 | Summary | Implemented | This matrix is the living summary of feature coverage. |
+
+## Ideas backlog (not committed scope)
+
+Nice-to-haves worth considering next, based on editor friction:
+
+- **Inline spell underlines** in TipTap (mirror LanguageTool/local hits without opening the AI drawer).
+- **Sidebar section outline** mini-rail that mirrors preview scroll position.
+- **Diff-aware re-check** after applying a grammar fix (only re-scan the edited snippet).
+- **OCR deskew + language pack picker** for non-English scanned resumes.
+- **Click-to-edit contact field** that focuses the exact contact row, not just the header accordion.
+- **Tool presets** (student / career-switcher / senior) that reorder AI drawer groups and tips.

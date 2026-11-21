@@ -199,11 +199,11 @@ export function EditorPage() {
         </div>
       )}
 
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <ImportReferencePanel resumeId={resume.id} />
 
         <div
-          className={`min-w-0 w-full md:w-[min(40%,22rem)] lg:w-2/5 lg:max-w-xl ${
+          className={`min-h-0 min-w-0 w-full md:w-[min(42%,20rem)] lg:w-[min(40%,24rem)] xl:w-2/5 xl:max-w-xl ${
             isMobile && mobileTab !== 'edit' ? 'hidden' : 'block'
           }`}
           role={isMobile ? 'tabpanel' : undefined}
@@ -214,7 +214,7 @@ export function EditorPage() {
         <div className="hidden w-px flex-shrink-0 bg-paper-edge md:block" />
 
         <div
-          className={`min-w-0 w-full flex-1 ${
+          className={`min-h-0 min-w-0 w-full flex-1 overflow-hidden ${
             isMobile && mobileTab !== 'preview' ? 'hidden' : 'block'
           }`}
           role={isMobile ? 'tabpanel' : undefined}

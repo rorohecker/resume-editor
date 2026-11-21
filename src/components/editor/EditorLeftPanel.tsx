@@ -11,7 +11,7 @@ import {
   Plus,
   Trash2,
 } from 'lucide-react';
-import { useStore } from '@/store';
+import { FOCUS_HEADER_ID, useStore } from '@/store';
 import { toast } from '@/hooks/useToast';
 import { RichBulletEditor } from './LazyRichBulletEditor';
 import { SortableList } from '@/components/shared/Sortable';
@@ -234,15 +234,15 @@ export function EditorLeftPanel() {
   };
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-paper-tint">
-      <div className="border-b border-paper-edge bg-paper px-4 py-3">
-        <div className="flex items-center justify-between gap-3">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-paper-tint">
+      <div className="shrink-0 border-b border-paper-edge bg-paper px-3 py-2.5 sm:px-4 sm:py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-ink">{t('editor.sections')}</h2>
-          <div className="flex min-w-0 items-center gap-2">
+          <div className="flex min-w-0 flex-1 items-center justify-end gap-1.5 sm:gap-2">
             <select
               value={newSectionType}
               onChange={(e) => setNewSectionType(e.target.value as SectionType)}
-              className="w-32 rounded-md border border-paper-edge bg-paper px-2 py-1 text-xs text-ink focus:border-accent focus:outline-none"
+              className="min-w-0 max-w-[9.5rem] flex-1 rounded-md border border-paper-edge bg-paper px-2 py-1 text-xs text-ink focus:border-accent focus:outline-none sm:max-w-[11rem] sm:flex-none sm:w-32"
               aria-label={t('editor.sectionType')}
             >
               {SECTION_TYPES.map((type) => (
@@ -251,15 +251,15 @@ export function EditorLeftPanel() {
                 </option>
               ))}
             </select>
-            <button type="button" className="btn-secondary text-xs" onClick={() => addSection()}>
+            <button type="button" className="btn-secondary shrink-0 text-xs" onClick={() => addSection()}>
               <Plus size={14} />
               {t('editor.addSection')}
             </button>
           </div>
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-1.5">
-          <span className="mr-1 text-[11px] font-semibold uppercase tracking-wide text-ink-subtle">
+        <div className="mt-2.5 flex flex-wrap items-center gap-1 sm:mt-3 sm:gap-1.5">
+          <span className="mr-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink-subtle sm:mr-1 sm:text-[11px]">
             {t('editor.quickAdd')}
           </span>
           {QUICK_SECTION_TYPES.map((type) => {
@@ -272,7 +272,7 @@ export function EditorLeftPanel() {
               >
                 <button
                   type="button"
-                  className="px-2 py-1 text-[11px] font-medium text-ink-muted hover:bg-paper-tint hover:text-ink"
+                  className="px-1.5 py-1 text-[10px] font-medium text-ink-muted hover:bg-paper-tint hover:text-ink sm:px-2 sm:text-[11px]"
                   onClick={() => quickAddOrFocus(type)}
                   title={
                     exists
@@ -316,7 +316,7 @@ export function EditorLeftPanel() {
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-3">
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 py-2 sm:px-3 sm:py-3">
         <div className="flex flex-col gap-2">
           <ApplicationEditor
             resume={resume}
@@ -358,8 +358,43 @@ function HeaderEditor({
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(true);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const focusedSectionId = useStore((s) => s.focusedSectionId);
+  const focusedSectionToken = useStore((s) => s.focusedSectionToken);
   const fields = [...resume.header.contactFields].sort((a, b) => a.order - b.order);
   const canAdd = fields.length < 7;
+
+  // Preview click on name/contact expands and scrolls to this accordion.
+  useEffect(() => {
+    if (focusedSectionId !== FOCUS_HEADER_ID) {
+      if (focusedSectionId) setOpen(false);
+      return;
+    }
+    setOpen(true);
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      if (cancelled) return;
+      const root = containerRef.current;
+      if (!root) return;
+      const scrollParent = findScrollParent(root);
+      if (!scrollParent) {
+        root.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else {
+        const parentTop = scrollParent.getBoundingClientRect().top;
+        const targetTop = root.getBoundingClientRect().top;
+        scrollParent.scrollTo({
+          top: scrollParent.scrollTop + (targetTop - parentTop),
+          behavior: 'smooth',
+        });
+      }
+      const nameInput = root.querySelector<HTMLInputElement>('input');
+      nameInput?.focus({ preventScroll: true });
+    }, 80);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [focusedSectionId, focusedSectionToken]);
 
   const updateHeader = (patch: Partial<Resume['header']>, historyKey?: string) => {
     updateResume(
@@ -415,10 +450,12 @@ function HeaderEditor({
   };
 
   return (
+    <div ref={containerRef} data-section-id={FOCUS_HEADER_ID}>
     <AccordionShell
       title={t('editor.headerContact')}
       open={open}
       onOpenChange={setOpen}
+      forceStickyToken={focusedSectionId === FOCUS_HEADER_ID ? focusedSectionToken : 0}
       leading={<div className="h-6 w-6" />}
     >
       <div className="space-y-4">
@@ -523,6 +560,7 @@ function HeaderEditor({
         </div>
       </div>
     </AccordionShell>
+    </div>
   );
 }
 
@@ -932,6 +970,7 @@ function SectionEditor({
   // stays reachable. AccordionShell claims sticky whenever `open` flips true.
   const focusedSectionId = useStore((s) => s.focusedSectionId);
   const focusedEntryId = useStore((s) => s.focusedEntryId);
+  const focusedBulletId = useStore((s) => s.focusedBulletId);
   const focusedSectionToken = useStore((s) => s.focusedSectionToken);
   useEffect(() => {
     if (focusedSectionId !== section.id) return;
@@ -948,13 +987,19 @@ function SectionEditor({
           const root = containerRef.current;
           if (!root) return;
 
+          const bulletEl =
+            focusedBulletId != null
+              ? root.querySelector<HTMLElement>(
+                  `[data-bullet-id="${escapeCssAttr(focusedBulletId)}"]`,
+                )
+              : null;
           const entryEl =
             focusedEntryId != null
               ? root.querySelector<HTMLElement>(
                   `[data-entry-id="${escapeCssAttr(focusedEntryId)}"]`,
                 )
               : null;
-          const target = entryEl ?? root;
+          const target = bulletEl ?? entryEl ?? root;
           const scrollParent = findScrollParent(root);
           if (!scrollParent) {
             target.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -967,10 +1012,15 @@ function SectionEditor({
             });
           }
 
-          const focusInput = entryEl?.querySelector<HTMLInputElement | HTMLTextAreaElement>(
-            'input, textarea',
-          );
-          focusInput?.focus({ preventScroll: true });
+          if (bulletEl) {
+            const rich = bulletEl.querySelector<HTMLElement>('.ProseMirror, [contenteditable="true"]');
+            rich?.focus({ preventScroll: true });
+          } else {
+            const focusInput = entryEl?.querySelector<HTMLInputElement | HTMLTextAreaElement>(
+              'input, textarea',
+            );
+            focusInput?.focus({ preventScroll: true });
+          }
         });
       });
     }, 80);
@@ -980,10 +1030,10 @@ function SectionEditor({
       window.cancelAnimationFrame(rafOuter);
       window.cancelAnimationFrame(rafInner);
     };
-  }, [focusedSectionId, focusedEntryId, focusedSectionToken, section.id]);
+  }, [focusedSectionId, focusedEntryId, focusedBulletId, focusedSectionToken, section.id]);
 
-  // When another section is jumped to, collapse this one so sticky headers
-  // don't fight and the jumped target stays easy to find.
+  // When another section (or the header) is jumped to, collapse this one so
+  // sticky headers don't fight and the jumped target stays easy to find.
   useEffect(() => {
     if (!focusedSectionId || focusedSectionId === section.id) return;
     setOpen(false);
@@ -1843,7 +1893,7 @@ function BulletEditor({
           const tooLong = len > 200;
           const wrapsLikely = len > 100;
           return (
-            <div>
+            <div data-bullet-id={bullet.id}>
               <div className="flex gap-2">
                 <span className="mt-1 shrink-0">{handle}</span>
                 <button
@@ -2083,11 +2133,16 @@ function AccordionShell({
   }, [accordionId]);
 
   return (
-    <div ref={rootRef} className="rounded-md border border-paper-edge bg-paper">
+    <div
+      ref={rootRef}
+      className={`rounded-md border border-paper-edge bg-paper shadow-[0_1px_0_rgb(var(--c-paper-edge)/0.55)] ${
+        sticky ? 'ring-1 ring-accent/20' : ''
+      }`}
+    >
       <div
         className={`flex items-center gap-1 px-2 py-2 ${
           sticky
-            ? 'sticky top-0 z-20 rounded-t-[5px] border-b border-paper-edge bg-paper'
+            ? 'sticky top-0 z-20 rounded-t-[5px] border-b border-paper-edge bg-paper/95 shadow-sm backdrop-blur-sm'
             : open
               ? 'border-b border-paper-edge'
               : ''

@@ -406,12 +406,12 @@ export function EditorTopNav() {
             {anonymized ? <EyeOff size={16} /> : <Eye size={16} />}
           </button>
         </div>
-        <div className="xl:hidden">
-          <MoreActionsMenu
-            onImport={() => setImportOpen(true)}
-            onSaveSnapshot={() => setSnapshotOpen(true)}
-          />
-        </div>
+        {/* Always available — share/print/notes/help live here even on wide screens.
+            Items duplicated in the icon strip above use xl:hidden inside the menu. */}
+        <MoreActionsMenu
+          onImport={() => setImportOpen(true)}
+          onSaveSnapshot={() => setSnapshotOpen(true)}
+        />
 
         <div className="mx-2 h-6 w-px bg-paper-edge" />
 

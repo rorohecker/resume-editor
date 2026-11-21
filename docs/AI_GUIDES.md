@@ -100,7 +100,7 @@ and preserves source facts without inventing metric padding.
 | Test connection | AI settings | `testAiConnection` | `OK` | Shared guide prompt, larger output budget for reasoning models. |
 | XYZ bullet quality | AI drawer, health score | `analyzeBullets` | Local analysis | No API; checks action verb, metric, length. |
 | Weak language | AI drawer, Bulk edit | `detectWeakLanguage` | Local hits | No API; hits include exact `bulletId` for safe bulk fixes. |
-| Grammar | AI drawer | `checkGrammar` | Local/external grammar hits | No BYOK key; applies only suggestions user chooses manually. |
+| Spell & Grammar | AI drawer | `checkGrammar` / `checkLocalSpelling` / `collectGrammarSnippets` | Local spelling + LanguageTool over titles/skills/bullets; jump-to-edit + category filters | No BYOK key; applies only suggestions user chooses manually. Offline local spelling still works. |
 | Local keyword match | Tailor modal | `matchKeywords` | Local score | No API; gives instant missing/covered keyword signal. |
 | Health score | Tips panel | `healthScore` helpers | Local score | No API; aggregates bullet quality and weak-language checks. |
 
@@ -358,7 +358,7 @@ These never require a BYOK key:
 
 1. XYZ quality: checks action verb, metric, and length.
 2. Weak language: flags common weak phrases and replacement options.
-3. Grammar: checks grammar hits for visible bullets.
+3. Spell & Grammar: local spelling + LanguageTool across titles, skills, and bullets; Jump opens the matching sidebar field.
 4. Local keyword match: compares job terms against resume text.
 5. Health score: aggregates quality signals for tips.
 

@@ -303,7 +303,16 @@
   }
 
   body {
-    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    /* Source Sans 3 — open apertures, steady weight; easier to scan than Inter. */
+    font-feature-settings: 'ss01', 'kern';
+    letter-spacing: 0.005em;
+  }
+
+  /* Keep resume preview / PDF HTML on the document's own font, not chrome UI. */
+  .resume-preview-root,
+  .resume-preview-root * {
+    letter-spacing: normal;
+    font-feature-settings: normal;
   }
 }
 
