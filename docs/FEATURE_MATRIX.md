@@ -29,8 +29,9 @@ Status for the SPEC.md feature groups. Updated to match the shipped product (v0.
 Nice-to-haves worth considering next, based on editor friction:
 
 - **Inline spell underlines** in TipTap (mirror LanguageTool/local hits without opening the AI drawer).
-- **Sidebar section outline** mini-rail that mirrors preview scroll position.
 - **Diff-aware re-check** after applying a grammar fix (only re-scan the edited snippet).
 - **OCR deskew + language pack picker** for non-English scanned resumes.
-- **Click-to-edit contact field** that focuses the exact contact row, not just the header accordion.
+- **Scroll-spy outline** that highlights the outline chip matching the current sidebar scroll position.
 - **Tool presets** (student / career-switcher / senior) that reorder AI drawer groups and tips.
+
+Shipped in v0.2.64+: section outline chips, click-to-edit contact field, preview bullet/header jumps.

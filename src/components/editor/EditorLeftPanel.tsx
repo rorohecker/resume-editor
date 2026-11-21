@@ -314,6 +314,43 @@ export function EditorLeftPanel() {
             {t('editor.tooManySections', { count: sections.length })}
           </InlineWarning>
         )}
+
+        <nav
+            className="mt-2.5 flex gap-1 overflow-x-auto pb-0.5 [scrollbar-width:thin]"
+            aria-label={t('editor.sectionOutline', { defaultValue: 'Jump to section' })}
+          >
+            <button
+              type="button"
+              className="shrink-0 rounded-md border border-paper-edge bg-paper px-2 py-1 text-[10px] font-medium text-ink-muted hover:bg-paper-tint hover:text-ink"
+              onClick={() => useStore.getState().focusSection(FOCUS_HEADER_ID)}
+              title={t('editor.headerContact')}
+            >
+              {t('editor.headerShort', { defaultValue: 'Header' })}
+            </button>
+            {sections.map((section) => (
+              <button
+                key={section.id}
+                type="button"
+                className={`shrink-0 rounded-md border px-2 py-1 text-[10px] font-medium hover:bg-paper-tint hover:text-ink ${
+                  section.visible
+                    ? 'border-paper-edge bg-paper text-ink-muted'
+                    : 'border-dashed border-paper-edge bg-transparent text-ink-subtle'
+                }`}
+                onClick={() => useStore.getState().focusSection(section.id)}
+                title={
+                  section.visible
+                    ? section.title || t('editor.untitledSection')
+                    : t('editor.hiddenSection', {
+                        title: section.title || t('editor.untitledSection'),
+                        defaultValue: '{{title}} (hidden)',
+                      })
+                }
+              >
+                {(section.title || t('editor.untitledSection')).slice(0, 18)}
+                {(section.title || '').length > 18 ? '…' : ''}
+              </button>
+            ))}
+          </nav>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 py-2 sm:px-3 sm:py-3">
@@ -360,6 +397,7 @@ function HeaderEditor({
   const [open, setOpen] = useState(true);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const focusedSectionId = useStore((s) => s.focusedSectionId);
+  const focusedContactId = useStore((s) => s.focusedContactId);
   const focusedSectionToken = useStore((s) => s.focusedSectionToken);
   const fields = [...resume.header.contactFields].sort((a, b) => a.order - b.order);
   const canAdd = fields.length < 7;
@@ -376,25 +414,37 @@ function HeaderEditor({
       if (cancelled) return;
       const root = containerRef.current;
       if (!root) return;
+      const contactEl =
+        focusedContactId != null
+          ? root.querySelector<HTMLElement>(
+              `[data-contact-id="${escapeCssAttr(focusedContactId)}"]`,
+            )
+          : null;
+      const target = contactEl ?? root;
       const scrollParent = findScrollParent(root);
       if (!scrollParent) {
-        root.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
       } else {
         const parentTop = scrollParent.getBoundingClientRect().top;
-        const targetTop = root.getBoundingClientRect().top;
+        const targetTop = target.getBoundingClientRect().top;
         scrollParent.scrollTo({
           top: scrollParent.scrollTop + (targetTop - parentTop),
           behavior: 'smooth',
         });
       }
-      const nameInput = root.querySelector<HTMLInputElement>('input');
-      nameInput?.focus({ preventScroll: true });
+      if (contactEl) {
+        const valueInput = contactEl.querySelector<HTMLInputElement>('input[type="text"], input:not([type])');
+        valueInput?.focus({ preventScroll: true });
+      } else {
+        const nameInput = root.querySelector<HTMLInputElement>('input');
+        nameInput?.focus({ preventScroll: true });
+      }
     }, 80);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [focusedSectionId, focusedSectionToken]);
+  }, [focusedSectionId, focusedContactId, focusedSectionToken]);
 
   const updateHeader = (patch: Partial<Resume['header']>, historyKey?: string) => {
     updateResume(
@@ -580,7 +630,10 @@ function ContactFieldEditor({
   const warning = contactWarning(field, t);
 
   return (
-    <div className="rounded-md border border-paper-edge bg-paper px-3 py-3">
+    <div
+      data-contact-id={field.id}
+      className="rounded-md border border-paper-edge bg-paper px-3 py-3"
+    >
       <div className="flex items-center gap-2">
         {dragHandle}
         <Icon size={16} className="text-ink-muted" />

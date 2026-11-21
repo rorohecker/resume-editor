@@ -244,49 +244,28 @@ function Header({
 
   // Compact overlays (page-break repeats) stay non-interactive so they don't
   // steal clicks from the live preview underneath.
-  const onJump =
-    interactive && !compact
-      ? () => focusSection('__header__')
-      : undefined;
+  const canJump = interactive && !compact;
+  const jumpHeader = () => focusSection('__header__');
 
-  const body = (
-    <>
-      <div
-        style={{
-          fontSize: pt(compact ? styles.fontSize.name * 0.72 : styles.fontSize.name),
-          fontWeight: 700,
-          color: styles.colors.name,
-          letterSpacing: 0,
-        }}
-      >
-        {header.name || <span className="italic opacity-40">{t('preview.yourName')}</span>}
-      </div>
-
-      {visibleFields.length > 0 && (
-        <div
-          style={{
-            fontSize: pt(compact ? styles.fontSize.contactLine * 0.85 : styles.fontSize.contactLine),
-            marginTop: pt(compact ? 2 : 4),
-            color: styles.colors.body,
-          }}
-        >
-          <ContactLine
-            fields={visibleFields}
-            separator={header.separatorStyle}
-            accent={styles.colors.accent}
-            interactive={Boolean(onJump)}
-          />
-        </div>
-      )}
-    </>
+  const nameBlock = (
+    <div
+      style={{
+        fontSize: pt(compact ? styles.fontSize.name * 0.72 : styles.fontSize.name),
+        fontWeight: 700,
+        color: styles.colors.name,
+        letterSpacing: 0,
+      }}
+    >
+      {header.name || <span className="italic opacity-40">{t('preview.yourName')}</span>}
+    </div>
   );
 
   return (
     <header className={headerAlignFor(resume) === 'left' ? 'text-left' : 'text-center'}>
-      {onJump ? (
+      {canJump ? (
         <button
           type="button"
-          onClick={onJump}
+          onClick={jumpHeader}
           title={t('preview.jumpToHeader', { defaultValue: 'Click to edit header & contact' })}
           className="-mx-1 block w-full rounded-sm px-1 transition-colors hover:bg-paper-tint"
           style={{
@@ -300,10 +279,27 @@ function Header({
             paddingBottom: 0,
           }}
         >
-          {body}
+          {nameBlock}
         </button>
       ) : (
-        body
+        nameBlock
+      )}
+
+      {visibleFields.length > 0 && (
+        <div
+          style={{
+            fontSize: pt(compact ? styles.fontSize.contactLine * 0.85 : styles.fontSize.contactLine),
+            marginTop: pt(compact ? 2 : 4),
+            color: styles.colors.body,
+          }}
+        >
+          <ContactLine
+            fields={visibleFields}
+            separator={header.separatorStyle}
+            accent={styles.colors.accent}
+            interactive={canJump}
+          />
+        </div>
       )}
     </header>
   );
@@ -321,6 +317,7 @@ function ContactLine({
   interactive?: boolean;
 }) {
   const { t } = useTranslation();
+  const focusSection = useStore((s) => s.focusSection);
   const sep = ` ${separatorText(separator)} `;
   return (
     <span>
@@ -330,9 +327,9 @@ function ContactLine({
         const display = displayText || (
           <span className="italic opacity-40">{contactPlaceholder(field.type, t)}</span>
         );
-        // In the interactive preview, contact values are jump targets — not live
-        // links — so a click opens the sidebar editor instead of leaving the page.
-        const linked =
+        // Interactive preview: each contact value jumps to that row in the
+        // sidebar. Export/PDF keep real hyperlinks.
+        const content =
           !interactive && trimmed && isLinkable(field.type) ? (
             <a href={hrefFor(field)} style={{ color: accent, textDecoration: 'none' }}>
               {displayText}
@@ -345,7 +342,32 @@ function ContactLine({
         return (
           <span key={field.id}>
             {index > 0 && <span>{sep}</span>}
-            {linked}
+            {interactive ? (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  focusSection('__header__', null, null, field.id);
+                }}
+                title={t('preview.jumpToContact', {
+                  defaultValue: 'Click to edit this contact field',
+                })}
+                className="rounded-sm px-0.5 transition-colors hover:bg-paper-tint"
+                style={{
+                  cursor: 'pointer',
+                  background: 'transparent',
+                  border: 'none',
+                  font: 'inherit',
+                  color: 'inherit',
+                  paddingTop: 0,
+                  paddingBottom: 0,
+                }}
+              >
+                {content}
+              </button>
+            ) : (
+              content
+            )}
           </span>
         );
       })}

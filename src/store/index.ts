@@ -47,6 +47,8 @@ interface UIState {
   focusedSectionId: string | null;
   focusedEntryId: string | null;
   focusedBulletId: string | null;
+  /** When jumping into the header, optional contact field id to focus. */
+  focusedContactId: string | null;
   focusedSectionToken: number;
 }
 
@@ -86,6 +88,7 @@ interface Actions {
     sectionId: string,
     entryId?: string | null,
     bulletId?: string | null,
+    contactId?: string | null,
   ) => void;
   clearPersistError: () => void;
   setPersistError: (message: string | null) => void;
@@ -145,6 +148,7 @@ export const useStore = create<UIState & ResumeState & Actions>((set, get) => ({
   focusedSectionId: null,
   focusedEntryId: null,
   focusedBulletId: null,
+  focusedContactId: null,
   focusedSectionToken: 0,
 
   currentResume: null,
@@ -180,11 +184,12 @@ export const useStore = create<UIState & ResumeState & Actions>((set, get) => ({
   setMobileTab: (mobileTab) => set({ mobileTab }),
   clearPersistError: () => set({ persistError: null }),
   setPersistError: (persistError) => set({ persistError }),
-  focusSection: (sectionId, entryId = null, bulletId = null) =>
+  focusSection: (sectionId, entryId = null, bulletId = null, contactId = null) =>
     set((state) => ({
       focusedSectionId: sectionId,
       focusedEntryId: entryId ?? null,
       focusedBulletId: bulletId ?? null,
+      focusedContactId: contactId ?? null,
       focusedSectionToken: state.focusedSectionToken + 1,
       // Make sure mobile users land on the editor pane when they tap a
       // preview header on a narrow screen.
