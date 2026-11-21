@@ -1,0 +1,1 @@
+var e=`/resume-editor/assets/pdf.worker.min-iDqQPrd3.mjs`;export{e as default};
