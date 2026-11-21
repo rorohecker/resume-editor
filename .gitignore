@@ -10,5 +10,7 @@ dist-ssr
 *.log
 # Build artifacts and incremental compile caches
 *.tsbuildinfo
+# Generated at build time for the Pages-hosted update check
+public/version.json
 # Release zips shouldn't live in source; they are attached to GitHub releases instead
 resume-editor-*-dist.zip

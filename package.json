@@ -1,12 +1,12 @@
 {
   "name": "resume-editor",
   "private": true,
-  "version": "0.2.64",
+  "version": "0.2.65",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/generate-pwa-icons.mjs && tsc -b && vite build",
-    "build:single": "tsc -b && cross-env SINGLE_FILE=1 vite build",
+    "build": "node scripts/generate-pwa-icons.mjs && node scripts/write-version-json.mjs && tsc -b && vite build",
+    "build:single": "node scripts/write-version-json.mjs && tsc -b && cross-env SINGLE_FILE=1 vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run"

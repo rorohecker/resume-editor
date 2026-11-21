@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, Download, FileText, Loader2, Rocket, X } from 'lucide-react';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import {
+  CHECK_UPDATES_EVENT,
   fetchLatestRelease,
   isNewerRelease,
   recordBackup,
@@ -213,29 +214,58 @@ export function UpdateBanner() {
     };
   }, []);
 
-  // Both modes: poll GitHub releases. Hosted also relies on the service worker,
-  // but Pages can lag behind a published tag — the banner covers that gap.
+  // Both modes: poll Pages version.json (then GitHub). Hosted also relies on
+  // the service worker, but Pages can lag a tagged release — the banner covers
+  // that gap. Clicking the version badge forces the same check with feedback.
   useEffect(() => {
     let cancelled = false;
-    const check = async () => {
+    const check = async (userInitiated = false) => {
       const latest = await fetchLatestRelease();
-      if (cancelled || !latest) return;
-      if (!isNewerRelease(latest.version)) {
-        setRelease(null);
+      if (cancelled) return;
+      if (!latest) {
+        if (userInitiated) {
+          toast('Could not check for updates. Try again online in a moment.', {
+            tone: 'warn',
+            ttl: 4000,
+          });
+        }
         return;
       }
+      if (!isNewerRelease(latest.version)) {
+        setRelease(null);
+        if (userInitiated) {
+          toast(`You're on the latest version (v${__APP_VERSION__}).`, {
+            tone: 'success',
+            ttl: 2500,
+          });
+        }
+        return;
+      }
+      setDismissed(false);
       setRelease(latest);
+      if (userInitiated) {
+        toast(`Version ${latest.name || latest.version} is available.`, {
+          tone: 'info',
+          ttl: 2500,
+        });
+      }
       // Nudge the SW in case Pages already has the new assets but this tab
       // hasn't picked them up yet.
       if (!__APP_SINGLE_FILE__) {
         void registrationRef.current?.update().catch(() => {});
       }
     };
-    void check();
-    const id = window.setInterval(check, 60 * 60 * 1000);
+    void check(false);
+    const id = window.setInterval(() => void check(false), 60 * 60 * 1000);
+    const onManualCheck = () => {
+      toast('Checking for updates…', { tone: 'info', ttl: 1500 });
+      void check(true);
+    };
+    window.addEventListener(CHECK_UPDATES_EVENT, onManualCheck);
     return () => {
       cancelled = true;
       window.clearInterval(id);
+      window.removeEventListener(CHECK_UPDATES_EVENT, onManualCheck);
     };
   }, []);
 
